@@ -439,7 +439,9 @@ function godOf(w, p) {
   const l = F(w).gods.filter(function (g) { return g.cult === p.id && g.state === "awake"; });
   return l.length ? l[0] : null;
 }
-function artList(w) { return Object.keys(w.artifacts).map(function (k) { return w.artifacts[k]; }); }
+/* relics only: great works are artifacts too (so the chronicle can show them), but they stay
+   where they were built and are never carried off, found or given */
+function artList(w) { return Object.keys(w.artifacts).map(function (k) { return w.artifacts[k]; }).filter(function (a) { return !a.wonder; }); }
 function held(w, p) { return artList(w).filter(function (a) { return a.holder === p.id && !a.destroyed; }); }
 function lostRelics(w) { return artList(w).filter(function (a) { return !a.destroyed && !a.holder && !a.beyond && a.location != null; }); }
 function relicMight(w, p) { return held(w, p).reduce(function (s, a) { return s + a.power; }, 0); }
@@ -2147,7 +2149,7 @@ const MEMORY = [
       const roll = c.int(0, 3);
       const yrs = c.year - bev.year;
       const art = aa ? w.artifacts[aa.id] : null;
-      if (art && !art.destroyed && !art.holder && roll !== 2) {
+      if (art && !art.wonder && !art.destroyed && !art.holder && roll !== 2) {
         give(w, art, p, "taken from the barrow of " + (fig ? fig.name : "an unknown king"));
         actors.push(c.actor(art)); p.prestige = clamp(p.prestige + 0.05, 0, 1);
         return mk(3, ["barrow", "memory", "relic"], actors, r.id,
@@ -2249,6 +2251,78 @@ const MEMORY = [
 /* ====================================================================== */
 /* EVENTS VIII -- new kinds of state arise                                */
 /* ====================================================================== */
+
+/* ------------------------------------------------------------ great works --
+   The wonders of the world: raised by wealthy realms at their seat, in the manner of the age the
+   realm has reached (core.js ages), and lost to dragons, gods, war and, as the magic drains away,
+   to the failing of the spells that held them up. They are artifacts with `wonder: true`. */
+const GREAT_WORKS = [
+  /* the Age of Hearths */
+  [["The Long Hall of {P}", "hall of turf and oak, long enough that the far hearth was a rumour at the near one"],
+   ["The Moonwell of {P}", "well that showed the moon at noon, to those who paid"],
+   ["The Barrow of the Hundred Kings at {P}", "mound raised for a hundred kings, more of whom were promised than had died"]],
+  /* the Rune Age */
+  [["The Runestone Gate of {P}", "gate cut with runes against the weather, the dead and, on bad days, the tax-gatherers"],
+   ["The Brazen Giant of {P}", "colossus of bronze that was said to walk at midwinter"],
+   ["The Singing Bridge of {P}", "bridge whose stones hummed whenever an oath was broken on it"]],
+  /* the Age of Towers */
+  [["The Starglass Spire of {P}", "spire of grown glass, from which the court astrologers watched the sky and, it was alleged, the neighbours"],
+   ["The Hanging Gardens of the {A} Magi", "garden held in the air by a spell that had to be renewed every ninth day"],
+   ["The Dragonbone Arch of {P}", "arch built from the ribs of a dragon whose kin were not consulted"]],
+  /* the Age of Charters */
+  [["The Cathedral of the Seven Lamps at {P}", "cathedral whose seven lamps had never been lit by hand"],
+   ["The Great Library of {P}", "library in which, by charter, no book could be burned, and several were"],
+   ["The Charterhouse of the {A} Guilds", "hall of the guilds, every stone of it paid for by a different one"]],
+  /* the Clockwork Age */
+  [["The Great Orrery of {P}", "orrery of brass that kept the hours of the heavens better than the heavens did"],
+   ["The Iron Lighthouse of {P}", "lighthouse turned by clockwork, which went on turning after the magic failed"],
+   ["The Engine-Temple of the {A} Makers", "temple to the makers, built because the gods had stopped answering"]],
+];
+function greatWorks(w) { return Object.keys(w.artifacts).map(function (k) { return w.artifacts[k]; }).filter(function (a) { return a.wonder && !a.destroyed; }); }
+
+const WONDER_EVENTS = [
+  {
+    id: "great-work-raised", scope: "polity", weight: 2.5, cooldown: 160,
+    test: function (c) {
+      const p = c.polity;
+      return p.wealth > 0.45 && p.prestige > 0.12 && p.regions.length >= 3 && p.capital != null && !!c.world.regions[p.capital].settlement;
+    },
+    run: function (c) {
+      const w = c.world, p = c.polity, r = w.regions[p.capital], ruler = rulerOf(w, p);
+      const tpl = c.pick(GREAT_WORKS[Math.max(0, Math.min(GREAT_WORKS.length - 1, p.age || 0))]);
+      const name = tpl[0].replace("{P}", sn(c, r, p)).replace("{A}", p.adjective || pn(p));
+      const place = sn(c, r, p), at = name.indexOf(place) >= 0 ? "" : " at " + place;
+      const who = ruler ? fn(ruler) + " of " + pn(p) : "The rulers of " + pn(p);
+      const art = c.newArtifact({ name: name, kind: "great work", region: r, creator: ruler, power: c.range(0.3, 0.8),
+        legend: "A " + tpl[1] + ", raised" + (at || " there") + " by " + (ruler ? fn(ruler) : "the rulers of " + pn(p)) + "." });
+      art.wonder = true;
+      p.prestige = clamp(p.prestige + 0.06, 0, 1); p.wealth = clamp(p.wealth - 0.06, 0, 1); stab(p, -0.01);
+      return mk(3, ["wonder", "building", "culture"], [c.actor(p), ruler ? c.actor(ruler) : null, c.actor(art)], r.id,
+        who + " completed " + lc(name) + at + ", a " + tpl[1] + ". " +
+        "It took " + c.int(12, 60) + " years and " + c.choice(["the labour of four provinces", "the treasury twice over", "two architects, one of whom survived it", "more giants than the realm admitted to employing"]) + "; " +
+        c.choice(["the court poet called it eternal, which the masons took as a challenge.", "the neighbouring kingdoms sent congratulations and spies.", "the gods, consulted, declined to comment.", "the people were proud of it and paid for it for a generation."]));
+    }
+  },
+  {
+    id: "great-work-falls", scope: "world", weight: 1.6,
+    test: function (c) { return greatWorks(c.world).some(function (a) { return c.year - a.created > 30; }); },
+    run: function (c) {
+      const w = c.world, a = c.pick(greatWorks(w).filter(function (x) { return c.year - x.created > 30; }));
+      const r = w.regions[a.location], owner = r && r.owner && w.polities[r.owner];
+      /* as the world's magic drains, more of them simply stop being held up */
+      const cause = magic(w) < 0.4 && c.chance(0.5) ? "the failing of the enchantment that had held it up, which ran out like a candle"
+        : c.choice(["a dragon that had a grievance and a long memory", "an earthquake the priests had predicted, a day too late", "the siege engines of a jealous neighbour",
+                    "a fire that began in the kitchens", "frost, which works slowly and is never tired", "the god it was built for, who preferred a smaller house"]);
+      a.destroyed = c.year;
+      if (r) addF(r, "ruins");
+      if (owner) owner.prestige = clamp(owner.prestige - 0.06, 0, 1);
+      return mk(3, ["wonder", "destruction", "ruin-made"], [c.actor(a), owner ? c.actor(owner) : null], r ? r.id : null,
+        a.name + " fell to " + cause + ", " + (c.year - a.created) + " years after it was raised. " +
+        c.choice(["Its stones were carried off to build three villages and a pigsty.", "Pilgrims went on visiting the ruins, and the ruins went on charging them.",
+                  "The court historians recorded it as a renovation.", "A smaller copy was planned, and argued about, and not built."]));
+    }
+  },
+];
 
 const ARISINGS = [
   {
@@ -2358,7 +2432,7 @@ AEON.registerPack({
   archetypes: ARCHETYPES,
   names: NAMES,
 
-  events: [].concat(SPINE, GODS, PROPHECY, MAGIC, MONSTERS, RELICS, MEMORY, ARISINGS).map(throttled),
+  events: [].concat(SPINE, GODS, PROPHECY, MAGIC, MONSTERS, RELICS, MEMORY, WONDER_EVENTS, ARISINGS).map(throttled),
 
   flavor: {
     epitaphs: EPITAPHS,

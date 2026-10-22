@@ -31,6 +31,7 @@ const MEASURES = [
   { id: "pop", tab: "Population", title: "Share of the world's people", unit: "people", key: "pop" },
   { id: "size", tab: "Territory", title: "Share of the world's land", unit: "provinces", key: "size" },
   { id: "cities", tab: "Cities", title: "Share of the world's cities", unit: "cities", one: "city", key: "cities" },
+  { id: "wonders", tab: "Wonders", title: "Share of the world's wonders", unit: "wonders", one: "wonder", key: "wonders" },
 ];
 function units(m, n) { return fmt(n) + " " + (Math.round(n) === 1 && m.one ? m.one : m.unit); }
 
@@ -118,10 +119,11 @@ function buildData(world) {
   const T = Math.round((y1 - y0) / step) + 1;
   const series = {};
   for (const m of MEASURES) series[m.id] = { total: new Float64Array(T) };
-  const per = {}, cities = cityCounts(world, y0, step, T);
+  const per = {}, cities = cityCounts(world, y0, step, T), wonders = wonderReplay(world, y0, step, T);
   for (const p of pols) {
-    const v = { pop: new Float64Array(T), size: new Float64Array(T), cities: cities[p.id] || new Float64Array(T) };
-    for (let t = 0; t < T; t++) series.cities.total[t] += v.cities[t];
+    const v = { pop: new Float64Array(T), size: new Float64Array(T), cities: cities[p.id] || new Float64Array(T),
+                wonders: wonders.counts[p.id] || new Float64Array(T) };
+    for (let t = 0; t < T; t++) { series.cities.total[t] += v.cities[t]; series.wonders.total[t] += v.wonders[t]; }
     let popYears = 0;
     for (const s of p.sizeHistory) {
       const t = Math.round((s.year - y0) / step);
@@ -140,7 +142,7 @@ function buildData(world) {
   const topIds = {};
   bands.forEach(function (b) { topIds[b.p.id] = true; });
   return { y0: y0, step: step, T: T, series: series, per: per, bands: bands, topIds: topIds, rest: ranked.length - bands.length,
-           battles: pickBattles(world) };
+           battles: pickBattles(world), wonderMarks: wonders.marks };
 }
 /* cities (tier 3 and up) each realm held at every tick, replaying who owned which region
    (world.ownerLog) alongside how big each settlement was (world.settleLog) */
@@ -165,6 +167,35 @@ function cityCounts(world, y0, step, T) {
     for (const pid in cur) if (cur[pid] > 0) (out[pid] || (out[pid] = new Float64Array(T)))[t] = cur[pid];
   }
   return out;
+}
+/* wonders standing in each realm's land at every tick (they never move, but their land changes
+   hands), and every raising and loss with the realm that held the place at the time */
+function wonderReplay(world, y0, step, T) {
+  const N = world.regions.length, owner = new Array(N).fill(null), here = new Int16Array(N);
+  const OL = world.ownerLog || [], evs = [], cur = {}, counts = {}, marks = [];
+  for (const a of (AEON.wonders ? AEON.wonders(world) : [])) {
+    if (a.location == null) continue;
+    evs.push([a.created, a.location, 1, a]);
+    if (a.destroyed != null) evs.push([a.destroyed, a.location, -1, a]);
+  }
+  evs.sort(function (x, y) { return x[0] - y[0] || y[2] - x[2]; });
+  const bump = function (pid, d) { if (pid != null) cur[pid] = (cur[pid] || 0) + d; };
+  let i = 0, j = 0;
+  for (let t = 0; t < T; t++) {
+    const y = y0 + t * step;
+    while (i < OL.length && OL[i][0] <= y) {
+      const r = OL[i][1], o = OL[i][2]; i++;
+      if (here[r] && owner[r] !== o) { bump(owner[r], -here[r]); bump(o, here[r]); }
+      owner[r] = o;
+    }
+    while (j < evs.length && evs[j][0] <= y) {
+      const e = evs[j++];
+      here[e[1]] += e[2]; bump(owner[e[1]], e[2]);
+      marks.push({ kind: e[2] > 0 ? "built" : "lost", a: e[3], year: e[0], owner: owner[e[1]] });
+    }
+    for (const pid in cur) if (cur[pid] > 0) (counts[pid] || (counts[pid] = new Float64Array(T)))[t] = cur[pid];
+  }
+  return { counts: counts, marks: marks };
 }
 /* great battles: every world-defining one, then the major ones while there is room */
 function pickBattles(world) {
@@ -230,6 +261,20 @@ function drawPennant(ctx, x, y, u, n) {
     ctx.fillRect(x + c * u, y + r * u, u, u);
   }
   if (AEON.pixelFont) AEON.pixelFont.draw(ctx, String(n % 10), x + 2 * u, y + u, INK, u);
+}
+/* a wonder raised (a gilded obelisk) and a wonder lost (its broken stump) */
+const OBELISK = ["...k...", "..kyk..", "..kwk..", "..kwk..", ".kwwwk.", ".kwwwk.", "kkkkkkk"];
+const STUMP = [".......", ".......", "..k....", "..kgk.k", "..kgkgk", ".kgggkg", "kkkkkkk"];
+const MONU_PAL = { k: INK, y: "#e0b84f", w: "#efe6d6", g: "#9a948a" };
+function drawMonument(ctx, rows, x, y, u) {
+  ctx.globalAlpha = 0.45; ctx.fillStyle = "#000";
+  for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) if (rows[r][c] !== ".") ctx.fillRect(x + (c + 1) * u, y + (r + 1) * u, u, u);
+  ctx.globalAlpha = 1;
+  for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) {
+    const ch = rows[r][c];
+    if (ch === ".") continue;
+    ctx.fillStyle = MONU_PAL[ch]; ctx.fillRect(x + c * u, y + r * u, u, u);
+  }
 }
 let hatchPattern = null;
 function hatchFor(ctx, dpr) {
@@ -342,6 +387,15 @@ function build() {
     k4.appendChild(pc);
     k4.appendChild(h("span", null, "New age: " + ages.map(function (a, i) { return (i + 1) + " " + (a.short || a.name); }).join(" · ")));
     keys.appendChild(k4);
+  }
+  if (S.data.wonderMarks.length) {
+    [["Wonder raised", OBELISK], ["Wonder lost", STUMP]].forEach(function (k) {
+      const kk = h("span", "st-key"), cv2 = h("canvas");
+      cv2.width = 18; cv2.height = 18; cv2.style.width = cv2.style.height = "18px";
+      drawMonument(cv2.getContext("2d"), k[1], 1, 1, 2);
+      kk.appendChild(cv2); kk.appendChild(h("span", null, k[0]));
+      keys.appendChild(kk);
+    });
   }
   keys.appendChild(k1); keys.appendChild(k2);
   if (S.data.bands.some(function (b) { return b.hatch; })) keys.appendChild(k3);
@@ -487,7 +541,7 @@ function directLabels(ctx, dpr, cols, H) {
 /* markers on the bands of the named realms. First the ages each entered (in the band's upper
    part), then battles: only those a named realm fought, most important first, kept well
    apart and capped so they stay highlights rather than texture. */
-const MAX_MARKERS = 24, MARKER_ROOM = 22;          /* CSS pixels kept clear round each battle */
+const MAX_MARKERS = 24, MAX_WONDERS = 20, MARKER_ROOM = 22;          /* CSS pixels kept clear round each battle */
 function markers(ctx, dpr, H) {
   const d = S.data, u = Math.max(1, Math.round(2 * dpr)), size = 9 * u, room = Math.round(MARKER_ROOM * dpr), boxes = [];
   const bandOf = {}, hit = function (b) { return boxes.some(function (o) { return b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]; }); };
@@ -512,6 +566,26 @@ function markers(ctx, dpr, H) {
       S.markers.push({ kind: "age", p: b.p, age: e.age, year: e.year, box: [box[0] / dpr, box[1] / dpr, box[2] / dpr, box[3] / dpr] });
     }
   });
+  /* wonders raised and lost, in the band's lower part, at most MAX_WONDERS, spaced apart */
+  let wonders = 0;
+  for (const m of d.wonderMarks) {
+    if (wonders >= MAX_WONDERS) break;
+    const bi = m.owner != null && bandOf[m.owner] != null ? bandOf[m.owner] : -1;
+    if (bi < 0) continue;
+    const t = Math.round((m.year - d.y0) / d.step);
+    if (t < 0 || t >= d.T) continue;
+    const r = stackAt(t, H).rows[bi];
+    if (!r || r.h < 4) continue;
+    const x = Math.round(S.geo.xOf(t) * dpr - 3.5 * u), y = Math.min(Math.round(H * dpr) - 8 * u, Math.round((r.y + r.h * 0.72) * dpr - 3.5 * u));
+    const box = [x - u, y - u, x + 8 * u, y + 8 * u], far = [box[0] - room / 2, box[1] - room / 3, box[2] + room / 2, box[3] + room / 3];
+    if (boxes.some(function (o) { return far[0] < o[2] && far[2] > o[0] && far[1] < o[3] && far[3] > o[1]; })) continue;
+    boxes.push(box);
+    ctx.globalAlpha = S.hoverBand != null && S.hoverBand !== bi ? 0.35 : 1;
+    drawMonument(ctx, m.kind === "built" ? OBELISK : STUMP, x, y, u);
+    ctx.globalAlpha = 1;
+    S.markers.push({ kind: "wonder", m: m, box: [box[0] / dpr, box[1] / dpr, box[2] / dpr, box[3] / dpr] });
+    wonders++;
+  }
   let battles = 0;
   for (const e of d.battles) {
     if (battles >= MAX_MARKERS) break;
@@ -576,8 +650,9 @@ function wire(cv) {
     if (!S || !S.geo) return;
     const p = local(e), m = markerAt(p);
     if (m) {
-      if (S.hooks.onSetYear) S.hooks.onSetYear(m.kind === "age" ? m.year : m.e.year);
+      if (S.hooks.onSetYear) S.hooks.onSetYear(m.kind === "age" ? m.year : m.kind === "wonder" ? m.m.year : m.e.year);
       if (m.kind === "age") { if (S.hooks.onShowPolity) S.hooks.onShowPolity(m.p.id); }
+      else if (m.kind === "wonder") { if (S.hooks.onShowArtifact) S.hooks.onShowArtifact(m.m.a.id); }
       else if (S.hooks.onShowEvent) S.hooks.onShowEvent(m.e.id);
       return;
     }
@@ -595,6 +670,11 @@ function tip(e, p) {
     el.appendChild(h("div", "ae-tip-name", m.p.name + " entered " + ages[m.age].name));
     el.appendChild(h("div", null, pack.yearLabel(m.year) + " · age " + (m.age + 1) + " of " + ages.length));
     el.appendChild(h("div", "dim", "Click to open the realm in the chronicle"));
+  } else if (S.hoverMarker && S.hoverMarker.kind === "wonder") {
+    const m = S.hoverMarker.m, owner = m.owner != null ? S.world.polities[m.owner] : null;
+    el.appendChild(h("div", "ae-tip-name", (m.kind === "built" ? "Wonder raised: " : "Wonder lost: ") + m.a.name));
+    el.appendChild(h("div", null, pack.yearLabel(m.year) + (owner ? " · " + owner.name : "")));
+    el.appendChild(h("div", "dim", "Click to open it in the chronicle"));
   } else if (S.hoverMarker) {
     const ev = S.hoverMarker.e;
     el.appendChild(h("div", "ae-tip-name", "Great battle, " + pack.yearLabel(ev.year)));
@@ -675,6 +755,6 @@ function table() {
   return wrap;
 }
 
-AEON.stats = { open: open, close: close, isOpen: isOpen, setYear: setYear, _order: bestOrder, _separation: separation, _cityCounts: cityCounts };
+AEON.stats = { open: open, close: close, isOpen: isOpen, setYear: setYear, _order: bestOrder, _separation: separation, _cityCounts: cityCounts, _wonderReplay: wonderReplay };
 
 })();

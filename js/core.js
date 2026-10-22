@@ -456,6 +456,29 @@ AEON.tierAt = function (world, rid, year) {
 };
 AEON.settlementHistory = function (world, rid) { return (settleIndex(world).by[rid] || []).slice(); };
 
+/* Wonders: great buildings that stay where they were raised. They are artifacts (so they get
+   chronicle pages, atlas entries and graph nodes) marked either with `wonder: true` or by a kind
+   the pack lists in `pack.wonderKinds`. They stand from `created` until `destroyed`. */
+AEON.isWonder = function (world, a) {
+  return !!a && (a.wonder === true || ((world.pack && world.pack.wonderKinds) || []).indexOf(a.kind) >= 0);
+};
+AEON.wonders = function (world) {
+  const out = [];
+  for (const id in world.artifacts) if (AEON.isWonder(world, world.artifacts[id])) out.push(world.artifacts[id]);
+  return out;
+};
+/* the wonders standing in a region during a year */
+AEON.wondersAt = function (world, rid, year) {
+  let ix = world._wonderIx;
+  const n = world._ids.artifact;
+  if (!ix || ix.n !== n) {
+    ix = { n: n, by: {} };
+    for (const a of AEON.wonders(world)) if (a.location != null) (ix.by[a.location] || (ix.by[a.location] = [])).push(a);
+    Object.defineProperty(world, "_wonderIx", { value: ix, enumerable: false, configurable: true, writable: true });
+  }
+  return (ix.by[rid] || []).filter(function (a) { return a.created <= year && (a.destroyed == null || a.destroyed > year); });
+};
+
 function foundSettlement(world, region, tier) {
   if (!region || region.barren) return null;
   const polity = region.owner && world.polities[region.owner];

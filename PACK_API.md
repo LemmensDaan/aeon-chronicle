@@ -196,6 +196,12 @@ Names for settlement tiers 1..4; the default is `["", "village", "town", "city",
 Packs may change `region.settlement.tier` freely inside events: the engine notices once a tick and
 logs it (`world.settleLog`), so statistics and past-year views stay right.
 
+### 3.1d `wonderKinds` (optional)
+
+Artifact kinds that are buildings: they stay where they were made (`location`), never get carried
+off, and count as **wonders** on the map and in the statistics. An artifact can also be marked a
+wonder on its own with `art.wonder = true`. A wonder stands from `created` until `destroyed`.
+
 ### 3.2 `eras`
 
 An ordered ladder. The engine advances the era by year, and events can gate on it.

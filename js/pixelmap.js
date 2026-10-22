@@ -101,6 +101,8 @@ const KEEP = sprite(["k.k.k.k", "kwkwkwk", "kwwwwwk", "kwrrrwk", "kwrdrwk", "kkk
 const CITY = sprite([".kkk.", "kwwwk", "kwrwk", "kkkkk"], { k: INK, w: "#efe6d6", r: "#999" });
 const TOWN = sprite([".k.", "kwk", "kkk"], { k: INK, w: "#efe6d6" });
 const VILLAGE = sprite(["kk", "kk"], { k: INK });
+/* a wonder: a gilded obelisk */
+const WONDER = sprite(["...k...", "..kyk..", "..kwk..", "..kwk..", ".kwwwk.", ".kwwwk.", "kkkkkkk"], { k: INK, y: "#e0b84f", w: "#efe6d6" });
 
 /** A well-mixed value in [0,1) per cell id; salt gives independent values for the same cell. */
 function cellRand(id, salt) {
@@ -403,6 +405,22 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
     if (!st.cap && !free(b)) continue;
     boxes.push(b);
     drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, st.cap ? { r: st.cap.color, d: st.cap.color } : null); });
+  }
+
+  /* wonders standing in the shown year: a small monument beside the cell, from 2x zoom on */
+  if (pc >= 2 && AEON.wonders) {
+    const base = baseOf(w), year = w.year, seen = {};
+    for (const a of AEON.wonders(base)) {
+      if (a.location == null || a.created > year || (a.destroyed != null && a.destroyed <= year) || seen[a.location]) continue;
+      seen[a.location] = true;
+      const r = R[a.location];
+      /* just right of a capital-sized marker on the same cell, standing on the same ground line */
+      const x = Math.round(sx(r.x + 0.5) + 5.5 * u), y = Math.round(sy(r.y + 0.5) + 3 * u - WONDER.h * u);
+      const b = [x - u, y - u, x + (WONDER.w + 1) * u, y + (WONDER.h + 1) * u];
+      if (!free(b)) continue;
+      boxes.push(b);
+      drawn.push(function (dx) { blit(ctx, WONDER, x + dx, y, u, null); });
+    }
   }
 
   /* hover and selection: pixel corner brackets round the cell, with a drop shadow (as in the

@@ -219,6 +219,7 @@ function toggleStats(force) {
     onSetYear: function (y) { setPlaybackYear(y); },
     onShowPolity: function (id) { if (AEON.chronicle && AEON.chronicle.show) AEON.chronicle.show("polity", id); },
     onShowEvent: function (id) { if (AEON.chronicle && AEON.chronicle.show) AEON.chronicle.show("event", id); },
+    onShowArtifact: function (id) { if (AEON.chronicle && AEON.chronicle.show) AEON.chronicle.show("artifact", id); },
     onClose: function () { toggleStats(false); },
   });
   if (dom.statsBtn) dom.statsBtn.classList.add("on");
@@ -526,6 +527,9 @@ function fillTip(view, r) {
   const more = [];
   if (live && r.population) more.push(r.population.toLocaleString() + " souls");
   if (r.features && r.features.length) more.push(r.features.join(", "));
+  /* the wonders standing here in the shown year */
+  const ws = AEON.wondersAt ? AEON.wondersAt(world, r.id, year) : [];
+  for (const a of ws) tipEl.appendChild(el("div", { class: "ae-tip-wonder", text: a.name + ", raised " + pack.yearLabel(a.created) }));
   if (more.length) tipEl.appendChild(el("div", { class: "dim", text: more.join(" · ") }));
 }
 function hideTip() { if (tipEl) tipEl.style.display = "none"; }

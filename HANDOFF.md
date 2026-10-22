@@ -186,8 +186,15 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
    settlement at the size it had that year, and razed ones before they fell. Region pages list the
    growth; polity pages count cities; the sheet has a **Cities** tab (tier 3+, replayed from
    `ownerLog` + `settleLog`). Alt-history packs never change a tier, so there cities are capitals.
-4. **Wonders.** New wonder built / destroyed events per pack: historical (temples, monuments), fantasy
-   (wonder-like things too). Alt-history is split off; its megaproject idea (Volkshalle, a Gibraltar
+4. ~~**Wonders**~~ done 2026-10-22. A wonder is an artifact that never moves, marked `wonder: true`
+   or by a kind in `pack.wonderKinds` (`AEON.isWonder`, `AEON.wonders`, `AEON.wondersAt`).
+   Historical already built and destroyed wonders and great libraries (~450 a world), so it only
+   declares `wonderKinds` and its histories are unchanged. Fantasy got two new events,
+   `great-work-raised` (what is built follows the realm's age: long halls and moonwells up to
+   orreries and iron lighthouses) and `great-work-falls` (dragons, gods, siege, fire, and more
+   often as magic drains, the enchantment running out): ~70 a world, a third lost. **This changed
+   fantasy histories.** Fantasy's relic helpers (`artList`) skip wonders. Map: a gilded obelisk
+   beside the cell from 2x zoom; tooltip lists them; sheet: a Wonders tab and raised/lost markers. Alt-history is split off; its megaproject idea (Volkshalle, a Gibraltar
    bridge or dam) is in that project's HANDOFF.
 
 ## Settlements on the map (2026-10-22)

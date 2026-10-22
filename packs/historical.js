@@ -2086,6 +2086,9 @@ AEON.registerPack({
      years; each is the median realm's learning when that era begins, so the leaders get there
      centuries early and the laggards late. Late Antiquity is a period, not a level, so it is
      left out. */
+  /* the artifact kinds that are buildings, standing where they were raised: the wonders */
+  wonderKinds: ["wonder", "library"],
+
   ages: [
     { id: "bronze",    name: "The Bronze Age",    short: "Bronze",    at: 0 },
     { id: "iron",      name: "The Iron Age",      short: "Iron",      at: 940 },

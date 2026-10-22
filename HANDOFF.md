@@ -83,6 +83,12 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
 - The seam roll changed every seed's map, so worlds from before 2026-10-22 don't reproduce.
 - Tried and rejected (2026-10-22): polar caps (sinking land + pack ice along the top/bottom rows).
   Daan found the ice band looked like clouds and prefers land running off the north/south edges.
+- **Ragged climate edges (2026-10-23):** land temperature gets low-frequency noise (`planetgen.js`,
+  before the final clamp), so the tundra and desert edges stop following the parallels.
+- **Soft frontier:** realms expand into any land above habitability 0.03, weighted by habitability
+  squared, instead of stopping dead at 0.12. That cutoff drew a straight line along the tundra edge
+  where civilisation ended. Historical realms now hold ~75% of the tundra by 1500 AD (was ~8%).
+  Both changes alter every seed.
 - Generation takes about 0.4 s. A typical world: 3–9% mountains, roughly 20% desert, 1–4% ice.
 
 ## Visual direction (decided)

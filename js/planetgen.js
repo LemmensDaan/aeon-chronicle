@@ -440,6 +440,9 @@ function generate(world, pack, rng) {
     for (let k = 0; k < 8; k++) { const j = NB8[i * 8 + k]; if (j >= 0 && isOcean(j)) { s += SST[j] - (0.02 + 0.88 * Math.pow(Math.max(0, Math.cos(latRad[j])), 1.35)); n++; } }
     if (n) T[i] += (s / n) * 0.7;
   }
+  /* weather does not follow the parallels: broad warm and cold tongues, plus a little local
+     variety, so the tundra and the deserts get ragged edges instead of straight ones */
+  for (let i = 0; i < N; i++) if (!isOcean(i)) T[i] += nf(noise3, i, 0.022, 3, 0.5) * 0.11 + nf(noise2, i, 0.09, 2, 0.5) * 0.03;
   for (let i = 0; i < N; i++) T[i] = clamp(T[i], 0, 1);
 
   /* winds: three-cell circulation, as a table over |latitude| (degrees) */

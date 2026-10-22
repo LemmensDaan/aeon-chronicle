@@ -747,11 +747,12 @@ function baselineTick(world) {
       for (const r of rs) {
         for (const nid of (r.neighbors || [])) {
           const n = world.regions[nid];
-          if (n && !n.barren && !n.owner && n.habitability > 0.12) open.push(n);
+          if (n && !n.barren && !n.owner && n.habitability > 0.03) open.push(n);
         }
       }
       if (open.length) {
-        const target = rng.weighted(open, function (r) { return r.habitability + 0.05; });
+        /* harsh land is settled too, only far less eagerly: a soft frontier, not a wall */
+        const target = rng.weighted(open, function (r) { return r.habitability * r.habitability + 0.004; });
         transferRegion(world, target, p);
         if (rng.chance(0.12)) foundSettlement(world, target, rng.int(1, 2));
       }

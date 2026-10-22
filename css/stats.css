@@ -1,0 +1,74 @@
+/* Aeon - the statistics sheet (js/stats.js): a parchment sheet laid over the map, in the
+   parchment look of css/parchment.css. The chart itself is drawn on a canvas. */
+
+.st-sheet {
+  position: absolute; inset: 14px; z-index: 20; display: flex; flex-direction: column; gap: 10px;
+  padding: 18px 22px 16px; overflow: auto;
+  background: var(--pp-paper) #e9d6ad; background-size: 48px 48px; image-rendering: pixelated;
+  color: var(--pp-ink); font-family: var(--ae-pixel);
+  box-shadow: 0 0 0 1px #946a3c, 6px 8px 0 rgba(0, 0, 0, .35);
+  outline: 1px solid rgba(58, 38, 20, .5); outline-offset: -8px;
+}
+.st-head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.st-title { display: flex; align-items: center; }
+.st-tabs { display: flex; gap: 4px; }
+.st-tab {
+  font: inherit; font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--pp-ink);
+  background: none; border: 0; border-radius: 0; padding: 6px 10px; cursor: pointer; position: relative;
+}
+.st-tab:hover { box-shadow: inset 0 -1px 0 rgba(58, 38, 20, .35); }
+.st-tab.on { color: var(--pp-red); box-shadow: inset 0 -2px 0 var(--pp-ribbon); }
+.st-close { margin-left: auto; font-family: var(--ae-pixel); }
+
+.st-sub { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; border-bottom: 1px dashed var(--pp-rule); padding-bottom: 6px; }
+.st-subtitle { font-size: 16px; font-weight: 600; color: var(--pp-red); }
+.st-span { color: var(--pp-soft); font-size: 13px; }
+.st-toggle {
+  margin-left: auto; font: inherit; font-size: 13px; color: var(--pp-ink); background: none; cursor: pointer;
+  border: 1px solid var(--pp-ink); border-radius: 0; padding: 3px 10px; box-shadow: 2px 2px 0 rgba(58, 38, 20, .25);
+}
+.st-toggle:hover { background: rgba(58, 38, 20, .08); }
+
+.st-body { flex: 1; min-height: 280px; display: flex; gap: 16px; }
+.st-legend { list-style: none; margin: 0; padding: 0; width: 210px; flex: none; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
+.st-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; cursor: pointer; border-left: 3px solid transparent; }
+.st-row:hover, .st-row:focus-visible { background: rgba(58, 38, 20, .07); border-left-color: var(--pp-ribbon); outline: none; }
+.st-row.st-other { cursor: default; }
+.st-rowtext { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.st-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-life { font-size: 12px; color: var(--pp-soft); }
+.st-swatch { width: 14px; height: 14px; flex: none; display: inline-block; border: 2px solid var(--pp-ink); }
+.st-hatch { background-image: repeating-linear-gradient(135deg, rgba(42, 26, 14, .38) 0 1px, transparent 1px 4px); }
+
+.st-plot { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.st-canvas { display: block; cursor: crosshair; image-rendering: pixelated; outline: 2px solid var(--pp-ink); }
+.st-axis { position: relative; height: 34px; }
+.st-tick { position: absolute; top: 0; display: flex; flex-direction: column; align-items: center; white-space: nowrap; line-height: 1.2; }
+.st-tick b { font-weight: 600; font-size: 13px; }
+.st-tick span { font-size: 12px; color: var(--pp-soft); }
+
+.st-keys { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--pp-soft); }
+.st-key { display: inline-flex; align-items: center; gap: 8px; }
+.st-yearkey { display: inline-block; width: 3px; height: 18px; background: var(--pp-ribbon); }
+
+.st-tip { max-width: 340px; }
+.st-tiplist { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.st-tiprow { display: flex; align-items: center; gap: 6px; }
+.st-tiprow.on { font-weight: 600; }
+.st-tiprow .st-swatch { width: 11px; height: 11px; }
+.st-tipname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-tipval { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.st-tipfold { padding-left: 17px; font-size: 12px; }
+
+.st-tablewrap { overflow: auto; }
+.st-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.st-table th { text-align: left; font-weight: 600; color: var(--pp-soft); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; padding: 4px 10px; border-bottom: 2px solid var(--pp-ink); }
+.st-table td { padding: 6px 10px; border-bottom: 1px dashed var(--pp-rule); vertical-align: middle; }
+.st-table td:first-child { display: flex; align-items: center; gap: 8px; }
+.st-num { font-variant-numeric: tabular-nums; text-align: right; }
+.st-link { font: inherit; color: var(--pp-ink); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; border-bottom: 1px dotted currentColor; }
+.st-link:hover { color: var(--pp-ribbon); }
+.st-note { color: var(--pp-soft); font-size: 13px; margin: 12px 0 0; }
+.st-empty { color: var(--pp-soft); }
+
+.ae-btn.on { background: var(--pp-ribbon); color: #f3e4c4; border-color: #4a0e0e; }

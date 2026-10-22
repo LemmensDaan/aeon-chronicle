@@ -35,6 +35,7 @@ renderer moved to their own project, `random-shit-go/galaxy-generator`. This rep
 | `js/planetgen.js` | planet terrain (I wrote this; see below) |
 | `js/worldgen.js` | dispatches to `planetgen`; still holds an old planet fallback |
 | `js/pixelmap.js` | **pixel map renderer** (`AEON.render`), also the 5x7 pixel font |
+| `js/stats.js`, `css/stats.css` | the statistics sheet over the map (see below) |
 | `js/chronicle/*.js` | the encyclopedia, in parts loaded in order: `base` (state, helpers, indexes, derived data, navigation), `style` (injected CSS), `timeline`, `pages` (entity pages), `atlas` (atlas + search), `story`, `graph`, `shell` (render, mount, public API). Plain scripts, not modules (file://); each part imports from `AEON._chronicle` at the top and exports at the bottom. Parts only import from earlier parts; `render()` is called upward as `C.render()`. A new shared helper must be added to its part's export line |
 | `js/ui.js` | app shell: genre picker, generation, playback/scrubbing, deep links, export |
 | `packs/*.js` | three genre packs: `historical` (86 events), `fantasy` (82), `althistory` (88) |
@@ -144,6 +145,34 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
   ruler (heirs crowned inside pack events get stamped a tick late). `AEON.rulerAt(world, pid, year)`
   answers who reigned; a death followed by a crowning within two ticks counts as continuous.
 - The labels checkbox was removed along with the map names.
+
+## Statistics sheet (`js/stats.js`, `css/stats.css`)
+
+Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchment style (Daan:
+"don't blatantly copy it"). The **Statistics** button in the header lays a parchment sheet over the map.
+
+- **Step 1 (done 2026-10-22):** tabs Population and Territory, each a 100%-stacked chart over time,
+  drawn in 2px pixel columns. Bands are the **8 greatest realms** (most people-years) plus one
+  "Other realms" band; the same 8 on both tabs. Data comes from `polity.sizeHistory` (one entry per tick).
+- Realms keep their **map colours**. Those fail chroma and some neighbour checks of the dataviz
+  validator, so bands are stacked in the order that maximises neighbour separation (OKLab, normal +
+  protan/deutan/tritan), with a 2px parchment gap; a still-close neighbour, and the second realm of
+  any repeated colour (the engine palette cycles 18), is hatched. Legend, direct labels, the hover
+  readout and a table view name everything.
+- Hover: crosshair snapped to a tick, readout of every band (and the largest realms hiding in
+  "Other"). Click the chart: sets the map's year (red line). Battle markers (crossed swords): only
+  battles a named realm fought, importance 5 then 4, spaced apart, at most 24; click opens the entry.
+- Historical worlds have ~85 realms, so its "Other realms" band is large (~70%); that is honest.
+
+**Next steps, in order, one commit each** (Daan's notes from 2026-10-22):
+2. **Ages per realm.** Each pack defines its own ages as tech thresholds (realms already have a rising
+   `tech` value); the engine records the year a realm crosses one. Mark it on the chart in our own
+   style, *not* AoE's II/III/IV shields.
+3. **Settlement growth.** Settlements as village / town / city (extra tiers welcome); record the year
+   each grows, so the sheet can count cities per realm over time.
+4. **Wonders.** New wonder built / destroyed events per pack: historical (temples, monuments), fantasy
+   (wonder-like things too), and alt-history as megaprojects that were planned or dreamed of in real
+   history, e.g. the Volkshalle, or a bridge or dam across Gibraltar.
 
 ## Known loose ends
 

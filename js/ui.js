@@ -204,6 +204,24 @@ function setPlaybackYear(y) {
   updateStatus();
   drawMap();
   if (AEON.chronicle && AEON.chronicle.setYear) AEON.chronicle.setYear(playbackYear);
+  if (AEON.stats && AEON.stats.isOpen()) AEON.stats.setYear(playbackYear);
+}
+
+/* the statistics sheet, laid over the map */
+function toggleStats(force) {
+  if (!AEON.stats) return;
+  const open = force != null ? force : !AEON.stats.isOpen();
+  if (!open) { AEON.stats.close(); if (dom.statsBtn) dom.statsBtn.classList.remove("on"); return; }
+  if (AEON.stats.isOpen()) return;
+  hideTip();
+  AEON.stats.open(dom.mapWrap, world, {
+    getYear: function () { return playbackYear; },
+    onSetYear: function (y) { setPlaybackYear(y); },
+    onShowPolity: function (id) { if (AEON.chronicle && AEON.chronicle.show) AEON.chronicle.show("polity", id); },
+    onShowEvent: function (id) { if (AEON.chronicle && AEON.chronicle.show) AEON.chronicle.show("event", id); },
+    onClose: function () { toggleStats(false); },
+  });
+  if (dom.statsBtn) dom.statsBtn.classList.add("on");
 }
 
 function togglePlay() {
@@ -244,7 +262,7 @@ function buildApp() {
   dom.app.innerHTML = "";
 
   dom.canvas = el("canvas", { class: "ae-canvas" });
-  const mapWrap = el("div", { class: "ae-mapwrap" }, dom.canvas);
+  const mapWrap = dom.mapWrap = el("div", { class: "ae-mapwrap" }, dom.canvas);
 
   dom.progressBar = el("i");
   dom.progressLabel = el("div", { class: "ae-progress-label" });
@@ -260,6 +278,7 @@ function buildApp() {
       class: "ae-mode" + (m === mapMode ? " on" : ""), text: m,
       onclick: function (e) {
         mapMode = m;
+        toggleStats(false);
         modeBar.querySelectorAll(".ae-mode").forEach(function (b) { b.classList.remove("on"); });
         e.target.classList.add("on");
         drawMap();
@@ -306,8 +325,11 @@ function buildApp() {
       el("span", { text: "seed " + world.seed })),
     dom.status,
     el("div", { class: "ae-header-actions" },
+      dom.statsBtn = el("button", { class: "ae-btn", text: "Statistics", title: "How the world's people and land were shared out",
+        onclick: function () { toggleStats(); } }),
       el("button", { class: "ae-btn", text: "Export", onclick: exportChronicle }),
       el("button", { class: "ae-btn", text: "New world", onclick: function () {
+        toggleStats(false);
         playing = false;
         cancelAnimationFrame(rafId);
         dom.app.classList.add("hidden");

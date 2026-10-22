@@ -700,6 +700,23 @@ function advanceAge(world, p, alive) {
   }
 }
 
+/* How a realm's people spread over its land: by habitability, and far more thickly where there is a
+   settlement (a capital most of all). Only the map and tooltips read region populations, so this
+   shapes no history. */
+const SETTLE_DRAW = [1, 2.5, 6, 14, 22];
+AEON.popWeight = function (region, isCapital) {
+  const s = region.settlement;
+  return Math.max(0.05, region.habitability) * SETTLE_DRAW[s ? Math.min(4, s.tier) : 0] * (isCapital ? 3 : 1);
+};
+/* a polity's population in a year, from its size history (null before it was founded) */
+AEON.populationAt = function (p, year) {
+  const h = p.sizeHistory;
+  if (!h || !h.length || year < h[0].year) return null;
+  let lo = 0, hi = h.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (h[mid].year <= year) lo = mid; else hi = mid - 1; }
+  return h[lo].pop;
+};
+
 function baselineTick(world) {
   const rng = world.rng;
   const alive = living(world);
@@ -717,10 +734,10 @@ function baselineTick(world) {
 
     /* distribute population across regions for the map */
     const rs = regionsOf(world, p);
-    let totalHab = 0;
-    for (const r of rs) totalHab += Math.max(0.05, r.habitability);
+    let totalW = 0;
+    for (const r of rs) totalW += AEON.popWeight(r, r.id === p.capital);
     for (const r of rs) {
-      r.population = Math.round(p.population * (Math.max(0.05, r.habitability) / (totalHab || 1)));
+      r.population = Math.round(p.population * (AEON.popWeight(r, r.id === p.capital) / (totalW || 1)));
     }
 
     /* natural expansion into adjacent unclaimed ground */

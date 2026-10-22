@@ -240,8 +240,31 @@ function loop() {
 
 /* --------------------------------------------------------------- map --- */
 
+/* the legend for a data mode: its name, the ramp, and what the two ends mean */
+const LEGENDS = {
+  population: ["People", "few", "many"],
+  habitability: ["Habitability", "harsh", "kind"],
+  elevation: ["Elevation", "coast", "peaks"],
+};
+function updateLegend() {
+  const L = dom.legend, spec = LEGENDS[mapMode], ramp = AEON.mapRamps && AEON.mapRamps[mapMode];
+  if (!L) return;
+  if (!spec || !ramp) { L.classList.add("hidden"); return; }
+  if (L._mode === mapMode) { L.classList.remove("hidden"); return; }
+  L._mode = mapMode;
+  L.textContent = "";
+  L.appendChild(el("b", { text: spec[0] }));
+  const bar = el("span", { class: "ae-legend-ramp" });
+  for (const c of ramp) { const i = el("i"); i.style.background = c; bar.appendChild(i); }
+  L.appendChild(el("span", { text: spec[1] }));
+  L.appendChild(bar);
+  L.appendChild(el("span", { text: spec[2] }));
+  L.classList.remove("hidden");
+}
+
 function drawMap() {
   if (!world || !AEON.render) return;
+  updateLegend();
   clampView();
   try {
     AEON.render.draw(dom.canvas, shown(), {
@@ -298,6 +321,9 @@ function buildApp() {
       drawMap();
     } });
   modeBar.appendChild(roadsBtn);
+
+  dom.legend = el("div", { class: "ae-legend hidden" });
+  mapWrap.appendChild(dom.legend);
 
   dom.playBtn = el("button", { class: "ae-btn round", text: "▶", onclick: togglePlay });
   dom.scrub = el("input", { class: "ae-scrub", type: "range",

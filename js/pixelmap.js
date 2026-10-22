@@ -29,11 +29,14 @@ const P = {
   snow: ["#c3cddb", "#e3eaf2", "#ffffff"],
 };
 /* stepped ramps for the data modes, in the parchment-and-ink family */
+/* Each data mode is one hue, light to dark, so more always reads as darker. Elevation keeps its
+   land-colour ramp. */
 const RAMPS = {
-  population:   ["#ead9b0", "#dcb98a", "#cc9468", "#b5664a", "#93392d", "#6a1a17"],
+  population:   ["#efe2bf", "#e2c493", "#d4a06e", "#c27a52", "#a5523d", "#80302a", "#581818"],
   elevation:    ["#3f7a3a", "#7d9b4c", "#b9ab68", "#a0805a", "#7a6656", "#e8e4dc"],
-  habitability: ["#8a6a48", "#ad8b58", "#c9b26a", "#9db35a", "#6c9c48", "#3f7a3a"],
+  habitability: ["#efe6c8", "#dfe0a8", "#bfd38a", "#93be6e", "#64a258", "#3e8044", "#245c32"],
 };
+AEON.mapRamps = RAMPS;
 const INK = "#2a1a0e", DESK = "#2a1d12";
 const RIBBON = "#8e1d1d", CURSOR = "#fff8e1";   /* selection and hover brackets */
 
@@ -243,14 +246,31 @@ function compose(c, w, mode, roads) {
 
   if (mode === "population" || mode === "elevation" || mode === "habitability") {
     const ramp = RAMPS[mode].map(rgb), n = ramp.length;
-    let maxPop = 1;
-    if (mode === "population") for (const r of R) if (r.population > maxPop) maxPop = r.population;
-    const lm = Math.log(1 + maxPop);
+    /* population in the shown year: each realm's people (from its history) spread over the land it
+       held then by AEON.popWeight, on a log scale stretched between the 5th and 99th percentile
+       of the settled land, so towns and capitals stand out from the countryside */
+    let popOf = null, lo = 0, hi = 1;
+    if (mode === "population") {
+      popOf = new Float64Array(R.length);
+      const sum = {}, cap = {};
+      for (const id in w.polities) { const p = w.polities[id]; if (p.ended == null) cap[p.capital] = true; }
+      for (const r of R) if (r.owner != null) sum[r.owner] = (sum[r.owner] || 0) + AEON.popWeight(r, !!cap[r.id]);
+      const logs = [];
+      for (const r of R) {
+        if (r.owner == null) continue;
+        const p = w.polities[r.owner], total = p ? (AEON.populationAt(p, w.year) || p.population || 0) : 0;
+        popOf[r.id] = total * AEON.popWeight(r, !!cap[r.id]) / (sum[r.owner] || 1);
+        if (popOf[r.id] > 0) logs.push(Math.log(popOf[r.id]));
+      }
+      logs.sort(function (a, b) { return a - b; });
+      if (logs.length) { lo = logs[Math.floor(logs.length * 0.05)]; hi = logs[Math.floor((logs.length - 1) * 0.99)]; }
+      if (hi <= lo) hi = lo + 1;
+    }
     for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
       const i = y * VW + x;
       if (!land[i]) continue;
       const r = R[cellOf[i]];
-      const t = mode === "population" ? Math.log(1 + (r.population || 0)) / lm
+      const t = mode === "population" ? (popOf[r.id] > 0 ? 0.08 + 0.92 * (Math.log(popOf[r.id]) - lo) / (hi - lo) : 0)
               : mode === "elevation" ? (r.elevation - 0.5) / 0.5 : (r.habitability || 0);
       const k = Math.max(0, Math.min(n - 1, Math.floor(Math.max(0, Math.min(1, t)) * (n - 1) + bayer(x, y))));
       /* keep a whisper of the terrain shading underneath */
@@ -261,7 +281,7 @@ function compose(c, w, mode, roads) {
 
   /* realms: a dithered wash of the realm colour and a two-pixel border where owners meet.
      Water never counts as a different owner, so coasts stay clean. */
-  const tint = mode === "political", borders = mode !== "elevation";
+  const tint = mode === "political", borders = mode === "political" || mode === "population" || mode === "habitability";
   if (tint || borders) {
     const own = new Array(R.length);
     for (let k = 0; k < R.length; k++) own[k] = R[k].owner;

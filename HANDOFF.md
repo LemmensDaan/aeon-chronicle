@@ -217,6 +217,18 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
   cached as one layer at low zoom. It used to be painted into the terrain and grew with the land.
 - **One wonder per city or capital** (`ctx.wonderSite`); this changed historical histories too.
 
+## Map modes (2026-10-22)
+
+- **Biome**: terrain only, no realms. **Political**: realm wash and borders. **Population** and
+  **Habitability**: their data with thin borders. **Elevation**: land colours, no borders (Daan wants
+  more variation there, especially in the sea, when the world gets more realistic).
+- Population is spread over a realm's land by `AEON.popWeight` (habitability, times a lot more for
+  a settlement, most for the capital), in the engine for the present and in `compose` for any past
+  year (from `polity.sizeHistory` via `AEON.populationAt`). Log scale stretched between the 5th
+  and 99th percentile. Nothing in the simulation reads region populations.
+- Data modes use one hue light to dark (`RAMPS`, exposed as `AEON.mapRamps`) and show a legend
+  plaque in the map's lower left corner.
+
 ## Known loose ends
 
 - The map doesn't refit when the chronicle widens for the graph (its zoom snaps to whole pixel steps,

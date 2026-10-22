@@ -206,9 +206,16 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
   map fills up without markers swelling as fast as the land. Cities show from the normal zoom.
 - **Roads** (`drawRoads`): per realm, a tree grown from the capital by the shortest overland links,
   plus the capital's roads to its three nearest settlements; never across water, at most 14 cells.
-  Drawn into the map at map resolution, so they zoom like rivers and follow the year.
-- The sprites are placeholders: `samples/settlements.html` shows three alternative sets
-  (Rooftops, Cartographer, Walls and towers) and three road styles for Daan to choose from.
+  Drawn into the map at map resolution, so they zoom like rivers and follow the year. Style by the
+  smaller end: dotted where a village is involved, solid between towns and cities, paved between
+  cities and capitals. Only shown with the **roads** toggle on the mode strip (off by default:
+  Daan found them busy).
+- **Sprites:** the Rooftops set from `samples/settlements.html` (Daan's pick), with the city made
+  smaller than the capital. Keep the sample page: Daan also likes the Walls and towers set, and it
+  holds eight road styles.
+- **Scenery** (peaks, trees) is drawn in screen space at the settlements' scale (`drawScenery`),
+  cached as one layer at low zoom. It used to be painted into the terrain and grew with the land.
+- **One wonder per city or capital** (`ctx.wonderSite`); this changed historical histories too.
 
 ## Known loose ends
 

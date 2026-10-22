@@ -290,6 +290,20 @@ function makeCtx(world, subject) {
     newFigure: function (polity, role) { return newFigure(world, polity, role); },
     kill: function (fig, epitaph) { return killFigure(world, fig, epitaph); },
     newArtifact: function (o) { return newArtifact(world, o); },
+    /* where a polity can raise a wonder: each city or capital holds at most one. Its capital if
+       that has a settlement and no wonder standing, else its largest city without one, else null. */
+    wonderSite: function (p) {
+      if (!p) return null;
+      const free = function (rid) { return AEON.wondersAt(world, rid, world.year).length === 0; };
+      const cap = p.capital != null ? world.regions[p.capital] : null;
+      if (cap && cap.settlement && free(cap.id)) return cap;
+      let best = null;
+      for (const rid of p.regions) {
+        const r = world.regions[rid];
+        if (r.settlement && r.settlement.tier >= 3 && free(rid) && (!best || r.settlement.tier > best.settlement.tier)) best = r;
+      }
+      return best;
+    },
     transfer: function (region, to) { return transferRegion(world, region, to); },
     foundSettlement: function (region, tier) { return foundSettlement(world, region, tier); },
     endPolity: function (p, fate) { return endPolity(world, p, fate); },

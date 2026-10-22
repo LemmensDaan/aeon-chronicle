@@ -96,11 +96,17 @@ const PEAK = sprite(["....k....", "...kwk...", "..kwwlk..", "..kwlldk.", ".klldd
 const PINE = sprite(["..k..", ".kgk.", ".kgk.", "kgggk", ".kbk."], { k: "#14301f", g: "#2f6e45", b: "#5a3d22" });
 const TREE = sprite([".kkk.", "kgglk", "kgggk", ".kbk."], { k: "#13361b", g: "#3a8f42", l: "#6cc160", b: "#5a3d22" });
 const PALM = sprite(["kg.gk", ".ggg.", "..b..", "..b.."], { k: "#14451f", g: "#2fa055", b: "#7a5a2e" });
-/* the four settlement types; the capital is recoloured to its realm (r, d) when drawn */
-const KEEP = sprite(["k.k.k.k", "kwkwkwk", "kwwwwwk", "kwrrrwk", "kwrdrwk", "kkkkkkk"], { k: INK, w: "#efe6d6", r: "#999", d: INK });
-const CITY = sprite([".kkk.", "kwwwk", "kwrwk", "kkkkk"], { k: INK, w: "#efe6d6", r: "#999" });
-const TOWN = sprite([".k.", "kwk", "kkk"], { k: INK, w: "#efe6d6" });
-const VILLAGE = sprite(["kk", "kk"], { k: INK });
+/* the four settlement types, the "Rooftops" set chosen from samples/settlements.html: a cottage,
+   a house with a spire, a small walled city, and the capital's castle, which flies its realm's
+   colours (f, F are replaced when drawn) and stands clearly taller than a city */
+const ROOF = { k: INK, w: "#efe6d6", r: "#b5452e", g: "#b7b1a4", b: "#7a4a22", f: "#3a6ea5", F: "#244a73" };
+const VILLAGE = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."], ROOF);
+const TOWN = sprite([".....k.", "....kgk", "..k.kgk", ".krkkwk", "krrrkwk", "kwwwkwk", "kwkwkwk", "kkkkkkk"], ROOF);
+const CITY = sprite(["k.......k", "kk.krk.kk", "kgkrrrkgk", "kgkwwwkgk", "kgggggggk", "kggkbkggk", "kkkkkkkkk"], ROOF);
+const KEEP = sprite(["......kff....", "......kfff...", "......kff....", "......k......", "..k.k.k.k.k..", "..kgkgkgkgk..",
+                     "..kgggggggk..", "k.kgggggggk.k", "kgkgwwgwwgkgk", "kgkgggkgggkgk", "kgkggkbkggkgk", "kkkkkkkkkkkkk"], ROOF);
+/* a realm colour, darkened for the shaded side of its banner */
+function darker(hex) { const c = rgb(hex || "#888888"); return "rgb(" + Math.round(c[0] * 0.62) + "," + Math.round(c[1] * 0.62) + "," + Math.round(c[2] * 0.62) + ")"; }
 /* a wonder: a gilded obelisk */
 const WONDER = sprite(["...k...", "..kyk..", "..kwk..", "..kwk..", ".kwwwk.", ".kwwwk.", "kkkkkkk"], { k: INK, y: "#e0b84f", w: "#efe6d6" });
 
@@ -208,27 +214,27 @@ function buildTerrain(world) {
     const k = cellRand(r.id, 1);
     const jx = Math.floor(cellRand(r.id, 2) * 3) - 1, jy = Math.floor(cellRand(r.id, 3) * 3) - 1;
     const x = r.x * PPC + jx, y = r.y * PPC + jy;
-    if (r.biome === "mountain" && k < 0.4) props.push([PEAK, x - 3, y - 3, y]);
-    else if ((r.biome === "forest" || r.biome === "jungle") && k < 0.55) props.push([r.biome === "jungle" ? PALM : TREE, x, y, y]);
-    else if (r.biome === "taiga" && k < 0.5) props.push([PINE, x, y - 1, y]);
+    /* [sprite, cell x, cell y, sort key, jitter x, jitter y] */
+    if (r.biome === "mountain" && k < 0.4) props.push([PEAK, r.x, r.y, y, jx, jy]);
+    else if ((r.biome === "forest" || r.biome === "jungle") && k < 0.55) props.push([r.biome === "jungle" ? PALM : TREE, r.x, r.y, y, jx, jy]);
+    else if (r.biome === "taiga" && k < 0.5) props.push([PINE, r.x, r.y, y, jx, jy]);
     /* the odd lone tree out on open land */
-    else if ((r.biome === "grassland" || r.biome === "savanna") && k < 0.05) props.push([TREE, x, y, y]);
+    else if ((r.biome === "grassland" || r.biome === "savanna") && k < 0.05) props.push([TREE, r.x, r.y, y, jx, jy]);
   }
   props.sort(function (a, b) { return a[3] - b[3]; });
-  for (const p of props) blit(g, p[0], p[1], p[2], 1);
 
   const frame = document.createElement("canvas");
   frame.width = VW; frame.height = VH;
   return {
-    W: W, H: H, VW: VW, VH: VH, land: land, cellOf: cellOf, terrain: terrain,
+    W: W, H: H, VW: VW, VH: VH, land: land, cellOf: cellOf, terrain: terrain, props: props, propLayer: null,
     terrainPx: g.getImageData(0, 0, VW, VH).data,
     frame: frame, fctx: frame.getContext("2d"), fimg: frame.getContext("2d").createImageData(VW, VH), key: null,
   };
 }
 
 /* ------------------------------------------------------------ the frame for a year and mode */
-function compose(c, w, mode) {
-  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0);
+function compose(c, w, mode, roads) {
+  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0);
   if (c.key === key) return c.frame;
   c.key = key;
   const VW = c.VW, VH = c.VH, R = w.regions, land = c.land, cellOf = c.cellOf;
@@ -283,7 +289,7 @@ function compose(c, w, mode) {
       }
     }
   }
-  drawRoads(c, w, d);
+  if (roads) drawRoads(c, w, d);
   c.fctx.putImageData(c.fimg, 0, 0);
   return c.frame;
 }
@@ -293,7 +299,10 @@ function compose(c, w, mode) {
    neighbours, so roads fan out from the seat. A road never crosses water and is at most
    ROAD_MAX cells long. Drawn into the map at map resolution as a dotted track with a slight
    bend, so it zooms with the land like the rivers do. */
-const ROAD = [96, 68, 38], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
+/* The style follows what a road joins, by the smaller end: a dotted track wherever a village is
+   involved, a solid track between towns and cities, a pale paved road between cities and
+   capitals. */
+const ROAD = [96, 68, 38], PAVED = [205, 184, 143], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
 function drawRoads(c, w, d) {
   const R = w.regions, W = w.width, VW = c.VW, VH = c.VH, land = c.land, by = {};
   for (let k = 0; k < R.length; k++) {
@@ -310,19 +319,31 @@ function drawRoads(c, w, d) {
     }
     return true;
   };
-  const put = function (x, y, k) {
+  /* a settlement's rank: 1 village, 2 town, 3 city, 4 the capital */
+  const rank = function (k) { const p = w.polities[R[k].owner]; return p && p.capital === k ? 4 : Math.min(3, R[k].settlement.tier); };
+  let style = 1;
+  const dot = function (x, y, col) {
     x = ((Math.round(x) % VW) + VW) % VW; y = Math.round(y);
     if (y < 0 || y >= VH) return;
     const i = y * VW + x;
-    if (!land[i] || k % 3 === 2) return;                       /* a dotted track, on land only */
-    d[i * 4] += (ROAD[0] - d[i * 4]) * 0.85; d[i * 4 + 1] += (ROAD[1] - d[i * 4 + 1]) * 0.85; d[i * 4 + 2] += (ROAD[2] - d[i * 4 + 2]) * 0.85;
+    if (!land[i]) return;                                      /* on land only */
+    d[i * 4] += (col[0] - d[i * 4]) * 0.85; d[i * 4 + 1] += (col[1] - d[i * 4 + 1]) * 0.85; d[i * 4 + 2] += (col[2] - d[i * 4 + 2]) * 0.85;
+  };
+  const put = function (x, y, k, horizontal) {
+    if (style === 1) { if (k % 3 !== 2) dot(x, y, ROAD); return; }
+    if (style === 2) { dot(x, y, ROAD); return; }
+    /* paved: two pixels wide, across the direction of travel */
+    dot(x, y, PAVED);
+    if (horizontal) dot(x, y + 1, PAVED); else dot(x + 1, y, PAVED);
   };
   const line = function (x0, y0, x1, y1, k0) {
     const n = Math.max(1, Math.round(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))));
-    for (let s = 0; s <= n; s++) put(x0 + (x1 - x0) * s / n, y0 + (y1 - y0) * s / n, k0 + s);
+    const horizontal = Math.abs(x1 - x0) >= Math.abs(y1 - y0);
+    for (let s = 0; s <= n; s++) put(x0 + (x1 - x0) * s / n, y0 + (y1 - y0) * s / n, k0 + s, horizontal);
     return k0 + n;
   };
   const road = function (a, b) {
+    style = Math.min(rank(a), rank(b));
     const ax = R[a].x * PPC + PPC / 2, ay = R[a].y * PPC + PPC / 2;
     const bx = ax + dxw(R[a].x, R[b].x) * PPC, by2 = R[b].y * PPC + PPC / 2;
     const len = Math.hypot(bx - ax, by2 - ay) || 1, bend = (cellRand(a * 7919 + b, 11) - 0.5) * 5;
@@ -347,6 +368,36 @@ function drawRoads(c, w, d) {
       .forEach(function (n) {
         if (!linked[key(cap, n)] && dist2(cap, n) <= ROAD_MAX * ROAD_MAX && overland(cap, n)) { linked[key(cap, n)] = true; road(cap, n); }
       });
+  }
+}
+
+/* ------------------------------------------------------------ scenery */
+/* Peaks and woods, drawn in screen space at the settlements' scale (u device pixels per sprite
+   pixel), so they grow with the zoom as gently as the settlements do instead of with the land.
+   At low zoom they are cached as one layer the size of the map; zoomed in, only the ones in view
+   are drawn. */
+function drawScenery(ctx, c, v, u, X0) {
+  const cell = PPC * v.P, cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const at = function (p) {
+    return [Math.round((p[1] + 0.5) * cell + p[4] * u * 1.5 - p[0].w * u / 2), Math.round((p[2] + 0.5) * cell + p[5] * u * 1.5 - p[0].h * u + u * 2)];
+  };
+  const mw = c.VW * v.P, mh = c.VH * v.P;
+  if (mw <= 4096) {
+    const key = u + "|" + v.P;
+    if (!c.propLayer || c.propLayer.key !== key) {
+      const layer = document.createElement("canvas");
+      layer.width = mw; layer.height = mh;
+      const g = layer.getContext("2d");
+      for (const p of c.props) { const q = at(p); blit(g, p[0], q[0], q[1], u); }
+      c.propLayer = { key: key, canvas: layer };
+    }
+    ctx.drawImage(c.propLayer.canvas, X0, v.Y0);
+    return;
+  }
+  for (const p of c.props) {
+    const q = at(p), x = X0 + q[0], y = v.Y0 + q[1];
+    if (x < -p[0].w * u || y < -p[0].h * u || x > cw || y > ch) continue;
+    blit(ctx, p[0], x, y, u);
   }
 }
 
@@ -386,6 +437,7 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   /* everything is placed once on the first tile and drawn on each visible copy */
   const drawn = [];
   const sx = function (gx) { return tiles[0] + gx * cell; }, sy = function (gy) { return v.Y0 + gy * cell; };
+  drawScenery(ctx, c, v, u, tiles[0]);
 
   /* settlements: capitals always; towns and villages appear as the map is zoomed in */
   const capitals = {};
@@ -404,7 +456,8 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
     const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
     if (!st.cap && !free(b)) continue;
     boxes.push(b);
-    drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, st.cap ? { r: st.cap.color, d: st.cap.color } : null); });
+    const banner = st.cap ? { f: st.cap.color, F: darker(st.cap.color) } : null;
+    drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, banner); });
   }
 
   /* wonders standing in the shown year: a small monument beside the cell, from 2x zoom on */
@@ -459,7 +512,7 @@ function draw(canvas, world, opts) {
   ctx.imageSmoothingEnabled = false;
   canvas._aeonView = v;
 
-  const c = getCache(world), frame = compose(c, world, opts.mode || "political");
+  const c = getCache(world), frame = compose(c, world, opts.mode || "political", !!opts.showRoads);
   ctx.fillStyle = DESK; ctx.fillRect(0, 0, pw, ph);
   const mw = c.VW * v.P, mh = c.VH * v.P;
   const X0 = Math.round(v.ox * v.dpr);

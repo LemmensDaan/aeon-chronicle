@@ -23,7 +23,7 @@
 <h1>Settlement sprites</h1>
 <p>Four types on the map: village, town, city and capital (a realm's seat, in its realm's colour).
 Each set is shown on grassland, desert and forest, at three zoom levels (the map now grows sprites
-by the square root of the zoom). Below them, three styles of road.</p>
+by the square root of the zoom). Below them, eight styles of road.</p>
 <div id="sets"></div>
 </main>
 <script>
@@ -43,10 +43,10 @@ const SETS = [
     S([".kkk.", "kwwwk", "kwgwk", "kkkkk"], P),
     S(["k.k.k.k", "kwkwkwk", "kwwwwwk", "kwfffwk", "kwfFfwk", "kkkkkkk"], P),
   ] },
-  { name: "A · Rooftops", note: "Little buildings with red roofs; the capital is a castle flying its realm's banner.", sprites: [
+  { name: "A · Rooftops (chosen)", note: "Little buildings with red roofs; the capital is a castle flying its realm's banner. On the map since 2026-10-22, with the city made smaller than the capital.", sprites: [
     S(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."], P),
-    S(["......k....", ".....kgk...", "..k..kgk...", ".krk.kwk.k.", "krrrkkwkkrk", "kwwwkkwkkwk", "kwkwkkwkkwk", "kkkkkkkkkkk"], P),
-    S(["k.k.......k.k", "kgk.k.k.k.kgk", "kgkkgkgkgkkgk", "kgggggggggggk", "kgrrkgggkrrgk", "kgwwkgggkwwgk", "kggggkkkggggk", "kgggkbbbkgggk", "kgggkbbbkgggk", "kkkkkkkkkkkkk"], P),
+    S([".....k.", "....kgk", "..k.kgk", ".krkkwk", "krrrkwk", "kwwwkwk", "kwkwkwk", "kkkkkkk"], P),
+    S(["k.......k", "kk.krk.kk", "kgkrrrkgk", "kgkwwwkgk", "kgggggggk", "kggkbkggk", "kkkkkkkkk"], P),
     S(["......kff....", "......kfff...", "......kff....", "......k......", "..k.k.k.k.k..", "..kgkgkgkgk..", "..kgggggggk..", "k.kgggggggk.k", "kgkgwwgwwgkgk", "kgkgggkgggkgk", "kgkggkbkggkgk", "kkkkkkkkkkkkk"], P),
   ] },
   { name: "B · Cartographer", note: "Old-atlas ink symbols, matching the parchment: ring, ringed dot, walled square, and a star in the realm's colour for a capital.", sprites: [
@@ -80,6 +80,7 @@ function ground(g, x, y, w, h, a, b, px) {
 }
 
 const host = document.getElementById("sets");
+(document.fonts ? document.fonts.load("14px \"Pixelify Sans\"") : Promise.resolve()).then(function () {
 for (const set of SETS) {
   const box = document.createElement("section");
   box.className = "set";
@@ -110,35 +111,65 @@ for (const set of SETS) {
   host.appendChild(box);
 }
 
-/* roads: three styles, between a capital and three villages, at map resolution x3 */
+/* roads: eight styles at map resolution x3, then the mix the map uses (by what a road joins) */
+const RSTYLES = [
+  ["1 · Dotted track", "what the map draws where a village is involved"],
+  ["2 · Solid track", "between towns and cities"],
+  ["3 · Paved road", "between cities and capitals"],
+  ["4 · Cart ruts", "two thin wheel tracks"],
+  ["5 · Cobbled", "paved, in two alternating stones"],
+  ["6 · Causeway", "a raised road with dark edges and a pale crown"],
+  ["7 · Ink line", "a red dashed line, as an old map draws a route"],
+  ["8 · Royal road", "paved, with a milestone every few cells"],
+];
+const RW = 260, RH = 150, PX = 3;
+const pts = [[40, 40], [130, 75], [230, 35], [190, 125], [60, 120]];
+const links = [[1, 0], [1, 2], [1, 3], [3, 4], [0, 4]];
+function road(g, x0, y0, a, b, style) {
+  const n = Math.round(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) / PX), hor = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]);
+  const px = function (x, y, col) { g.fillStyle = col; g.fillRect(x, y, PX, PX); };
+  for (let s = 0; s <= n; s++) {
+    const x = Math.round((a[0] + (b[0] - a[0]) * s / n) / PX) * PX + x0, y = Math.round((a[1] + (b[1] - a[1]) * s / n) / PX) * PX + y0;
+    const ox = hor ? 0 : PX, oy = hor ? PX : 0;
+    if (style === 0) { if (s % 3 !== 2) px(x, y, "#604426"); }
+    else if (style === 1) px(x, y, "#604426");
+    else if (style === 2) { px(x, y, "#cdb88f"); px(x + ox, y + oy, "#cdb88f"); }
+    else if (style === 3) { px(x - ox, y - oy, "#6e5232"); px(x + ox, y + oy, "#6e5232"); }
+    else if (style === 4) { const c2 = s % 2 ? "#b7a37c" : "#8f7c5a"; px(x, y, c2); px(x + ox, y + oy, s % 2 ? "#8f7c5a" : "#b7a37c"); }
+    else if (style === 5) { px(x - ox, y - oy, "#4a3a28"); px(x, y, "#d9c9a3"); px(x + ox, y + oy, "#4a3a28"); }
+    else if (style === 6) { if (s % 4 < 2) px(x, y, "#8e1d1d"); }
+    else { px(x, y, "#cdb88f"); px(x + ox, y + oy, "#cdb88f"); if (s % 9 === 4) px(x - ox, y - oy, "#efe6d6"); }
+  }
+}
+const A = SETS[1].sprites;
 const roads = document.createElement("section");
 roads.className = "set";
-roads.innerHTML = "<h2>Roads</h2><p>1 · dotted track (what the map draws now) · 2 · solid track · 3 · paved road with a light edge</p>";
+roads.innerHTML = "<h2>Roads</h2><p>Eight styles, between a capital and its neighbours. Underneath, the mix the map now uses: the style follows the smaller end of each road.</p>";
 const rc = document.createElement("canvas");
-const RW = 380, RH = 200, PX = 3;
-rc.width = RW * 3 + 40; rc.height = RH;
+const COLS = 4;
+rc.width = COLS * (RW + 16); rc.height = Math.ceil(RSTYLES.length / COLS) * (RH + 34) + RH + 40;
 const rg = rc.getContext("2d");
 rg.imageSmoothingEnabled = false;
-const pts = [[60, 60], [160, 100], [300, 50], [250, 160], [90, 160]];
-const links = [[1, 0], [1, 2], [1, 3], [3, 4], [0, 4]];
-[0, 1, 2].forEach(function (style, k) {
-  const x0 = k * (RW + 20);
-  ground(rg, x0, 0, RW, RH, "#8fb04a", "#7a9a3c", PX);
-  links.forEach(function (l, li) {
-    const a = pts[l[0]], b = pts[l[1]], n = Math.round(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) / PX);
-    for (let s = 0; s <= n; s++) {
-      const x = Math.round((a[0] + (b[0] - a[0]) * s / n) / PX) * PX + x0, y = Math.round((a[1] + (b[1] - a[1]) * s / n) / PX) * PX;
-      if (style === 0 && s % 3 === 2) continue;
-      if (style === 2) { rg.fillStyle = "#c9b48a"; rg.fillRect(x - PX, y - PX, PX * 3, PX * 3); }
-      rg.fillStyle = style === 2 ? "#8c7a5c" : "#604426";
-      rg.fillRect(x, y, PX, PX);
-    }
-  });
-  const A = SETS[1].sprites;
-  pts.forEach(function (p, i) { const sp = i === 1 ? A[3] : A[0]; blit(rg, sp, x0 + p[0] - sp.w, p[1] - sp.h, 2); });
+rg.font = "12px \"Pixelify Sans\", Georgia, serif";
+RSTYLES.forEach(function (st, k) {
+  const x0 = (k % COLS) * (RW + 16), y0 = Math.floor(k / COLS) * (RH + 34);
+  ground(rg, x0, y0, RW, RH, "#8fb04a", "#7a9a3c", PX);
+  links.forEach(function (l) { road(rg, x0, y0, pts[l[0]], pts[l[1]], k); });
+  pts.forEach(function (p, i) { const sp = i === 1 ? A[3] : A[0]; blit(rg, sp, x0 + p[0] - sp.w, y0 + p[1] - sp.h, 2); });
+  rg.fillStyle = INK; rg.fillText(st[0], x0, y0 + RH + 15);
+  rg.fillStyle = "#6b4a2a"; rg.fillText(st[1], x0, y0 + RH + 30);
 });
+/* the mix: capital (centre), two cities, a town, two villages */
+const my = Math.ceil(RSTYLES.length / COLS) * (RH + 34), mx = 0, MW = COLS * (RW + 16) - 16;
+ground(rg, mx, my, MW, RH, "#d9b878", "#c7a463", PX);
+const mixPts = [[MW / 2, 70, 3], [MW / 2 - 260, 50, 2], [MW / 2 + 250, 60, 2], [MW / 2 - 120, 125, 1], [MW / 2 - 420, 110, 0], [MW / 2 + 430, 120, 0]];
+const mixLinks = [[0, 1, 2], [0, 2, 2], [1, 3, 1], [3, 4, 0], [2, 5, 0]];
+mixLinks.forEach(function (l) { road(rg, mx, my, mixPts[l[0]], mixPts[l[1]], l[2]); });
+mixPts.forEach(function (p) { const sp = A[p[2]]; blit(rg, sp, mx + p[0] - sp.w, my + p[1] - sp.h, 2); });
+rg.fillStyle = INK; rg.fillText("The mix: capital to cities paved, city to town solid, town and city to villages dotted", mx, my + RH + 18);
 roads.appendChild(rc);
 host.appendChild(roads);
+});
 </script>
 </body>
 </html>

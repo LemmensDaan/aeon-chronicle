@@ -2285,10 +2285,10 @@ const WONDER_EVENTS = [
     id: "great-work-raised", scope: "polity", weight: 2.5, cooldown: 160,
     test: function (c) {
       const p = c.polity;
-      return p.wealth > 0.45 && p.prestige > 0.12 && p.regions.length >= 3 && p.capital != null && !!c.world.regions[p.capital].settlement;
+      return p.wealth > 0.45 && p.prestige > 0.12 && p.regions.length >= 3 && !!c.wonderSite(p);
     },
     run: function (c) {
-      const w = c.world, p = c.polity, r = w.regions[p.capital], ruler = rulerOf(w, p);
+      const w = c.world, p = c.polity, r = c.wonderSite(p), ruler = rulerOf(w, p);
       const tpl = c.pick(GREAT_WORKS[Math.max(0, Math.min(GREAT_WORKS.length - 1, p.age || 0))]);
       const name = tpl[0].replace("{P}", sn(c, r, p)).replace("{A}", p.adjective || pn(p));
       const place = sn(c, r, p), at = name.indexOf(place) >= 0 ? "" : " at " + place;

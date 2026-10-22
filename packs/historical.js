@@ -972,9 +972,9 @@ const EVENTS = [
 /* ------------------------------------------------------------ culture --- */
 
 { id: "ruler-builds-wonder", scope: "figure", weight: 1.5, cooldown: 160,
-  test: function (ctx) { const p = P(ctx); return !!p && p.ruler === ctx.figure.id && p.wealth > 0.5 && p.tech > 0.15 && due(ctx, "wonder", p, 140); },
+  test: function (ctx) { const p = P(ctx); return !!p && p.ruler === ctx.figure.id && p.wealth > 0.5 && p.tech > 0.15 && due(ctx, "wonder", p, 140) && !!ctx.wonderSite(p); },
   run: function (ctx) {
-    const p = P(ctx), f = ctx.figure, r = ctx.world.regions[p.capital];
+    const p = P(ctx), f = ctx.figure, r = ctx.wonderSite(p);
     mark(ctx, "wonder", p);
     const tpl = ctx.pick(WONDERS[Math.min(eIdx(ctx), 5)]);
     const art = ctx.newArtifact({ name: fill(tpl[0], { A: p.adjective, P: locName(r) }), kind: "wonder", region: r, creator: f, power: ctx.range(0.3, 0.8), legend: "A " + tpl[1] + " raised in the reign of " + who(f) + ", at a cost that the treasury recorded and the people remembered." });
@@ -1065,11 +1065,11 @@ const EVENTS = [
 { id: "great-library", scope: "polity", weight: 1.5, minEra: "iron", cooldown: 400,
   test: function (ctx) {
     const p = ctx.polity;
-    if (!(p.tech > 0.28 && p.wealth > 0.4 && p.prestige > 0.2)) return false;
+    if (!(p.tech > 0.28 && p.wealth > 0.4 && p.prestige > 0.2) || !ctx.wonderSite(p)) return false;
     return !Object.keys(ctx.world.artifacts).some(function (k) { const a = ctx.world.artifacts[k]; return a.kind === "library" && !a.destroyed && ctx.world.regions[a.location] && ctx.world.regions[a.location].owner === p.id; });
   },
   run: function (ctx) {
-    const p = ctx.polity, r = ctx.world.regions[p.capital];
+    const p = ctx.polity, r = ctx.wonderSite(p);
     const art = ctx.newArtifact({ name: "The Great Library of " + locName(r), kind: "library", region: r, power: ctx.range(0.5, 0.9), legend: "A collection of " + approx(ctx.int(8000, 90000)) + " scrolls, assembled by decree and by theft." });
     p.tech = clamp(p.tech + 0.04, 0, 1); adjustT(p, "curiosity", 0.05); p.prestige = clamp(p.prestige + 0.08, 0, 1);
     return res(4, ["library", "artifact", "culture"], A(ctx, p, art), r.id,

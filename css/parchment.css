@@ -78,6 +78,14 @@ html, body { font-family: var(--ae-serif); }
 .ae-mode .pp-label { margin: 2px 0; }
 .ae-mode:hover { background: none; color: var(--pp-ink); box-shadow: inset 0 -1px 0 rgba(58, 38, 20, .35); }
 .ae-mode.on { color: var(--pp-red); border: 0; }
+/* an overlay toggle on the right of the strip: a small inked box, filled when on */
+.ae-overlay {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; cursor: pointer;
+  color: var(--pp-soft); font-family: var(--ae-pixel); font-size: 14px; text-transform: uppercase; letter-spacing: .06em; padding: 5px 4px;
+}
+.ae-overlay::before { content: ""; width: 9px; height: 9px; border: 2px solid var(--pp-ink); background: transparent; }
+.ae-overlay.on { color: var(--pp-ink); }
+.ae-overlay.on::before { background: var(--pp-ribbon); box-shadow: inset 0 0 0 1px #f3e4c4; }
 /* the bookmark hangs from the top edge of the strip, just right of the selected tab's name;
    every tab keeps room on its right for it, so switching tabs doesn't shift the row */
 .ae-mode.on::after {

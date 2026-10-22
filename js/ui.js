@@ -33,7 +33,7 @@ let playSpeed = 4;          // ticks per animation frame
 let rafId = 0;
 let mapMode = "political";
 let view = { zoom: 1, panX: 0, panY: 0 };
-let hoverRegion = null, selectedRegion = null;
+let hoverRegion = null, selectedRegion = null, showRoads = false;
 
 const dom = {};
 
@@ -250,6 +250,7 @@ function drawMap() {
       hoverRegion: hoverRegion,
       selectedRegion: selectedRegion,
       showRivers: true,
+      showRoads: showRoads,
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
   } catch (e) {
@@ -286,6 +287,17 @@ function buildApp() {
       },
     }));
   });
+
+  /* overlays the map can show on top of any mode */
+  const roadsBtn = el("button", { class: "ae-overlay" + (showRoads ? " on" : ""), text: "roads", title: "Show the roads between settlements",
+    "aria-pressed": showRoads ? "true" : "false",
+    onclick: function () {
+      showRoads = !showRoads;
+      roadsBtn.classList.toggle("on", showRoads);
+      roadsBtn.setAttribute("aria-pressed", showRoads ? "true" : "false");
+      drawMap();
+    } });
+  modeBar.appendChild(roadsBtn);
 
   dom.playBtn = el("button", { class: "ae-btn round", text: "▶", onclick: togglePlay });
   dom.scrub = el("input", { class: "ae-scrub", type: "range",

@@ -1,5 +1,4 @@
 /* Aeon - pixel map renderer for planets (style F: an old atlas drawn in pixels).
-   Replaces AEON.render for planet worlds and hands galaxies to the previous renderer.
 
    The map is painted once per world into a virtual canvas at PPC pixels per cell, then
    blitted to the screen at a whole number of device pixels per map pixel, so pixels stay
@@ -14,7 +13,6 @@
 "use strict";
 
 const AEON = window.AEON = window.AEON || {};
-const fallback = AEON.render;              // the old renderer, kept for galaxies
 const PPC = 4;
 const MODES = ["biome", "political", "population", "elevation", "habitability"];
 
@@ -430,7 +428,6 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
 function draw(canvas, world, opts) {
   opts = opts || {};
   if (!canvas || !world || !world.regions || !world.regions.length) return;
-  if (world.scale === "galaxy") return fallback && fallback.draw(canvas, world, opts);
   const v = makeView(canvas, world, opts);
   const pw = Math.round(v.cssW * v.dpr), ph = Math.round(v.cssH * v.dpr);
   if (canvas.width !== pw) canvas.width = pw;
@@ -454,7 +451,6 @@ function draw(canvas, world, opts) {
 
 function hitTest(canvas, world, px, py, opts) {
   if (!canvas || !world || !world.regions || !world.regions.length) return null;
-  if (world.scale === "galaxy") return fallback ? fallback.hitTest(canvas, world, px, py, opts) : null;
   const v = makeView(canvas, world, opts || { zoom: 1 });
   const W = world.width, H = world.height;
   const gx = Math.floor((px - v.ox) / v.s), gy = Math.floor((py - v.oy) / v.s);
@@ -462,7 +458,7 @@ function hitTest(canvas, world, px, py, opts) {
   return gy * W + gx;
 }
 
-AEON.render = { draw: draw, modes: MODES, hitTest: hitTest, pixelScale: pixelScale, legacy: fallback };
+AEON.render = { draw: draw, modes: MODES, hitTest: hitTest, pixelScale: pixelScale };
 AEON.pixelFont = { draw: text, width: textWidth, fold: fold };
 
 })();

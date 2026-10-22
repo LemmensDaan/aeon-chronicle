@@ -9,7 +9,7 @@ const AEON = window.AEON = window.AEON || {};
 AEON.packs = {};
 AEON.registerPack = function (def) {
   if (!def || !def.id) { console.error("[aeon] pack needs an id", def); return; }
-  def.scale = def.scale === "galaxy" ? "galaxy" : "planet";
+  def.scale = "planet";        /* galaxy-scale packs moved to the galaxy-generator project */
   def.timeStep = def.timeStep || 5;
   def.seedPolities = def.seedPolities || 8;
   def.events = def.events || [];
@@ -44,8 +44,8 @@ AEON.createWorld = function (opts) {
     packId: pack.id,
     pack: pack,
     scale: pack.scale,
-    width: opts.width || (pack.scale === "galaxy" ? 160 : 150),
-    height: opts.height || (pack.scale === "galaxy" ? 110 : 95),
+    width: opts.width || 150,
+    height: opts.height || 95,
     startYear: pack.startYear,
     endYear: pack.endYear,
     timeStep: pack.timeStep,
@@ -87,7 +87,7 @@ function seedPolities(world) {
 
   const candidates = habitable.slice(0, Math.max(world.pack.seedPolities * 12, 40));
   const chosen = [];
-  const minDist = world.scale === "galaxy" ? 14 : 11;
+  const minDist = 11;
 
   for (const r of rng.shuffle(candidates)) {
     if (chosen.length >= world.pack.seedPolities) break;

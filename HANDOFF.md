@@ -9,10 +9,14 @@ Read this first when resuming. State as of 2026-10-18.
 ## What it is
 
 A world-and-history generator that runs in the browser from `file://`. No server, no build step, no
-npm, no network. It generates a planet (or, for sci-fi, a galaxy), simulates thousands of years of
+npm, no network. It generates a planet, simulates thousands of years of
 history on it, and then lets you scrub through time on a map and read an encyclopedia it wrote.
 
 Open `aeon/chronicle/index.html`. Deep link: `index.html#pack=historical&seed=42&year=-1500&mode=political`.
+
+**Split off (2026-10-22):** the sci-fi pack ("The Long Dark"), the galaxy generator and the old 2D
+renderer moved to their own project, `random-shit-go/galaxy-generator`. This repo is planets only.
+`samples/lowpoly.html` stays: it is the approved low-poly style for the globe, despite its title.
 
 ## Working agreement with Daan
 
@@ -29,12 +33,11 @@ Open `aeon/chronicle/index.html`. Deep link: `index.html#pack=historical&seed=42
 | `js/rng.js` | seeded sfc32 RNG. **`Math.random()` is banned** in engine and packs; determinism is a contract |
 | `js/core.js` | genre-agnostic engine: regions, polities, figures, artifacts, events, chronicle |
 | `js/planetgen.js` | planet terrain (I wrote this; see below) |
-| `js/worldgen.js` | dispatches planet → `planetgen`; still holds the **galaxy** generator and an old planet fallback |
-| `js/pixelmap.js` | **pixel map renderer for planets** (replaces `AEON.render`; galaxies fall through to `render.js`) |
-| `js/render.js` | old 2D renderer — now only used for the sci-fi galaxy |
+| `js/worldgen.js` | dispatches to `planetgen`; still holds an old planet fallback |
+| `js/pixelmap.js` | **pixel map renderer** (`AEON.render`), also the 5x7 pixel font |
 | `js/chronicle/*.js` | the encyclopedia, in parts loaded in order: `base` (state, helpers, indexes, derived data, navigation), `style` (injected CSS), `timeline`, `pages` (entity pages), `atlas` (atlas + search), `story`, `graph`, `shell` (render, mount, public API). Plain scripts, not modules (file://); each part imports from `AEON._chronicle` at the top and exports at the bottom. Parts only import from earlier parts; `render()` is called upward as `C.render()`. A new shared helper must be added to its part's export line |
 | `js/ui.js` | app shell: genre picker, generation, playback/scrubbing, deep links, export |
-| `packs/*.js` | four genre packs: `historical` (86 events), `fantasy` (82), `scifi` (64, galaxy scale), `althistory` (88) |
+| `packs/*.js` | three genre packs: `historical` (86 events), `fantasy` (82), `althistory` (88) |
 | `PACK_API.md` | the contract packs are written against |
 | `samples/pixel.html`, `samples/lowpoly.html` | the two approved style samples; `smooth.html` was rejected |
 
@@ -60,7 +63,7 @@ hotspot chains) → erosion along a drainage tree → temperature (latitude, alt
 rivers (systems pruned to 4+ cells) → Whittaker biomes.
 
 - The map **wraps east–west** and spans 75°S–75°N. Anything drawing neighbour-to-neighbour lines
-  must unwrap x across the seam (see `unwrapX` in `render.js`).
+  must unwrap x across the seam (see `near` in the river drawing in `pixelmap.js`).
 - **Lakes** are `barren: true, lake: true`, with elevation = surface level (> 0.5). Ocean is
   elevation ≤ 0.5. Don't decide "water" from elevation alone.
 - Debug layers are on `world._gen` (non-enumerable): plates, uplift, temperature, rainfall, wind,
@@ -76,8 +79,8 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
 ## Visual direction (decided)
 
 - **Per-genre themes:** yes.
-- **Low poly + pixel together:** low poly for the world view (rotating faceted globe; a 3D galaxy for
-  sci-fi), pixel for the working history map. **Smooth/atlas style is rejected.**
+- **Low poly + pixel together:** low poly for the world view (rotating faceted globe), pixel for the
+  working history map. **Smooth/atlas style is rejected.**
 - Daan likes the pixel *look* but **not the RPG menu boxes** (blue gradient windows).
 - **Pixel UI style chosen: F · Parchment** in `samples/pixel-ui.html` (2026-10-18). Torn, aged parchment
   sheets drawn at map resolution (`sheet()`), faded brown ink, pixel-font headings + Georgia body text,
@@ -85,8 +88,6 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
   as the timeline marker, folio number. He called it rudimentary but approved; polish comes later.
   Rejected: Glass HUD; Tome (leather) was "too busy". Styles A/C/D/E stay in the sample for reference.
 - Map labels should become dark ink to match the parchment (currently white with outlines).
-- `render.js` is still the old placeholder: labels pile up (hundreds of settlements) and early
-  borders are faint. It gets replaced by the pixel renderer.
 
 ## Next pieces (Daan picks the order)
 
@@ -95,7 +96,7 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
 2b. ~~Parchment shell (style F) in the app~~ — done: `css/parchment.css` overrides `app.css` and the
    chronicle's injected `.ch-` styles; `js/parchment.js` makes the pixel textures (`--pp-*` vars) and
    `AEON.pixelLabel()`. Single theme now; the light/dark toggle is hidden.
-3. **Low-poly globe in the app** — world view with borders; low-poly 3D galaxy for sci-fi.
+3. **Low-poly globe in the app** — world view with borders.
 4. **Worldgen inspector page** — plates, wind, rain, rivers and biomes as side-by-side layers, from
    `world._gen`.
 

@@ -65,8 +65,7 @@ function mountSetup() {
       el("div", { class: "ae-pack-name", text: p.name }),
       el("div", { class: "ae-pack-blurb", text: p.blurb || "" }),
       el("div", { class: "ae-pack-meta", text:
-        p.yearLabel(p.startYear) + " → " + p.yearLabel(p.endYear) +
-        "  ·  " + (p.scale === "galaxy" ? "galactic" : "planetary") }));
+        p.yearLabel(p.startYear) + " → " + p.yearLabel(p.endYear) }));
     cards.appendChild(card);
   });
 
@@ -117,7 +116,7 @@ function start(packId, seed) {
 
   view = { zoom: 1, panX: 0, panY: 0 };
   selectedRegion = null;
-  mapMode = world.scale === "galaxy" ? "political" : "biome";
+  mapMode = "biome";
   const mm = /mode=([a-z]+)/.exec(location.hash);
   if (mm && AEON.render && AEON.render.modes.indexOf(mm[1]) >= 0) mapMode = mm[1];
   buildApp();
@@ -364,7 +363,7 @@ function buildChronicle() {
 /* CSS pixels per cell. The pixel renderer snaps zoom to whole device pixels, so ask it. */
 function cellSize() {
   const R = AEON.render;
-  if (R.pixelScale && world.scale !== "galaxy") return R.pixelScale(dom.canvas, world, view.zoom).s;
+  if (R.pixelScale) return R.pixelScale(dom.canvas, world, view.zoom).s;
   return Math.min(dom.canvas.clientWidth / world.width, dom.canvas.clientHeight / world.height) * view.zoom;
 }
 
@@ -372,7 +371,7 @@ function cellSize() {
 function fitView() {
   const R = AEON.render;
   view = { zoom: 1, panX: 0, panY: 0 };
-  if (R.pixelScale && world.scale !== "galaxy") {
+  if (R.pixelScale) {
     const ps = R.pixelScale(dom.canvas, world, 1);
     view.zoom = ps.zoomFor(ps.P);
   }
@@ -384,7 +383,7 @@ function fitView() {
 /* keep the map on screen: it can't be dragged past its edges, and it is centred
    along any axis where it is smaller than the view */
 function clampView() {
-  if (!dom.canvas || world.scale === "galaxy") return;
+  if (!dom.canvas) return;
   const s = cellSize(), cw = dom.canvas.clientWidth, ch = dom.canvas.clientHeight;
   const mw = world.width * s, mh = world.height * s;
   view.panX = mw <= cw ? (cw - mw) / 2 : Math.min(0, Math.max(cw - mw, view.panX));
@@ -442,7 +441,7 @@ function wireMap() {
     const r = c.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     let nz, k;
-    if (AEON.render.pixelScale && world.scale !== "galaxy") {
+    if (AEON.render.pixelScale) {
       /* one wheel notch = one more (or fewer) device pixel per map pixel */
       const ps = AEON.render.pixelScale(c, world, view.zoom);
       const P2 = Math.max(1, Math.min(24, ps.P + (e.deltaY < 0 ? 1 : -1)));

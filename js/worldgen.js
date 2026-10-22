@@ -1,4 +1,5 @@
-/* Aeon - terrain / star-field generation.
+/* Aeon - terrain generation entry point. Planets come from planetgen.js; the simple generator
+   below is an older fallback, used only if planetgen.js is not loaded.
    Fills world.regions and sets neighbors. Every random decision uses the supplied rng. */
 (function () {
 "use strict";
@@ -11,6 +12,7 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 function r3(v) { return Math.round(v * 1000) / 1000; }
 
 /* ---------------------------------------------------------------- noise */
+
 /* Seeded 2D value noise (quintic-smoothed lattice, permutation-hashed) with rotated-octave fBm. */
 function makeNoise(rng) {
   var P = new Uint8Array(512), V = new Float32Array(256), perm = new Array(256), i, j, t;
@@ -410,149 +412,10 @@ function genPlanet(world, pack, rng) {
   }
 }
 
-/* ---------------------------------------------------------------- galaxy */
-function genGalaxy(world, pack, rng) {
-  var W = world.width, H = world.height, N = W * H, i, k, x, y;
-  var regions = world.regions = [];
-  for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
-    var r = makeRegion(y * W + x, x, y);
-    r.biome = "barren"; r.barren = true; r.habitability = 0;
-    regions.push(r);
-  }
-  var cx = (W - 1) / 2, cy = (H - 1) / 2;
-  var arms = rng.pick([2, 2, 3, 4]), b = rng.range(0.28, 0.42);
-  var nSys = clamp(Math.round(N * rng.range(0.055, 0.075)), Math.min(40, N), 2000);
-
-  function place() {
-    var u = rng.next(), px, py, rad, th;
-    if (u < 0.16) { px = rng.gauss() * 0.12; py = rng.gauss() * 0.12; }
-    else if (u < 0.24) { px = rng.gauss() * 0.42; py = rng.gauss() * 0.42; }
-    else {
-      var arm = rng.int(0, arms - 1);
-      rad = clamp(-Math.log(1 - rng.next() * (1 - Math.exp(-3.2))) / 3.2, 0.05, 1);
-      th = arm * Math.PI * 2 / arms + Math.log(rad / 0.05) / b;
-      var sg = 0.035 + 0.07 * rad;
-      var perp = rng.gauss() * sg, along = rng.gauss() * sg * 0.5;
-      px = (rad + along) * Math.cos(th) - perp * Math.sin(th);
-      py = (rad + along) * Math.sin(th) + perp * Math.cos(th);
-    }
-    return [px, py];
-  }
-
-  var sys = [], taken = new Uint8Array(N), attempts = 0;
-  while (sys.length < nSys && attempts < nSys * 40) {
-    attempts++;
-    var p = place(), gx = Math.round(cx + p[0] * cx * 0.97), gy = Math.round(cy + p[1] * cy * 0.97);
-    if (gx < 0 || gy < 0 || gx >= W || gy >= H) continue;
-    var id = gy * W + gx;
-    if (taken[id]) continue;
-    taken[id] = 1;
-    sys.push({ id: id, x: gx, y: gy, jx: rng.range(-0.38, 0.38), jy: rng.range(-0.38, 0.38),
-               rad: Math.sqrt(Math.pow((gx - cx) / (cx || 1), 2) + Math.pow((gy - cy) / (cy || 1), 2)) });
-  }
-  var n = sys.length;
-
-  /* local density, used to flag dense clusters */
-  var occ = new Float32Array(N);
-  for (i = 0; i < n; i++) occ[sys[i].id] = 1;
-  var dens = blur(occ, W, H, 3);
-  var dArr = sys.map(function (s) { return dens[s.id]; });
-  var dHi = dArr.length ? quantile(dArr, 0.9) : 1;
-
-  for (i = 0; i < n; i++) {
-    var s = sys[i], reg = regions[s.id];
-    var core = Math.max(0, 1 - s.rad / 0.3);
-    var mass = clamp(Math.pow(rng.next(), 1.8) + core * 0.15, 0, 1);
-    var temp = clamp(0.5 + rng.gauss() * 0.25 + (mass - 0.3) * 0.3, 0, 1);
-    var vol = clamp(0.5 + rng.gauss() * 0.28 - core * 0.2, 0, 1);
-    var biome;
-    if ((dens[s.id] >= dHi && rng.chance(0.5)) || mass > 0.93) biome = "mountain";
-    else if (vol > 0.78 && temp < 0.5) biome = "swamp";
-    else biome = classifyLand(0.6, temp, vol, 2);
-    reg.barren = false; reg.biome = biome;
-    reg.elevation = r3(mass); reg.temperature = r3(temp); reg.moisture = r3(vol);
-    reg.jx = r3(s.jx); reg.jy = r3(s.jy);
-    reg.habitability = r3(clamp(biomeHab(pack, biome) * (1 - 0.45 * core * core) * (0.9 + 0.2 * rng.next()), 0, 1));
-    var fb = { grassland: 0.7, forest: 0.6, jungle: 0.6, savanna: 0.5, swamp: 0.4, taiga: 0.3, tundra: 0.15, desert: 0.1, mountain: 0.1, ice: 0.05 }[biome];
-    reg.resources = {
-      food: r3(clamp((fb === undefined ? 0.3 : fb) + rng.range(-0.1, 0.1), 0, 1)),
-      metal: r3(clamp(0.15 + mass * 0.5 + core * 0.2 + (biome === "mountain" ? 0.25 : 0) + rng.range(-0.1, 0.1), 0, 1)),
-      exotic: r3(clamp(core * 0.5 + (biome === "mountain" ? 0.2 : 0) + (rng.chance(0.08) ? rng.range(0.3, 0.6) : 0) + rng.range(0, 0.1), 0, 1))
-    };
-  }
-
-  /* ---- hyperlanes ---- */
-  function px(s) { return s.x + s.jx; }
-  function py(s) { return s.y + s.jy; }
-  function dist(a, c) { var dx = px(a) - px(c), dy = py(a) - py(c); return Math.sqrt(dx * dx + dy * dy); }
-  var nearest = [], nn1 = [];
-  for (i = 0; i < n; i++) {
-    var list = [];   /* the 4 closest as [d, j], ascending */
-    for (var j = 0; j < n; j++) {
-      if (j === i) continue;
-      var d = dist(sys[i], sys[j]);
-      if (list.length < 4 || d < list[list.length - 1][0]) {
-        list.push([d, j]);
-        for (var q = list.length - 1; q > 0 && (list[q][0] < list[q - 1][0] || (list[q][0] === list[q - 1][0] && list[q][1] < list[q - 1][1])); q--) {
-          var tmp = list[q]; list[q] = list[q - 1]; list[q - 1] = tmp;
-        }
-        if (list.length > 4) list.pop();
-      }
-    }
-    nearest.push(list);
-    if (list.length) nn1.push(list[0][0]);
-  }
-  var ref = nn1.length ? quantile(nn1, 0.5) : 1;
-  var maxLane = ref * 2.2;
-  var parent = new Int32Array(n);
-  for (i = 0; i < n; i++) parent[i] = i;
-  function find(a) { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; }
-  var edgeSet = {};
-  function link(a, c) {
-    if (a === c) return;
-    var lo = Math.min(a, c), hi = Math.max(a, c), key = lo * n + hi;
-    if (edgeSet[key]) return;
-    edgeSet[key] = 1;
-    var d = dist(sys[a], sys[c]), cost = r3(Math.max(0.5, d / ref));
-    var ra = regions[sys[a].id], rc = regions[sys[c].id];
-    ra.neighbors.push(sys[c].id); rc.neighbors.push(sys[a].id);
-    (ra.linkCost = ra.linkCost || {})[sys[c].id] = cost;
-    (rc.linkCost = rc.linkCost || {})[sys[a].id] = cost;
-    parent[find(a)] = find(c);
-  }
-  for (i = 0; i < n; i++) {
-    var L = nearest[i];
-    for (k = 0; k < L.length; k++) {
-      if (k === 0 || (k < 3 && L[k][0] <= maxLane)) link(i, L[k][1]);
-    }
-  }
-  /* join isolated components by their closest pair */
-  for (;;) {
-    var roots = {}, compCount = 0, rkeys = [];
-    for (i = 0; i < n; i++) {
-      var rt = find(i);
-      if (!roots[rt]) { roots[rt] = []; compCount++; rkeys.push(rt); }
-      roots[rt].push(i);
-    }
-    if (compCount <= 1) break;
-    var smallest = rkeys[0];
-    for (k = 1; k < rkeys.length; k++) if (roots[rkeys[k]].length < roots[smallest].length) smallest = rkeys[k];
-    var members = roots[smallest], bd = 1e18, ba = -1, bc = -1;
-    for (i = 0; i < members.length; i++) for (var j2 = 0; j2 < n; j2++) {
-      if (find(j2) === smallest) continue;
-      var dd = dist(sys[members[i]], sys[j2]);
-      if (dd < bd) { bd = dd; ba = members[i]; bc = j2; }
-    }
-    link(ba, bc);
-  }
-  world.linkRef = r3(ref);
-}
-
 /* ---------------------------------------------------------------- entry */
 AEON.worldgen = {
   generate: function (world, pack, rng) {
-    if (world.scale === "galaxy") genGalaxy(world, pack, rng);
-    else if (AEON.planetgen) AEON.planetgen.generate(world, pack, rng);
+    if (AEON.planetgen) AEON.planetgen.generate(world, pack, rng);
     else genPlanet(world, pack, rng);
   }
 };

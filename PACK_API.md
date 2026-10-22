@@ -39,7 +39,7 @@ The engine builds and owns this. Packs read it and mutate it only through helper
 {
   seed: 1234567,            // integer
   packId: "fantasy",
-  scale: "planet" | "galaxy",
+  scale: "planet",          // galaxy-scale worlds live in the galaxy-generator project
   year: -2000,              // current simulated year
   startYear, endYear, timeStep,   // timeStep = years per tick
   width, height,            // region grid dimensions
@@ -52,19 +52,19 @@ The engine builds and owns this. Packs read it and mutate it only through helper
 }
 ```
 
-### 2.2 `Region` — a province, or a star system
+### 2.2 `Region` — a province
 
 ```js
 {
   id, x, y,
   name,                     // named lazily when it first matters
-  elevation,                // 0..1   (planet: height | galaxy: stellar mass)
+  elevation,                // 0..1   height; ocean <= 0.5
   temperature,              // 0..1
-  moisture,                 // 0..1   (galaxy: volatiles)
+  moisture,                 // 0..1
   biome,                    // a key from pack.biomes
   habitability,             // 0..1   drives population ceiling
   resources: { food, metal, exotic },   // each 0..1
-  barren,                   // true for ocean (planet) / deep void (galaxy)
+  barren,                   // true for ocean and lakes
   owner,                    // polity id, or null
   population,               // integer
   settlement,               // null | { name, tier: 1..4, founded }
@@ -139,7 +139,7 @@ AEON.registerPack({
   name: "Age of Myth",
   icon: "🐉",
   blurb: "One sentence shown on the genre picker.",
-  scale: "planet",              // "planet" or "galaxy"
+  scale: "planet",              // the only scale here
   startYear: -2000,
   endYear: 1200,
   timeStep: 5,                  // years per simulation tick
@@ -167,14 +167,10 @@ classifies each region by elevation/temperature/moisture and then asks the pack 
 biomes: {
   tundra:    { name: "Tundra",     color: "#b8c6d9", habitability: 0.18 },
   forest:    { name: "Deep Wood",  color: "#2f6b3f", habitability: 0.78 },
-  // ... cover: barren (ocean/void), ice, tundra, taiga, grassland, forest,
+  // ... cover: barren (ocean), ice, tundra, taiga, grassland, forest,
   //            jungle, savanna, desert, mountain, swamp
 }
 ```
-
-A `galaxy`-scale pack uses the same keys for different things (e.g. `barren` = deep void,
-`mountain` = a dense cluster). Keep the key set identical so the engine's classifier works
-unchanged; only the names, colours and habitability differ.
 
 ### 3.2 `eras`
 

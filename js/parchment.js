@@ -60,6 +60,25 @@ function edgeTile(rot) {
   });
 }
 
+/* a whole small sheet torn on all four sides, for border-image (9-slice, slice EH): the plaques
+   that float over the map. Each side tears to its own pattern; the middle is plain grained paper. */
+const SS = 36;
+function sheetBite(side, i) {
+  const n = Math.ceil(SS / 3), a = Math.floor(i / 3), t = (i % 3) / 3;
+  const v = hash(a % n, 11 + side) * (1 - t) + hash((a + 1) % n, 11 + side) * t;
+  return v < 0.3 ? 0 : v < 0.6 ? 1 : v < 0.85 ? 2 : 3;
+}
+const sheet = canvas(SS, SS, function (f) {
+  for (let y = 0; y < SS; y++) for (let x = 0; x < SS; x++) {
+    const d = Math.min(y - sheetBite(2, x), SS - 1 - y - sheetBite(0, x), x - sheetBite(1, y), SS - 1 - x - sheetBite(3, y));
+    if (d < 0) continue;                               // torn away
+    let col;
+    if (d < RIM.length && (d < 2 || hash(x, y) < 0.7)) col = RIM[d];
+    else { const r = hash(x + 7, y * 3 + 1); col = r < 0.035 ? "#dcc597" : r > 0.985 ? "#f2e3c0" : PAPER; }
+    f(col, x, y);
+  }
+});
+
 /* the manicule: a pointing hand with a red cuff, pointing down at the year */
 const manicule = canvas(9, 11, function (f) {
   const rows = [".kkkkkkk.", ".krrrrrk.", ".kkkkkkk.", "kpppppppk", "kpkpkpkpk", "kpppppppk",
@@ -70,6 +89,7 @@ const manicule = canvas(9, 11, function (f) {
 
 const root = document.documentElement.style;
 root.setProperty("--pp-paper", "url(" + paper + ")");
+root.setProperty("--pp-sheet", "url(" + sheet + ")");
 root.setProperty("--pp-edge-b", "url(" + edgeTile(0) + ")");
 root.setProperty("--pp-edge-l", "url(" + edgeTile(1) + ")");
 root.setProperty("--pp-edge-t", "url(" + edgeTile(2) + ")");

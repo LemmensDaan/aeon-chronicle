@@ -248,8 +248,10 @@ runs with prefers-reduced-motion. Water keeps Aeon's colours (the sample was "ve
 Daan liked the parchment styling but found the full-width bars and the 480 px chronicle column "very
 aggressive". As in `samples/pixel-ui.html` (style F), the map now fills the window and the UI floats
 over it as small plaques: a slim header, the mode tabs under it, a slim timeline at the bottom, and a
-400 px chronicle panel on the right (`--chron-w`; the graph widens it to 56vw and the header hides its
-year figures to make room). Plaques have an inked rule and a pixel shadow instead of torn edges.
+420 px chronicle panel on the right (`--chron-w`; the graph widens it to 56vw and the header hides its
+year figures to make room). Each plaque is a small sheet of parchment torn on all four sides (`--pp-sheet`, drawn by `parchment.js`
+and used as a 9-slice `border-image`). A first version with straight inked rules was rejected ("I want
+the parchment UI back").
 `ui.js` fits and centres the map in the open area left of the panel (`openWidth`). The DOM is
 unchanged, so this is all one stylesheet loaded last.
 

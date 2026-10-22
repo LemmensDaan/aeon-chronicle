@@ -145,7 +145,6 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
 }
 .ae-mode:hover { color: var(--ae-text); background: var(--ae-panel2); }
 .ae-mode.on { color: var(--ae-accent); border-color: var(--ae-accent); }
-.ae-check { display: flex; align-items: center; gap: 5px; margin-left: auto; font-size: 11.5px; color: var(--ae-dim); cursor: pointer; }
 
 .ae-mapwrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
 .ae-canvas { display: block; width: 100%; height: 100%; cursor: grab; }

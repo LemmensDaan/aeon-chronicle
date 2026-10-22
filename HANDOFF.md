@@ -87,7 +87,6 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
   red ribbon bookmark on the active tab, wax seal for the realm, red drop cap, fleuron rules, manicule
   as the timeline marker, folio number. He called it rudimentary but approved; polish comes later.
   Rejected: Glass HUD; Tome (leather) was "too busy". Styles A/C/D/E stay in the sample for reference.
-- Map labels should become dark ink to match the parchment (currently white with outlines).
 
 ## Next pieces (Daan picks the order)
 
@@ -109,9 +108,10 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
 - The planet wraps east-west, so the map tiles horizontally; hit testing wraps x too.
 - Per year/mode it composes realm tint (dithered) + two-pixel borders; water never counts as a border,
   so coasts stay clean. ~16 ms per year change; the terrain build is ~0.4 s once.
-- Labels and settlements are drawn in screen space in dark ink with a parchment halo: realm names
-  (red ink, split at " OF ") always; capitals as keeps in the realm colour; town names from 3 CSS px per
-  map pixel up, more tiers as you zoom. Greedy collision avoidance, largest first.
+- Settlements are drawn in screen space: capitals as keeps in the realm colour, towns and hamlets
+  as you zoom in, with greedy collision avoidance. **No names are drawn on the map** (decided
+  2026-10-22): realm and place names only appear in the hover tooltip. The realm-name and
+  town-name drawing was removed; it is in git history before that date if wanted back.
 - Note: the Write/Edit tools turned `̀` escapes into literal characters, which broke the script on a
   page without a charset. `fold()` filters by char code instead; keep this file ASCII.
 
@@ -128,6 +128,22 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
 - Force layout is d3-like (O(n²) charge, fine up to ~700 nodes), positions persist across rebuilds;
   canvas colours come from the `--ch-*` variables, so it follows the parchment theme.
 - While the graph is open the host gets `.ch-graphing` and widens to 64vw (`app.css`).
+
+## Map cursor, tooltip and font (2026-10-22)
+
+- Over a map cell the system cursor is hidden and corner **brackets** (white, with a drop shadow) mark
+  the hovered cell; the selected cell gets red brackets one pixel further out. Both are drawn in
+  `pixelmap.js` (`brackets`), copied from the game project's overlay. The old red square is gone.
+- The tooltip is a light-parchment plaque in **Pixelify Sans**: realm (swatch, name), its ruler in
+  the shown year, provinces, type and founding year; then the place. Population only shows at the end
+  year, because the engine only keeps it for the present.
+- **Pixelify Sans** (OFL, `css/pixelify-OFL.txt`) is embedded as data URIs in `css/pixelify.css`,
+  since browsers may refuse font files over file://. Used via `--ae-pixel` for the map tabs, the
+  and the tooltip. The 5x7 canvas font in `pixelmap.js` now only serves `AEON.pixelLabel()` headings.
+- Rulers by year: the engine stamps `figure.crowned` / `figure.reignOf` on each tick for the current
+  ruler (heirs crowned inside pack events get stamped a tick late). `AEON.rulerAt(world, pid, year)`
+  answers who reigned; a death followed by a crowning within two ticks counts as continuous.
+- The labels checkbox was removed along with the map names.
 
 ## Known loose ends
 

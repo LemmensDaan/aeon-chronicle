@@ -451,6 +451,32 @@ function ownersAt(world, year) {
   return owners;
 }
 
+/* Who reigned over a polity in a year: the ruler crowned most recently before it. If they had
+   died by then, the heir crowned within two ticks of the death counts as already reigning (the
+   engine crowns on the tick after a death); a longer gap is an interregnum. null if none. */
+AEON.rulerAt = function (world, pid, year) {
+  let ix = world._reigns;
+  const nFig = world._ids.figure;
+  if (!ix || ix.n !== nFig) {
+    ix = { n: nFig, by: {} };
+    for (const id in world.figures) {
+      const f = world.figures[id];
+      if (f.crowned == null || f.reignOf == null) continue;
+      (ix.by[f.reignOf] = ix.by[f.reignOf] || []).push(f);
+    }
+    for (const k in ix.by) ix.by[k].sort(function (a, b) { return a.crowned - b.crowned; });
+    Object.defineProperty(world, "_reigns", { value: ix, enumerable: false, configurable: true, writable: true });
+  }
+  const list = ix.by[pid];
+  if (!list) return null;
+  let k = -1;
+  while (k + 1 < list.length && list[k + 1].crowned <= year) k++;
+  if (k < 0) return null;
+  const best = list[k], next = list[k + 1];
+  if (best.died == null || best.died > year) return best;
+  return next && next.crowned - best.died <= 2 * world.timeStep ? next : null;
+};
+
 AEON.viewAt = function (world, year) {
   if (year == null || year >= world.year) year = world.year;
   let v = world._view;
@@ -556,6 +582,12 @@ function baselineTick(world) {
           p.ruler = null;
         }
       } else { p.ruler = null; }
+    }
+    /* when each reign began, so any year can name its ruler. Packs crown heirs and usurpers
+       inside events, so those reigns are stamped here on the next tick, a few years late. */
+    if (p.ruler && world.figures[p.ruler] && world.figures[p.ruler].crowned == null) {
+      world.figures[p.ruler].crowned = world.year;
+      world.figures[p.ruler].reignOf = p.id;
     }
 
     if (p.regions.length === 0) {

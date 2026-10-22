@@ -230,8 +230,6 @@ function drawMap() {
       year: playbackYear,
       hoverRegion: hoverRegion,
       selectedRegion: selectedRegion,
-      /* label layout is the expensive part of a frame, so skip it while time is moving */
-      showLabels: (dom.labelToggle ? dom.labelToggle.checked : true) && !playing && !scrubbing,
       showRivers: true,
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
@@ -268,10 +266,6 @@ function buildApp() {
       },
     }));
   });
-
-  dom.labelToggle = el("input", { type: "checkbox", checked: true });
-  dom.labelToggle.addEventListener("change", drawMap);
-  modeBar.appendChild(el("label", { class: "ae-check" }, dom.labelToggle, el("span", { text: "labels" })));
 
   dom.playBtn = el("button", { class: "ae-btn round", text: "▶", onclick: togglePlay });
   dom.scrub = el("input", { class: "ae-scrub", type: "range",
@@ -413,6 +407,7 @@ function wireMap() {
       moved += Math.abs(dx) + Math.abs(dy);
       view.panX += dx; view.panY += dy;
       lastX = e.clientX; lastY = e.clientY;
+      c.style.cursor = "grabbing";
       drawMap();
       return;
     }
@@ -420,6 +415,8 @@ function wireMap() {
     const id = AEON.render.hitTest(c, world, e.clientX - r.left, e.clientY - r.top, {
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
+    /* over the map the brackets round the cell are the cursor; off it, the usual pointer */
+    c.style.cursor = id != null ? "none" : "";
     if (id !== hoverRegion) { hoverRegion = id; drawMap(); showTip(e, id); }
     else showTip(e, id);
   });
@@ -468,17 +465,45 @@ function showTip(e, id) {
   const r = view.regions[id];
   if (!r) { hideTip(); return; }
   if (!tipEl) { tipEl = el("div", { class: "ae-tip" }); document.body.appendChild(tipEl); }
-  const owner = r.owner && view.polities[r.owner];
-  const biome = (world.pack.biomes && world.pack.biomes[r.biome]) || {};
-  tipEl.innerHTML = "";
-  tipEl.appendChild(el("b", { text: (r.settlement && r.settlement.name) || r.name || biome.name || "Unclaimed" }));
-  tipEl.appendChild(el("div", { class: "dim", text: biome.name || r.biome }));
-  if (owner) tipEl.appendChild(el("div", { text: owner.name }));
-  if (r.population) tipEl.appendChild(el("div", { class: "dim", text: r.population.toLocaleString() + " souls" }));
-  if (r.features && r.features.length) tipEl.appendChild(el("div", { class: "dim", text: r.features.join(", ") }));
+  const key = id + "@" + view.year;
+  if (tipEl._for !== key) { tipEl._for = key; fillTip(view, r); }
   tipEl.style.display = "block";
-  tipEl.style.left = Math.min(e.clientX + 14, window.innerWidth - 220) + "px";
-  tipEl.style.top = Math.min(e.clientY + 14, window.innerHeight - 120) + "px";
+  const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+  tipEl.style.left = (e.clientX + 18 + w > window.innerWidth ? e.clientX - 12 - w : e.clientX + 18) + "px";
+  tipEl.style.top = Math.max(4, Math.min(e.clientY + 18, window.innerHeight - h - 4)) + "px";
+}
+/* the plaque's contents: the realm that holds the cell in the shown year and who rules it,
+   then the place itself. Population is only known for the end of the record. */
+const TIER_NAME = ["", "outpost", "town", "city", "great city"];
+function fillTip(view, r) {
+  const year = view.year, live = year >= world.year, pack = world.pack;
+  const owner = r.owner != null ? view.polities[r.owner] : null;
+  const biome = (pack.biomes && pack.biomes[r.biome]) || {};
+  tipEl.replaceChildren();
+  if (owner) {
+    const sw = el("i", { class: "ae-tip-swatch" });
+    sw.style.background = owner.color;
+    tipEl.appendChild(el("div", { class: "ae-tip-name" }, sw, el("span", { text: owner.name })));
+    const f = AEON.rulerAt ? AEON.rulerAt(world, owner.id, year) : null;
+    tipEl.appendChild(el("div", { text: f ? (f.title ? f.title + " " : "") + f.name + ", reigning" : "No ruler at present" }));
+    let provinces = 0;
+    for (const x of view.regions) if (x.owner === owner.id) provinces++;
+    const bits = [provinces + (provinces === 1 ? " province" : " provinces")];
+    if (live && owner.population) bits.unshift(owner.population.toLocaleString() + " people");
+    bits.push((owner.archetypeName ? owner.archetypeName + ", " : "") + "since " + pack.yearLabel(owner.founded));
+    tipEl.appendChild(el("div", { class: "dim", text: bits.join(" · ") }));
+    tipEl.appendChild(el("div", { class: "ae-tip-rule" }));
+  }
+  const s = r.settlement, place = (s && s.name) || r.name;
+  tipEl.appendChild(el("div", { class: "ae-tip-place", text: place || biome.name || r.biome || "Unclaimed land" }));
+  /* with no name of its own the place is titled by its biome, so don't repeat it */
+  const where = [s ? TIER_NAME[s.tier] || "settlement" : null, place ? biome.name || r.biome : null].filter(Boolean);
+  if (s && r.name && r.name !== s.name) where.push("in " + r.name);
+  if (where.length) tipEl.appendChild(el("div", { class: "dim", text: where.join(" · ") }));
+  const more = [];
+  if (live && r.population) more.push(r.population.toLocaleString() + " souls");
+  if (r.features && r.features.length) more.push(r.features.join(", "));
+  if (more.length) tipEl.appendChild(el("div", { class: "dim", text: more.join(" · ") }));
 }
 function hideTip() { if (tipEl) tipEl.style.display = "none"; }
 

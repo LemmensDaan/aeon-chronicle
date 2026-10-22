@@ -3,8 +3,9 @@
    The map is painted once per world into a virtual canvas at PPC pixels per cell, then
    blitted to the screen at a whole number of device pixels per map pixel, so pixels stay
    square at every zoom. The map is drawn once; ui.js keeps the pan inside its edges.
-   Settlements and labels are drawn afterwards in screen space, so they keep a readable
-   size when zoomed and more of them appear as you zoom in.
+   Settlements and the cursor brackets are drawn afterwards in screen space, so they keep a
+   readable size when zoomed and more settlements appear as you zoom in. No names are drawn
+   on the map; the tooltip names what is under the cursor.
 
    View convention (shared with ui.js): screen = pan + grid * s, where s is CSS pixels per
    cell. Here s is snapped so that s * dpr / PPC is a whole number; pixelScale() exposes
@@ -33,7 +34,8 @@ const RAMPS = {
   elevation:    ["#3f7a3a", "#7d9b4c", "#b9ab68", "#a0805a", "#7a6656", "#e8e4dc"],
   habitability: ["#8a6a48", "#ad8b58", "#c9b26a", "#9db35a", "#6c9c48", "#3f7a3a"],
 };
-const INK = "#2a1a0e", RED_INK = "#6e1f12", HALO = "#efe2bf", DESK = "#2a1d12";
+const INK = "#2a1a0e", DESK = "#2a1d12";
+const RIBBON = "#8e1d1d", CURSOR = "#fff8e1";   /* selection and hover brackets */
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const bayer = function (x, y) { return (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16; };
@@ -77,12 +79,6 @@ function text(ctx, s, x, y, color, u, gap) {
       for (let c = 0; c < 5; c++) if (bits & (16 >> c)) ctx.fillRect(x + n * step + c * u, y + r * u, u, u);
     }
   }
-}
-/* ink with a parchment halo so it reads on any terrain */
-function inked(ctx, s, x, y, color, u, gap) {
-  const h = Math.max(1, Math.round(u / 2));
-  for (const d of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) text(ctx, s, x + d[0] * h, y + d[1] * h, HALO, u, gap);
-  text(ctx, s, x, y, color, u, gap);
 }
 
 /* ------------------------------------------------------------ sprites */
@@ -307,37 +303,8 @@ function makeView(canvas, world, opts) {
   };
 }
 
-/* ------------------------------------------------------------ labels and settlements */
-function realmInfo(w, c) {
-  /* size and a wrap-aware centroid (circular mean of x) per living realm */
-  const info = {}, W = c.W, R = w.regions;
-  for (let k = 0; k < R.length; k++) {
-    const o = R[k].owner;
-    if (o == null) continue;
-    const r = R[k], a = r.x / W * Math.PI * 2;
-    const f = info[o] || (info[o] = { n: 0, cx: 0, sx: 0, y: 0 });
-    f.n++; f.cx += Math.cos(a); f.sx += Math.sin(a); f.y += r.y;
-  }
-  for (const id in info) {
-    const f = info[id];
-    let a = Math.atan2(f.sx / f.n, f.cx / f.n);
-    if (a < 0) a += Math.PI * 2;
-    f.x = a / (Math.PI * 2) * W; f.y = f.y / f.n;
-    /* a crescent-shaped realm's centroid can fall outside it; use the capital instead */
-    const cell = R[Math.min(c.H - 1, Math.floor(f.y)) * W + (Math.floor(f.x) % W)];
-    const p = w.polities[id];
-    if (cell.owner !== id && p && p.capital != null) { f.x = R[p.capital].x + 0.5; f.y = R[p.capital].y + 0.5; }
-  }
-  return info;
-}
-function splitName(s) {
-  if (s.length <= 16) return [s];
-  const k = s.indexOf(" OF ");
-  if (k > 0) return [s.slice(0, k), s.slice(k + 1)];
-  const m = s.lastIndexOf(" ", Math.ceil(s.length / 2) + 2);
-  return m > 0 ? [s.slice(0, m), s.slice(m + 1)] : [s];
-}
-
+/* ------------------------------------------------------------ settlements and the cursor */
+/* No names are drawn on the map: places and realms are named in the tooltip on hover. */
 function drawOverlay(ctx, w, c, v, opts, tiles) {
   const dpr = v.dpr, pc = v.P / dpr;                         // CSS pixels per map pixel
   const u = Math.max(1, Math.round((pc >= 2 ? 2 : 1) * dpr)); // device pixels per font/sprite pixel
@@ -358,8 +325,8 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   const sites = [];
   for (let k = 0; k < R.length; k++) {
     const s = R[k].settlement, cap = capitals[k];
-    if (cap) sites.push({ r: R[k], cap: cap, tier: 9, name: (s && s.name) || R[k].name });
-    else if (s && s.tier >= minTier && R[k].owner != null) sites.push({ r: R[k], tier: s.tier, name: s.name });
+    if (cap) sites.push({ r: R[k], cap: cap, tier: 9 });
+    else if (s && s.tier >= minTier && R[k].owner != null) sites.push({ r: R[k], tier: s.tier });
   }
   sites.sort(function (a, b) { return b.tier - a.tier; });
   for (const st of sites) {
@@ -369,57 +336,27 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
     if (!st.cap && !free(b)) continue;
     boxes.push(b);
     drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, st.cap ? { r: st.cap.color, d: st.cap.color } : null); });
-    st.box = b;
   }
 
-  /* realm names, largest first, in red ink; skipped if they would collide */
-  const info = realmInfo(w, c);
-  const realms = Object.keys(info).filter(function (id) { return info[id].n >= 8 && w.polities[id]; })
-    .sort(function (a, b) { return info[b].n - info[a].n; });
-  const labelBoxes = [];
-  const lfree = function (b) {
-    for (const o of labelBoxes) if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false;
-    return true;
-  };
-  if (pc < 7) for (const id of realms) {
-    const f = info[id], lines = splitName(fold(w.polities[id].name.replace(/^The /, "")));
-    const gap = f.n >= 40 ? 2 : 1, lh = 9 * u;
-    const wd = Math.max.apply(null, lines.map(function (l) { return textWidth(l, u, gap); }));
-    const x = Math.round(sx(f.x) - wd / 2), y = Math.round(sy(f.y) - lines.length * lh / 2);
-    const b = [x - 2 * u, y - u, x + wd + 2 * u, y + lines.length * lh];
-    if (!lfree(b)) continue;
-    labelBoxes.push(b);
-    drawn.push(function (dx) {
-      lines.forEach(function (l, i) { inked(ctx, l, Math.round(x + (wd - textWidth(l, u, gap)) / 2) + dx, y + i * lh, RED_INK, u, gap); });
-    });
-  }
-
-  /* settlement names in brown ink, beside their marker */
-  if (opts.showLabels !== false && pc >= 3) for (const st of sites) {
-    if (!st.box || !st.name) continue;
-    const name = fold(st.name), wd = textWidth(name, u), b0 = st.box;
-    const tries = [[Math.round((b0[0] + b0[2]) / 2 - wd / 2), b0[3] + u], [b0[2] + u, Math.round((b0[1] + b0[3]) / 2 - 3.5 * u)],
-                   [Math.round((b0[0] + b0[2]) / 2 - wd / 2), b0[1] - 8 * u]];
-    for (const t of tries) {
-      const b = [t[0] - u, t[1] - u, t[0] + wd + u, t[1] + 8 * u];
-      if (!lfree(b) || !free(b)) continue;
-      labelBoxes.push(b);
-      drawn.push(function (dx) { inked(ctx, name, t[0] + dx, t[1], INK, u); });
-      break;
-    }
-  }
-
-  /* hover and selection: the cell, outlined */
-  const ring = function (id, color, wpx) {
+  /* hover and selection: pixel corner brackets round the cell, with a drop shadow (as in the
+     game project). The selection sits one pixel further out, so both show on the same cell. */
+  const brackets = function (id, color, pad) {
     if (id == null || !R[id]) return;
     const r = R[id], x = Math.round(sx(r.x)), y = Math.round(sy(r.y));
-    drawn.push(function (dx) {
-      ctx.strokeStyle = color; ctx.lineWidth = wpx;
-      ctx.strokeRect(x + dx - wpx / 2, y - wpx / 2, cell + wpx, cell + wpx);
-    });
+    const x0 = x - pad - u, y0 = y - pad - u, x1 = x + cell + pad, y1 = y + cell + pad;
+    const arm = Math.max(3 * u, Math.round(cell / 3 / u) * u);
+    const corners = [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]];
+    const paint = function (dx, dy, col) {
+      ctx.fillStyle = col;
+      for (const k of corners) {
+        ctx.fillRect(k[0] + dx + (k[2] < 0 ? -arm + u : 0), k[1] + dy, arm, u);
+        ctx.fillRect(k[0] + dx, k[1] + dy + (k[3] < 0 ? -arm + u : 0), u, arm);
+      }
+    };
+    drawn.push(function (dx) { paint(dx + u, u, "rgba(0,0,0,.55)"); paint(dx, 0, color); });
   };
-  ring(opts.hoverRegion, "rgba(255,248,225,.9)", u);
-  ring(opts.selectedRegion, "#c0392b", 2 * u);
+  brackets(opts.selectedRegion, RIBBON, 2 * u);
+  brackets(opts.hoverRegion, CURSOR, u);
 
   for (const f of drawn) f(0);
 }

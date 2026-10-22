@@ -14,6 +14,7 @@
   --ae-accent-ink: #f3e4c4;
   --ae-serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
   --ae-sans: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+  --ae-pixel: "Pixelify Sans", Georgia, serif;   /* css/pixelify.css; the game project's pixel font */
   --pp-ink: #3a2614;
   --pp-soft: #6b4a2a;
   --pp-red: #8a3a22;
@@ -71,21 +72,19 @@ html, body { font-family: var(--ae-serif); }
 /* ============================================================ map modes: tabs with a ribbon */
 .ae-modes { padding: 6px 16px 8px; gap: 6px; }
 .ae-mode {
-  border: 0; border-radius: 0; background: none; color: var(--pp-ink); padding: 5px 9px 6px 18px; position: relative;
-  font-family: var(--ae-serif); font-size: 13px; font-variant: small-caps; text-transform: lowercase; letter-spacing: .08em;
+  border: 0; border-radius: 0; background: none; color: var(--pp-ink); padding: 6px 20px 6px 8px; position: relative;
+  font-family: var(--ae-pixel); font-size: 14px; line-height: 1; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
 }
 .ae-mode .pp-label { margin: 2px 0; }
 .ae-mode:hover { background: none; color: var(--pp-ink); box-shadow: inset 0 -1px 0 rgba(58, 38, 20, .35); }
 .ae-mode.on { color: var(--pp-red); border: 0; }
-/* the bookmark hangs from the top edge of the strip, beside the selected tab's name;
-   every tab keeps room on its left for it, so switching tabs doesn't shift the row */
+/* the bookmark hangs from the top edge of the strip, just right of the selected tab's name;
+   every tab keeps room on its right for it, so switching tabs doesn't shift the row */
 .ae-mode.on::after {
-  content: ""; position: absolute; left: 4px; top: -6px; width: 9px; height: 30px; z-index: 6;
+  content: ""; position: absolute; right: 6px; top: -6px; width: 9px; height: 30px; z-index: 6;
   background: var(--pp-ribbon); box-shadow: inset -4px 0 0 #681313, inset 2px 0 0 #b0352a;
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); pointer-events: none;
 }
-.ae-check { color: var(--pp-soft); font-style: italic; }
-.ae-check input { accent-color: var(--pp-ribbon); }
 
 /* ============================================================ transport: an inked rule with a manicule */
 .ae-transport { flex-basis: 54px; padding: 0 18px; gap: 12px; }
@@ -108,9 +107,17 @@ html, body { font-family: var(--ae-serif); }
 .ae-progress-label { font-family: var(--ae-serif); font-style: italic; color: var(--pp-soft); font-size: 13px; }
 .ae-progress-track { background: rgba(58, 38, 20, .15); border-radius: 0; height: 4px; }
 .ae-progress-track > i { background: var(--pp-ribbon); }
-.ae-tip { border: 1px solid var(--pp-ink); border-radius: 0; backdrop-filter: none; box-shadow: 3px 3px 0 rgba(20, 10, 4, .45); color: var(--pp-ink); }
-.ae-tip b { color: var(--pp-red); }
-.ae-tip .dim { color: var(--pp-soft); font-style: italic; }
+/* the tooltip is a plaque, as in the game: light parchment, a hard ink edge, a pixel shadow */
+.ae-tip {
+  background: #f3e4c4; border: 2px solid var(--pp-ink); border-radius: 0; backdrop-filter: none;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, .35); color: var(--pp-ink); padding: 6px 10px; max-width: 320px;
+  font-family: var(--ae-pixel); font-size: 14px; line-height: 1.35;
+}
+.ae-tip .dim { color: var(--pp-soft); font-size: 13px; }
+.ae-tip-name { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--pp-red); }
+.ae-tip-swatch { width: 12px; height: 12px; display: inline-block; border: 2px solid var(--pp-ink); flex: none; }
+.ae-tip-rule { border-top: 1px dashed var(--pp-rule); margin: 5px 0 4px; }
+.ae-tip-place { font-weight: 600; }
 
 /* ============================================================ the chronicle: a book page */
 .ae-chronicle { border-left: 0; }
@@ -121,7 +128,7 @@ html .ae-app .ae-chronicle .ch-root {
   background: transparent; font-size: 16px;
 }
 .ae-chronicle .ch-bar, .ae-chronicle .ch-filters { background: transparent; border-bottom: 1px solid var(--ch-rule); }
-.ae-chronicle .ch-btn { border-radius: 0; border-color: transparent; font-variant: small-caps; text-transform: lowercase; letter-spacing: .06em; padding: 3px 9px; }
+.ae-chronicle .ch-btn { white-space: nowrap; border-radius: 0; border-color: transparent; font-variant: small-caps; text-transform: lowercase; letter-spacing: .06em; padding: 3px 9px; }
 .ae-chronicle .ch-btn:hover:not(:disabled) { background: none; box-shadow: inset 0 -1px 0 var(--ch-mute); }
 .ae-chronicle .ch-btn.ch-on { background: none; color: var(--pp-red); border-color: transparent; box-shadow: inset 0 -2px 0 var(--pp-ribbon); }
 .ae-chronicle .ch-input { border: 0; border-bottom: 1px solid var(--ch-mute); border-radius: 0; background: transparent; font-style: italic; }

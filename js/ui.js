@@ -448,15 +448,23 @@ function fitView() {
     view.zoom = ps.zoomFor(ps.P);
   }
   const s = cellSize();
-  view.panX = (dom.canvas.clientWidth - world.width * s) / 2;
+  view.panX = (openWidth() - world.width * s) / 2;
   view.panY = (dom.canvas.clientHeight - world.height * s) / 2;
+}
+
+/* how much of the canvas is open map: the chronicle panel floats over its right side */
+function openWidth() {
+  const cw = dom.canvas.clientWidth, ch = dom.chronicleHost;
+  if (!ch) return cw;
+  const left = ch.getBoundingClientRect().left - dom.canvas.getBoundingClientRect().left;
+  return left > 200 && left < cw ? left : cw;
 }
 
 /* keep the map on screen: it can't be dragged past its edges, and it is centred
    along any axis where it is smaller than the view */
 function clampView() {
   if (!dom.canvas) return;
-  const s = cellSize(), cw = dom.canvas.clientWidth, ch = dom.canvas.clientHeight;
+  const s = cellSize(), cw = openWidth(), ch = dom.canvas.clientHeight;
   const mw = world.width * s, mh = world.height * s;
   view.panX = mw <= cw ? (cw - mw) / 2 : Math.min(0, Math.max(cw - mw, view.panX));
   view.panY = mh <= ch ? (ch - mh) / 2 : Math.min(0, Math.max(ch - mh, view.panY));

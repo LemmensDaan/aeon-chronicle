@@ -243,6 +243,16 @@ the deep sea, dithered cloud shadows drifting east and wrapping round (`drawAmbi
 while nothing else does, pauses while the statistics sheet is open or the tab is hidden, and never
 runs with prefers-reduced-motion. Water keeps Aeon's colours (the sample was "very blue").
 
+## The quiet layout (`css/plaques.css`, 2026-10-23)
+
+Daan liked the parchment styling but found the full-width bars and the 480 px chronicle column "very
+aggressive". As in `samples/pixel-ui.html` (style F), the map now fills the window and the UI floats
+over it as small plaques: a slim header, the mode tabs under it, a slim timeline at the bottom, and a
+400 px chronicle panel on the right (`--chron-w`; the graph widens it to 56vw and the header hides its
+year figures to make room). Plaques have an inked rule and a pixel shadow instead of torn edges.
+`ui.js` fits and centres the map in the open area left of the panel (`openWidth`). The DOM is
+unchanged, so this is all one stylesheet loaded last.
+
 ## Known loose ends
 
 - The map doesn't refit when the chronicle widens for the graph (its zoom snaps to whole pixel steps,

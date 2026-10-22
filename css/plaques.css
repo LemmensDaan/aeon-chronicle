@@ -1,0 +1,71 @@
+/* Aeon - the quiet layout (2026-10-23). Loaded last. The map fills the window and the interface
+   floats over it as a few small parchment plaques, as in samples/pixel-ui.html (style F): Daan
+   liked the parchment styling but found the full-width bars and the big chronicle column too
+   loud. The page structure is unchanged; this only re-lays it out and scales it down. */
+
+:root { --chron-w: 400px; --plaque-gap: 10px; }
+@media (max-width: 1100px) { :root { --chron-w: 340px; } }
+
+/* the map, full-bleed under everything */
+.ae-app { display: block; }
+.ae-main { position: absolute; inset: 0; display: block; }
+.ae-left { position: absolute; inset: 0; display: block; }
+.ae-mapwrap { position: absolute; inset: 0; }
+
+/* a plaque: parchment, a fine inked rule just inside its edge, and a pixel shadow */
+.ae-header, .ae-modes, .ae-transport, .ae-chronicle {
+  position: absolute; z-index: 10; border: 0;
+  box-shadow: 0 0 0 1px #946a3c, 3px 4px 0 rgba(0, 0, 0, .35);
+  outline: 1px solid rgba(58, 38, 20, .35); outline-offset: -4px;
+}
+/* no torn edges hanging off them any more */
+.ae-header::after, .ae-modes::after, .ae-transport::before, .ae-chronicle::before { content: none; }
+
+/* header: one slim plaque across the top, smaller type */
+.ae-header {
+  top: var(--plaque-gap); left: var(--plaque-gap); right: calc(var(--chron-w) + 2 * var(--plaque-gap) + 4px);
+  height: 42px; padding: 0 12px; gap: 16px; border-bottom: 0;
+}
+.ae-header .ae-worldname b { font-size: 13px; }
+.ae-header .ae-worldname span { font-size: 10px; }
+.ae-header .ae-status { gap: 16px; }
+.ae-header .ae-stat b { font-size: 13px; }
+.ae-header .ae-stat i { font-size: 10px; }
+.ae-header .ae-btn { white-space: nowrap; padding: 3px 9px; font-size: 12.5px; box-shadow: 1px 1px 0 rgba(58, 38, 20, .25); }
+
+/* map modes: a small plaque under the header */
+.ae-modes {
+  top: calc(var(--plaque-gap) + 52px); left: var(--plaque-gap); padding: 2px 8px 3px; gap: 2px;
+  display: inline-flex; border-bottom: 0;
+}
+.ae-modes .ae-mode { font-size: 12.5px; padding: 5px 16px 5px 6px; }
+.ae-modes .ae-mode.on::after { top: -3px; height: 22px; width: 7px; right: 4px; }
+.ae-modes .ae-overlay { margin-left: 10px; font-size: 12.5px; }
+
+/* the timeline: a slim plaque along the bottom */
+.ae-transport {
+  left: var(--plaque-gap); right: calc(var(--chron-w) + 2 * var(--plaque-gap) + 4px); bottom: var(--plaque-gap);
+  height: 40px; padding: 0 10px; gap: 8px; border-top: 0;
+}
+.ae-transport .ae-btn { padding: 3px 8px; font-size: 12px; }
+.ae-transport .ae-btn.round { width: 28px; height: 28px; }
+.ae-transport .ae-select { padding: 3px 6px; font-size: 12px; }
+
+/* the chronicle: a floating panel on the right, narrower, with a margin all round */
+.ae-chronicle {
+  top: var(--plaque-gap); right: var(--plaque-gap); bottom: var(--plaque-gap);
+  width: var(--chron-w); flex: none; border-left: 0; overflow: hidden;
+}
+/* the graph widens the panel; the header and timeline make room for it */
+.ae-app:has(.ae-chronicle.ch-graphing) { --chron-w: min(56vw, 1000px); }
+/* with the header that short, its year figures make way for the name and the buttons */
+.ae-app:has(.ae-chronicle.ch-graphing) .ae-status { visibility: hidden; }
+.ae-header .ae-worldname { white-space: nowrap; }
+.ae-chronicle.ch-graphing { width: var(--chron-w); flex-basis: auto; }
+html .ae-app .ae-chronicle .ch-root { font-size: 15px; }
+.ae-chronicle .ch-bar { padding: 6px 10px; }
+
+/* things that sit on the map keep clear of the plaques */
+.st-sheet { inset: calc(var(--plaque-gap) + 92px) calc(var(--chron-w) + 2 * var(--plaque-gap) + 4px) calc(var(--plaque-gap) + 50px) var(--plaque-gap); }
+.ae-legend { left: calc(var(--plaque-gap) + 2px); bottom: calc(var(--plaque-gap) + 50px); }
+.ae-progress { bottom: calc(var(--plaque-gap) + 56px); }

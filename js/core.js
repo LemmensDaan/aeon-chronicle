@@ -57,6 +57,7 @@ AEON.createWorld = function (opts) {
     artifacts: {},
     chronicle: [],
     ownerLog: [],             // [year, regionId, ownerId|null] — lets any year be reconstructed
+    settleLog: [],            // [year, regionId, tier] whenever a settlement appears, changes size or goes (0)
     rng: rng,
     _ids: { polity: 1, figure: 1, artifact: 1, event: 1 },
     _cooldowns: {},
@@ -76,6 +77,7 @@ AEON.createWorld = function (opts) {
   }
 
   seedPolities(world);
+  logSettlements(world);
   return world;
 };
 
@@ -387,6 +389,60 @@ function transferRegion(world, region, to) {
   return true;
 }
 
+/* settlement sizes: 1..4, named here unless a pack brings its own (pack.settlementTiers) */
+AEON.SETTLEMENT_TIERS = ["", "village", "town", "city", "great city"];
+AEON.tierName = function (pack, tier) {
+  const t = (pack && pack.settlementTiers) || AEON.SETTLEMENT_TIERS;
+  return t[tier] || "settlement";
+};
+/* Packs found, grow, shrink and raze settlements inside their events, so the engine notes the
+   outcome once a tick: world.settleLog gets [year, regionId, tier] whenever a settlement
+   appears, changes size or is gone (tier 0). Only views and statistics read it, so it
+   changes no history. */
+function logSettlements(world) {
+  let now = world._tierNow;
+  if (!now) {
+    now = new Int8Array(world.regions.length);
+    const hidden = function (k, v) { Object.defineProperty(world, k, { value: v, enumerable: false, configurable: true, writable: true }); };
+    hidden("_tierNow", now);
+    hidden("_settleObj", new Array(world.regions.length).fill(null));
+    hidden("_pastSettle", {});            /* regionId -> [{ s, until }]: settlements since razed or replaced */
+  }
+  const R = world.regions, obj = world._settleObj;
+  for (let i = 0; i < R.length; i++) {
+    const cur = R[i].settlement || null, t = cur ? cur.tier : 0;
+    if (cur !== obj[i]) {
+      if (obj[i]) (world._pastSettle[i] || (world._pastSettle[i] = [])).push({ s: obj[i], until: world.year });
+      obj[i] = cur;
+      if (cur && t === now[i]) world.settleLog.push([world.year, i, t]);   /* refounded at the same size */
+    }
+    if (t !== now[i]) { now[i] = t; world.settleLog.push([world.year, i, t]); }
+  }
+}
+/* the settlement object that stood in a region during a year, even one razed since */
+function settlementAt(world, rid, year) {
+  const past = world._pastSettle && world._pastSettle[rid];
+  if (past) for (const x of past) if (year < x.until) return x.s;
+  return world.regions[rid].settlement || null;
+}
+/* the size of the settlement in a region during a year (0: none yet, or gone) */
+function settleIndex(world) {
+  let ix = world._settleIx;
+  const L = world.settleLog || [];
+  if (ix && ix.n === L.length) return ix;
+  ix = { n: L.length, by: {} };
+  for (const e of L) (ix.by[e[1]] || (ix.by[e[1]] = [])).push(e);
+  Object.defineProperty(world, "_settleIx", { value: ix, enumerable: false, configurable: true, writable: true });
+  return ix;
+}
+AEON.tierAt = function (world, rid, year) {
+  const list = settleIndex(world).by[rid];
+  let t = 0;
+  if (list) for (const e of list) { if (e[0] <= year) t = e[2]; else break; }
+  return t;
+};
+AEON.settlementHistory = function (world, rid) { return (settleIndex(world).by[rid] || []).slice(); };
+
 function foundSettlement(world, region, tier) {
   if (!region || region.barren) return null;
   const polity = region.owner && world.polities[region.owner];
@@ -495,15 +551,27 @@ AEON.viewAt = function (world, year) {
     v = world._view = Object.create(world);
     v.regions = world.regions.map(function (r) { return Object.create(r); });
     v._pv = {};
+    v._sv = {};
   }
-  if (v._year === year && v._logLen === world.ownerLog.length) return v;
+  const sLen = world.settleLog ? world.settleLog.length : 0;
+  if (v._year === year && v._logLen === world.ownerLog.length && v._sLen === sLen) return v;
 
   const owners = ownersAt(world, year);
   const first = {};
   for (let i = 0; i < owners.length; i++) {
     const o = owners[i], rv = v.regions[i], s = world.regions[i].settlement;
     rv.owner = o;
-    rv.settlement = s && s.founded <= year ? s : null;
+    /* the settlement as it stood that year: none before it was founded or after it fell,
+       and at the size it had then */
+    const tier = sLen ? AEON.tierAt(world, i, year) : (s && s.founded <= year ? s.tier : 0);
+    const so = tier ? (sLen ? settlementAt(world, i, year) : s) : null;
+    if (!so) rv.settlement = null;
+    else if (tier === so.tier) rv.settlement = so;
+    else {
+      let sv = v._sv[i];
+      if (!sv || Object.getPrototypeOf(sv) !== so) sv = v._sv[i] = Object.create(so);
+      sv.tier = tier; rv.settlement = sv;
+    }
     if (o != null && first[o] === undefined) first[o] = i;
   }
 
@@ -522,6 +590,7 @@ AEON.viewAt = function (world, year) {
   v.year = year;
   v._year = year;
   v._logLen = world.ownerLog.length;
+  v._sLen = sLen;
   return v;
 };
 
@@ -737,6 +806,8 @@ AEON.tick = function (world) {
   for (let i = 0; i < worldRolls; i++) {
     if (rng.chance(0.5)) fireOne(world, "world", null);
   }
+
+  logSettlements(world);
 
   /* if everyone is gone, let a new polity rise from the ashes */
   if (living(world).length === 0) {

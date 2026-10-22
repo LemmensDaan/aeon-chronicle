@@ -171,8 +171,13 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
    alt-history: its seven eras; fantasy has its own ladder (Hearths → Runes → Towers → Charters →
    Clockwork) because its eras are events. Shown as numbered pixel pennants on the chart (our own
    style, not AoE's shields), in the readouts, the map tooltip, the table and the polity page.
-3. **Settlement growth.** Settlements as village / town / city (extra tiers welcome); record the year
-   each grows, so the sheet can count cities per realm over time.
+3. ~~**Settlement growth**~~ done 2026-10-22. Tiers are named village / town / city / great city
+   (`AEON.SETTLEMENT_TIERS`, `AEON.tierName`; a pack may set `settlementTiers`). Packs change tiers
+   inside events, so the engine scans once a tick and logs `world.settleLog` `[year, region, tier]`
+   (0 = gone) and keeps razed/replaced settlement objects (`_pastSettle`). `viewAt` now shows each
+   settlement at the size it had that year, and razed ones before they fell. Region pages list the
+   growth; polity pages count cities; the sheet has a **Cities** tab (tier 3+, replayed from
+   `ownerLog` + `settleLog`). Alt-history packs never change a tier, so there cities are capitals.
 4. **Wonders.** New wonder built / destroyed events per pack: historical (temples, monuments), fantasy
    (wonder-like things too), and alt-history as megaprojects that were planned or dreamed of in real
    history, e.g. the Volkshalle, or a bridge or dam across Gibraltar.

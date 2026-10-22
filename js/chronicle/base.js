@@ -17,7 +17,11 @@ var C = AEON._chronicle = {};
 
 var SVGNS = "http://www.w3.org/2000/svg";
 var KIND_LABEL = { polity: "Polity", figure: "Figure", artifact: "Artifact", region: "Region", event: "Event", settlement: "Settlement" };
-var TIER = ["", "outpost", "town", "city", "great city"];
+/* settlement sizes by tier; the engine names them (AEON.tierName), a pack may rename them */
+var TIER = {};
+[1, 2, 3, 4].forEach(function (t) { Object.defineProperty(TIER, t, { enumerable: true, get: function () {
+  return AEON.tierName ? AEON.tierName(S.world && S.world.pack, t) : ["", "village", "town", "city", "great city"][t];
+} }); });
 var IMP_LABEL = ["", "everything", "minor events and up", "notable events and up", "major events and up", "world-defining only"];
 var PAGE_STEP = 120;
 

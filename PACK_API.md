@@ -190,6 +190,12 @@ crossing in `polity.ageLog` (`[{ age, year, inherited? }]`); `AEON.ageAt(world, 
 reads it. Nothing in the simulation reads learning, so adding or tuning ages never changes a
 history. Calibrate `at` to the median realm's learning at the year an age should typically begin.
 
+### 3.1c `settlementTiers` (optional)
+
+Names for settlement tiers 1..4; the default is `["", "village", "town", "city", "great city"]`.
+Packs may change `region.settlement.tier` freely inside events: the engine notices once a tick and
+logs it (`world.settleLog`), so statistics and past-year views stay right.
+
 ### 3.2 `eras`
 
 An ordered ladder. The engine advances the era by year, and events can gate on it.

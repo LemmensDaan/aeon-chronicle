@@ -496,7 +496,6 @@ function showTip(e, id) {
 }
 /* the plaque's contents: the realm that holds the cell in the shown year and who rules it,
    then the place itself. Population is only known for the end of the record. */
-const TIER_NAME = ["", "outpost", "town", "city", "great city"];
 function fillTip(view, r) {
   const year = view.year, live = year >= world.year, pack = world.pack;
   const owner = r.owner != null ? view.polities[r.owner] : null;
@@ -521,7 +520,7 @@ function fillTip(view, r) {
   const s = r.settlement, place = (s && s.name) || r.name;
   tipEl.appendChild(el("div", { class: "ae-tip-place", text: place || biome.name || r.biome || "Unclaimed land" }));
   /* with no name of its own the place is titled by its biome, so don't repeat it */
-  const where = [s ? TIER_NAME[s.tier] || "settlement" : null, place ? biome.name || r.biome : null].filter(Boolean);
+  const where = [s ? AEON.tierName(pack, s.tier) : null, place ? biome.name || r.biome : null].filter(Boolean);
   if (s && r.name && r.name !== s.name) where.push("in " + r.name);
   if (where.length) tipEl.appendChild(el("div", { class: "dim", text: where.join(" · ") }));
   const more = [];

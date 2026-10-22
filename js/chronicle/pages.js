@@ -112,6 +112,7 @@ function pagePolity(id) {
   add(st, stat("Capital", p.capital != null && w.regions[p.capital] ? link("region", p.capital) : "none"),
     stat("Regions held", plural((p.regions || []).length, "region")), stat("Peak size", plural(peakSize(id), "region")),
     stat("Population", (p.population || 0).toLocaleString()), stat("Technology", pct(p.tech) + "%"),
+    stat("Cities", (function () { var n = 0; (p.regions || []).forEach(function (rid) { var st = w.regions[rid].settlement; if (st && st.tier >= 3) n++; }); return n; })()),
     stat("Wealth", Math.round(p.wealth || 0).toLocaleString()), stat("Military", Math.round((p.military || 0) * 100) / 100),
     stat("Prestige", Math.round((p.prestige || 0) * 100) / 100));
   var ages = (S.world.pack && S.world.pack.ages) || null;
@@ -364,6 +365,18 @@ function pageRegion(id) {
   s = section(pg, "Settlement");
   if (!r.settlement) s.appendChild(empty("No settlement stands here."));
   else s.appendChild(h("p", null, r.settlement.name + " — a " + (TIER[r.settlement.tier] || "settlement") + ", founded " + yr(r.settlement.founded) + "."));
+  /* how it grew and shrank, from the engine's settlement log */
+  var hist = AEON.settlementHistory ? AEON.settlementHistory(w, id) : [];
+  if (hist.length > 1 || (hist.length === 1 && !r.settlement)) {
+    var gu = h("ul", "ch-ul");
+    hist.forEach(function (e, i) {
+      var prev = i ? hist[i - 1][2] : 0, li = h("li");
+      var what = !e[2] ? "abandoned or destroyed" : !prev ? "founded as a " + TIER[e[2]] : e[2] > prev ? "grew into a " + TIER[e[2]] : "shrank to a " + TIER[e[2]];
+      add(li, h("span", "ch-lead", yr(e[0]) + ": "), what);
+      gu.appendChild(li);
+    });
+    s.appendChild(gu);
+  }
   s = section(pg, "Features");
   if (!r.features || !r.features.length) s.appendChild(empty("Nothing remarkable marks this place."));
   else { var ch = h("div", "ch-chips"); r.features.forEach(function (f) { ch.appendChild(h("span", "ch-chip", f)); }); s.appendChild(ch); }

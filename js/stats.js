@@ -30,7 +30,9 @@ const GAP = 2;                                 /* CSS pixels of parchment betwee
 const MEASURES = [
   { id: "pop", tab: "Population", title: "Share of the world's people", unit: "people", key: "pop" },
   { id: "size", tab: "Territory", title: "Share of the world's land", unit: "provinces", key: "size" },
+  { id: "cities", tab: "Cities", title: "Share of the world's cities", unit: "cities", one: "city", key: "cities" },
 ];
+function units(m, n) { return fmt(n) + " " + (Math.round(n) === 1 && m.one ? m.one : m.unit); }
 
 /* ------------------------------------------------------------ colour distance */
 /* sRGB hex -> OKLab, and colour-blindness simulation (Machado et al. 2009, severity 1) */
@@ -116,9 +118,10 @@ function buildData(world) {
   const T = Math.round((y1 - y0) / step) + 1;
   const series = {};
   for (const m of MEASURES) series[m.id] = { total: new Float64Array(T) };
-  const per = {};
+  const per = {}, cities = cityCounts(world, y0, step, T);
   for (const p of pols) {
-    const v = { pop: new Float64Array(T), size: new Float64Array(T) };
+    const v = { pop: new Float64Array(T), size: new Float64Array(T), cities: cities[p.id] || new Float64Array(T) };
+    for (let t = 0; t < T; t++) series.cities.total[t] += v.cities[t];
     let popYears = 0;
     for (const s of p.sizeHistory) {
       const t = Math.round((s.year - y0) / step);
@@ -138,6 +141,30 @@ function buildData(world) {
   bands.forEach(function (b) { topIds[b.p.id] = true; });
   return { y0: y0, step: step, T: T, series: series, per: per, bands: bands, topIds: topIds, rest: ranked.length - bands.length,
            battles: pickBattles(world) };
+}
+/* cities (tier 3 and up) each realm held at every tick, replaying who owned which region
+   (world.ownerLog) alongside how big each settlement was (world.settleLog) */
+function cityCounts(world, y0, step, T) {
+  const N = world.regions.length, owner = new Array(N).fill(null), tier = new Int8Array(N);
+  const OL = world.ownerLog || [], SL = world.settleLog || [], cur = {}, out = {};
+  let a = 0, b = 0;
+  const bump = function (pid, d) { if (pid != null) cur[pid] = (cur[pid] || 0) + d; };
+  for (let t = 0; t < T; t++) {
+    const y = y0 + t * step;
+    while (a < OL.length && OL[a][0] <= y) {
+      const r = OL[a][1], o = OL[a][2]; a++;
+      if (tier[r] >= 3 && owner[r] !== o) { bump(owner[r], -1); bump(o, 1); }
+      owner[r] = o;
+    }
+    while (b < SL.length && SL[b][0] <= y) {
+      const r = SL[b][1], ti = SL[b][2]; b++;
+      const was = tier[r] >= 3, is = ti >= 3;
+      if (was !== is) bump(owner[r], is ? 1 : -1);
+      tier[r] = ti;
+    }
+    for (const pid in cur) if (cur[pid] > 0) (out[pid] || (out[pid] = new Float64Array(T)))[t] = cur[pid];
+  }
+  return out;
 }
 /* great battles: every world-defining one, then the major ones while there is room */
 function pickBattles(world) {
@@ -518,7 +545,7 @@ function axisLabels(cols) {
     lab.style.left = x + "px";
     lab.style.transform = k === 0 ? "none" : k === n - 1 ? "translateX(-100%)" : "translateX(-50%)";
     lab.appendChild(h("b", null, pack.yearLabel(d.y0 + t * d.step)));
-    lab.appendChild(h("span", null, fmt(d.series[S.measure.id].total[t]) + " " + S.measure.unit));
+    lab.appendChild(h("span", null, units(S.measure, d.series[S.measure.id].total[t])));
     ax.appendChild(lab);
   }
 }
@@ -575,9 +602,9 @@ function tip(e, p) {
     el.appendChild(h("div", null, t.length > 170 ? t.slice(0, 168).replace(/\s+\S*$/, "") + "…" : t));
     el.appendChild(h("div", "dim", "Click to read it in the chronicle"));
   } else if (S.hoverT != null) {
-    const t = S.hoverT, st = stackAt(t, 1), unit = S.measure.unit;
+    const t = S.hoverT, st = stackAt(t, 1);
     el.appendChild(h("div", "ae-tip-name", pack.yearLabel(d.y0 + t * d.step)));
-    el.appendChild(h("div", "dim", "World: " + fmt(st.total) + " " + unit));
+    el.appendChild(h("div", "dim", "World: " + units(S.measure, st.total)));
     const list = h("div", "st-tiplist");
     d.bands.forEach(function (b, i) {
       const r = st.rows[i];
@@ -648,6 +675,6 @@ function table() {
   return wrap;
 }
 
-AEON.stats = { open: open, close: close, isOpen: isOpen, setYear: setYear, _order: bestOrder, _separation: separation };
+AEON.stats = { open: open, close: close, isOpen: isOpen, setYear: setYear, _order: bestOrder, _separation: separation, _cityCounts: cityCounts };
 
 })();

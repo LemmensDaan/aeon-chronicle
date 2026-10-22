@@ -389,11 +389,24 @@ function transferRegion(world, region, to) {
   return true;
 }
 
-/* settlement sizes: 1..4, named here unless a pack brings its own (pack.settlementTiers) */
-AEON.SETTLEMENT_TIERS = ["", "village", "town", "city", "great city"];
+/* Settlement sizes are tiers 1..4 (tier 4 is a city that has outgrown its walls; packs use
+   the difference). Shown as four types: village, town, city, and capital, which is any
+   settlement that is a living realm's seat, whatever its size. A pack may rename the
+   sizes (pack.settlementTiers). */
+AEON.SETTLEMENT_TIERS = ["", "village", "town", "city", "city"];
 AEON.tierName = function (pack, tier) {
   const t = (pack && pack.settlementTiers) || AEON.SETTLEMENT_TIERS;
   return t[tier] || "settlement";
+};
+/* the polity a region is the seat of, in a world or a past-year view, or null */
+AEON.capitalOf = function (w, rid) {
+  for (const id in w.polities) { const p = w.polities[id]; if (p.ended == null && p.capital === rid) return p; }
+  return null;
+};
+AEON.settlementType = function (w, rid) {
+  const r = w.regions[rid];
+  if (!r || !r.settlement) return null;
+  return AEON.capitalOf(w, rid) ? "capital" : AEON.tierName(w.pack, r.settlement.tier);
 };
 /* Packs found, grow, shrink and raze settlements inside their events, so the engine notes the
    outcome once a tick: world.settleLog gets [year, regionId, tier] whenever a settlement

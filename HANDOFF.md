@@ -182,6 +182,19 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
    (wonder-like things too), and alt-history as megaprojects that were planned or dreamed of in real
    history, e.g. the Volkshalle, or a bridge or dam across Gibraltar.
 
+## Settlements on the map (2026-10-22)
+
+- Four **types**: village (tier 1), town (2), city (3 and 4) and **capital**, meaning a living
+  realm's seat that year, whatever its size (`AEON.settlementType`, `AEON.capitalOf`). Daan asked to
+  rename "great city" to "capital"; tier 4 still exists for the packs but now reads "city".
+- **Sprites** grow with the square root of the zoom (`drawOverlay` in `pixelmap.js`), so a zoomed
+  map fills up without markers swelling as fast as the land. Cities show from the normal zoom.
+- **Roads** (`drawRoads`): per realm, a tree grown from the capital by the shortest overland links,
+  plus the capital's roads to its three nearest settlements; never across water, at most 14 cells.
+  Drawn into the map at map resolution, so they zoom like rivers and follow the year.
+- The sprites are placeholders: `samples/settlements.html` shows three alternative sets
+  (Rooftops, Cartographer, Walls and towers) and three road styles for Daan to choose from.
+
 ## Known loose ends
 
 - The map doesn't refit when the chronicle widens for the graph (its zoom snaps to whole pixel steps,

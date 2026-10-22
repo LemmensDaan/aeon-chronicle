@@ -96,9 +96,11 @@ const PEAK = sprite(["....k....", "...kwk...", "..kwwlk..", "..kwlldk.", ".klldd
 const PINE = sprite(["..k..", ".kgk.", ".kgk.", "kgggk", ".kbk."], { k: "#14301f", g: "#2f6e45", b: "#5a3d22" });
 const TREE = sprite([".kkk.", "kgglk", "kgggk", ".kbk."], { k: "#13361b", g: "#3a8f42", l: "#6cc160", b: "#5a3d22" });
 const PALM = sprite(["kg.gk", ".ggg.", "..b..", "..b.."], { k: "#14451f", g: "#2fa055", b: "#7a5a2e" });
+/* the four settlement types; the capital is recoloured to its realm (r, d) when drawn */
 const KEEP = sprite(["k.k.k.k", "kwkwkwk", "kwwwwwk", "kwrrrwk", "kwrdrwk", "kkkkkkk"], { k: INK, w: "#efe6d6", r: "#999", d: INK });
-const TOWN = sprite([".kkk.", "kwwwk", "kwrwk", "kkkkk"], { k: INK, w: "#efe6d6", r: "#999" });
-const HAMLET = sprite(["kk", "kk"], { k: INK });
+const CITY = sprite([".kkk.", "kwwwk", "kwrwk", "kkkkk"], { k: INK, w: "#efe6d6", r: "#999" });
+const TOWN = sprite([".k.", "kwk", "kkk"], { k: INK, w: "#efe6d6" });
+const VILLAGE = sprite(["kk", "kk"], { k: INK });
 
 /** A well-mixed value in [0,1) per cell id; salt gives independent values for the same cell. */
 function cellRand(id, salt) {
@@ -279,8 +281,71 @@ function compose(c, w, mode) {
       }
     }
   }
+  drawRoads(c, w, d);
   c.fctx.putImageData(c.fimg, 0, 0);
   return c.frame;
+}
+
+/* roads: within each realm its settlements are joined into a tree, grown out from the capital
+   by the shortest overland links, and the capital also sends a road to each of its nearest
+   neighbours, so roads fan out from the seat. A road never crosses water and is at most
+   ROAD_MAX cells long. Drawn into the map at map resolution as a dotted track with a slight
+   bend, so it zooms with the land like the rivers do. */
+const ROAD = [96, 68, 38], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
+function drawRoads(c, w, d) {
+  const R = w.regions, W = w.width, VW = c.VW, VH = c.VH, land = c.land, by = {};
+  for (let k = 0; k < R.length; k++) {
+    const r = R[k];
+    if (r.settlement && r.owner != null && !r.barren) (by[r.owner] || (by[r.owner] = [])).push(k);
+  }
+  const dxw = function (a, b) { let dd = b - a; if (dd > W / 2) dd -= W; if (dd < -W / 2) dd += W; return dd; };
+  const dist2 = function (a, b) { const dx = dxw(R[a].x, R[b].x), dy = R[b].y - R[a].y; return dx * dx + dy * dy; };
+  const overland = function (a, b) {
+    const dx = dxw(R[a].x, R[b].x), dy = R[b].y - R[a].y, n = Math.max(Math.abs(dx), Math.abs(dy));
+    for (let s = 1; s < n; s++) {
+      const x = ((Math.round(R[a].x + dx * s / n) % W) + W) % W, y = Math.round(R[a].y + dy * s / n);
+      if (R[y * W + x].barren) return false;
+    }
+    return true;
+  };
+  const put = function (x, y, k) {
+    x = ((Math.round(x) % VW) + VW) % VW; y = Math.round(y);
+    if (y < 0 || y >= VH) return;
+    const i = y * VW + x;
+    if (!land[i] || k % 3 === 2) return;                       /* a dotted track, on land only */
+    d[i * 4] += (ROAD[0] - d[i * 4]) * 0.85; d[i * 4 + 1] += (ROAD[1] - d[i * 4 + 1]) * 0.85; d[i * 4 + 2] += (ROAD[2] - d[i * 4 + 2]) * 0.85;
+  };
+  const line = function (x0, y0, x1, y1, k0) {
+    const n = Math.max(1, Math.round(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))));
+    for (let s = 0; s <= n; s++) put(x0 + (x1 - x0) * s / n, y0 + (y1 - y0) * s / n, k0 + s);
+    return k0 + n;
+  };
+  const road = function (a, b) {
+    const ax = R[a].x * PPC + PPC / 2, ay = R[a].y * PPC + PPC / 2;
+    const bx = ax + dxw(R[a].x, R[b].x) * PPC, by2 = R[b].y * PPC + PPC / 2;
+    const len = Math.hypot(bx - ax, by2 - ay) || 1, bend = (cellRand(a * 7919 + b, 11) - 0.5) * 5;
+    const mx = (ax + bx) / 2 - (by2 - ay) / len * bend, my = (ay + by2) / 2 + (bx - ax) / len * bend;
+    line(mx, my, bx, by2, line(ax, ay, mx, my, 0));
+  };
+  for (const id in by) {
+    const nodes = by[id];
+    if (nodes.length < 2) continue;
+    const p = w.polities[id], cap = p && nodes.indexOf(p.capital) >= 0 ? p.capital : nodes[0];
+    const linked = {}, key = function (a, b) { return a < b ? a + "-" + b : b + "-" + a; };
+    const tree = [cap], rest = nodes.filter(function (n) { return n !== cap; });
+    while (rest.length) {
+      let bd = Infinity, bi = -1, from = -1;
+      for (let i = 0; i < rest.length; i++) for (const t of tree) { const dd = dist2(t, rest[i]); if (dd < bd) { bd = dd; bi = i; from = t; } }
+      const to = rest.splice(bi, 1)[0];
+      tree.push(to);
+      if (bd <= ROAD_MAX * ROAD_MAX && overland(from, to)) { linked[key(from, to)] = true; road(from, to); }
+    }
+    nodes.filter(function (n) { return n !== cap; })
+      .sort(function (a, b) { return dist2(cap, a) - dist2(cap, b); }).slice(0, CAPITAL_SPOKES)
+      .forEach(function (n) {
+        if (!linked[key(cap, n)] && dist2(cap, n) <= ROAD_MAX * ROAD_MAX && overland(cap, n)) { linked[key(cap, n)] = true; road(cap, n); }
+      });
+  }
 }
 
 /* ------------------------------------------------------------ view */
@@ -307,7 +372,9 @@ function makeView(canvas, world, opts) {
 /* No names are drawn on the map: places and realms are named in the tooltip on hover. */
 function drawOverlay(ctx, w, c, v, opts, tiles) {
   const dpr = v.dpr, pc = v.P / dpr;                         // CSS pixels per map pixel
-  const u = Math.max(1, Math.round((pc >= 2 ? 2 : 1) * dpr)); // device pixels per font/sprite pixel
+  /* device pixels per sprite pixel: sprites grow with zoom, but only with its square root, so a
+     zoomed-in map fills up without the markers swelling as fast as the land */
+  const u = Math.max(1, Math.round(Math.min(6, Math.max(1, Math.sqrt(pc) * 1.15)) * dpr));
   const cell = PPC * v.P, R = w.regions;
   const boxes = [];
   const free = function (b) {
@@ -321,7 +388,7 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   /* settlements: capitals always; towns and villages appear as the map is zoomed in */
   const capitals = {};
   for (const id in w.polities) { const p = w.polities[id]; if (!p.ended && p.capital != null) capitals[p.capital] = p; }
-  const minTier = pc >= 7 ? 1 : pc >= 4 ? 2 : pc >= 3 ? 3 : 9;
+  const minTier = pc >= 4 ? 1 : pc >= 2 ? 2 : 3;
   const sites = [];
   for (let k = 0; k < R.length; k++) {
     const s = R[k].settlement, cap = capitals[k];
@@ -330,7 +397,7 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   }
   sites.sort(function (a, b) { return b.tier - a.tier; });
   for (const st of sites) {
-    const sp = st.cap ? KEEP : st.tier >= 3 ? TOWN : HAMLET;
+    const sp = st.cap ? KEEP : st.tier >= 3 ? CITY : st.tier === 2 ? TOWN : VILLAGE;
     const x = Math.round(sx(st.r.x + 0.5) - sp.w * u / 2), y = Math.round(sy(st.r.y + 0.5) - sp.h * u / 2);
     const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
     if (!st.cap && !free(b)) continue;

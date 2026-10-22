@@ -520,7 +520,7 @@ function fillTip(view, r) {
   const s = r.settlement, place = (s && s.name) || r.name;
   tipEl.appendChild(el("div", { class: "ae-tip-place", text: place || biome.name || r.biome || "Unclaimed land" }));
   /* with no name of its own the place is titled by its biome, so don't repeat it */
-  const where = [s ? AEON.tierName(pack, s.tier) : null, place ? biome.name || r.biome : null].filter(Boolean);
+  const where = [s ? (AEON.settlementType ? AEON.settlementType(view, r.id) : AEON.tierName(pack, s.tier)) : null, place ? biome.name || r.biome : null].filter(Boolean);
   if (s && r.name && r.name !== s.name) where.push("in " + r.name);
   if (where.length) tipEl.appendChild(el("div", { class: "dim", text: where.join(" · ") }));
   const more = [];

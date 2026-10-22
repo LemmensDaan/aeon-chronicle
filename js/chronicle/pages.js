@@ -364,14 +364,23 @@ function pageRegion(id) {
   }
   s = section(pg, "Settlement");
   if (!r.settlement) s.appendChild(empty("No settlement stands here."));
-  else s.appendChild(h("p", null, r.settlement.name + " — a " + (TIER[r.settlement.tier] || "settlement") + ", founded " + yr(r.settlement.founded) + "."));
+  else {
+    var seat = AEON.capitalOf ? AEON.capitalOf(w, id) : null, sp = h("p");
+    add(sp, r.settlement.name + " — a " + (TIER[r.settlement.tier] || "settlement") + ", founded " + yr(r.settlement.founded));
+    if (seat) add(sp, ", and the capital of ", link("polity", seat.id));
+    add(sp, ".");
+    s.appendChild(sp);
+  }
   /* how it grew and shrank, from the engine's settlement log */
   var hist = AEON.settlementHistory ? AEON.settlementHistory(w, id) : [];
   if (hist.length > 1 || (hist.length === 1 && !r.settlement)) {
     var gu = h("ul", "ch-ul");
+    var shown = null;
     hist.forEach(function (e, i) {
-      var prev = i ? hist[i - 1][2] : 0, li = h("li");
-      var what = !e[2] ? "abandoned or destroyed" : !prev ? "founded as a " + TIER[e[2]] : e[2] > prev ? "grew into a " + TIER[e[2]] : "shrank to a " + TIER[e[2]];
+      var prev = i ? hist[i - 1][2] : 0, li = h("li"), name = e[2] ? TIER[e[2]] : "";
+      if (i && name === shown) return;        /* a change of size that keeps its name */
+      shown = name;
+      var what = !e[2] ? "abandoned or destroyed" : !prev ? "founded as a " + name : e[2] > prev ? "grew into a " + name : "shrank to a " + name;
       add(li, h("span", "ch-lead", yr(e[0]) + ": "), what);
       gu.appendChild(li);
     });

@@ -42,7 +42,7 @@ function atlasRows(tab) {
   return w.regions.filter(function (r) { return r.settlement && (!q || String(r.settlement.name).toLowerCase().indexOf(q) >= 0); })
     .sort(function (a, b) { return b.settlement.tier - a.settlement.tier || (a.settlement.name < b.settlement.name ? -1 : 1); }).map(function (r) {
       var o = r.owner != null ? w.polities[r.owner] : null;
-      return { kind: "region", id: r.id, name: r.settlement.name, color: o && o.color, line: "A " + (TIER[r.settlement.tier] || "settlement") + " in " + regionLabel(r) + (o ? ", held by " + o.name : "") + ", founded " + yr(r.settlement.founded) };
+      return { kind: "region", id: r.id, name: r.settlement.name, color: o && o.color, line: (o && o.capital === r.id && o.ended == null ? "The capital of " + o.name + ", a " + (TIER[r.settlement.tier] || "settlement") + " in " + regionLabel(r) : "A " + (TIER[r.settlement.tier] || "settlement") + " in " + regionLabel(r) + (o ? ", held by " + o.name : "")) + ", founded " + yr(r.settlement.founded) };
     });
 }
 function pageAtlas() {

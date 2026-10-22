@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aeon — settlement sprites</title>
+<link rel="stylesheet" href="../css/pixelify.css">
+<style>
+  :root { --ink: #2a1a0e; --soft: #6b4a2a; --red: #8a3a22; --paper: #e9d6ad; }
+  body { margin: 0; background: #2a1d12; color: var(--ink); font: 15px/1.4 "Pixelify Sans", Georgia, serif; }
+  main { max-width: 1180px; margin: 24px auto; padding: 26px 30px; background: var(--paper);
+         box-shadow: 0 0 0 1px #946a3c, 6px 8px 0 rgba(0,0,0,.35); outline: 1px solid rgba(58,38,20,.5); outline-offset: -8px; }
+  h1 { color: var(--red); font-weight: 600; margin: 0 0 4px; }
+  h2 { color: var(--red); font-weight: 600; margin: 28px 0 2px; font-size: 20px; }
+  p { margin: 4px 0 10px; color: var(--soft); }
+  .set { border-top: 1px dashed rgba(58,38,20,.3); padding-top: 6px; }
+  canvas { display: block; image-rendering: pixelated; margin: 8px 0; outline: 2px solid var(--ink); }
+  .labels { display: grid; grid-template-columns: repeat(4, 88px); max-width: 352px; text-align: center; color: var(--soft); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Settlement sprites</h1>
+<p>Four types on the map: village, town, city and capital (a realm's seat, in its realm's colour).
+Each set is shown on grassland, desert and forest, at three zoom levels (the map now grows sprites
+by the square root of the zoom). Below them, three styles of road.</p>
+<div id="sets"></div>
+</main>
+<script>
+"use strict";
+const INK = "#2a1a0e";
+const REALM = "#3a6ea5", REALM_D = "#244a73";   /* an example realm colour for the capital */
+const GROUND = [["grassland", "#8fb04a", "#7a9a3c"], ["desert", "#d9b878", "#c7a463"], ["forest", "#3f7a3a", "#336a30"]];
+
+function S(rows, pal) { return { rows: rows, pal: pal, w: rows[0].length, h: rows.length }; }
+const P = { k: INK, w: "#efe6d6", r: "#b5452e", R: "#7e2d1d", b: "#7a4a22", g: "#b7b1a4", G: "#7c766c",
+            y: "#e0b84f", f: REALM, F: REALM_D, c: "#8a3a22" };
+
+const SETS = [
+  { name: "Current", note: "What the map draws now: a dot, a hut, a house, a keep.", sprites: [
+    S(["kk", "kk"], P),
+    S([".k.", "kwk", "kkk"], P),
+    S([".kkk.", "kwwwk", "kwgwk", "kkkkk"], P),
+    S(["k.k.k.k", "kwkwkwk", "kwwwwwk", "kwfffwk", "kwfFfwk", "kkkkkkk"], P),
+  ] },
+  { name: "A · Rooftops", note: "Little buildings with red roofs; the capital is a castle flying its realm's banner.", sprites: [
+    S(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."], P),
+    S(["......k....", ".....kgk...", "..k..kgk...", ".krk.kwk.k.", "krrrkkwkkrk", "kwwwkkwkkwk", "kwkwkkwkkwk", "kkkkkkkkkkk"], P),
+    S(["k.k.......k.k", "kgk.k.k.k.kgk", "kgkkgkgkgkkgk", "kgggggggggggk", "kgrrkgggkrrgk", "kgwwkgggkwwgk", "kggggkkkggggk", "kgggkbbbkgggk", "kgggkbbbkgggk", "kkkkkkkkkkkkk"], P),
+    S(["......kff....", "......kfff...", "......kff....", "......k......", "..k.k.k.k.k..", "..kgkgkgkgk..", "..kgggggggk..", "k.kgggggggk.k", "kgkgwwgwwgkgk", "kgkgggkgggkgk", "kgkggkbkggkgk", "kkkkkkkkkkkkk"], P),
+  ] },
+  { name: "B · Cartographer", note: "Old-atlas ink symbols, matching the parchment: ring, ringed dot, walled square, and a star in the realm's colour for a capital.", sprites: [
+    S(["kkk", "k.k", "kkk"], P),
+    S([".kkk.", "k...k", "k.k.k", "k...k", ".kkk."], P),
+    S(["k.k.k.k", "kkkkkkk", "k.....k", "k.kkk.k", "k.k.k.k", "k.....k", "kkkkkkk"], P),
+    S(["....k....", "...kfk...", "...kfk...", "kkkkfkkkk", "kfffffffk", ".kfffffk.", "..kfffk..", ".kffkffk.", "kffk.kffk", "kkk...kkk"], P),
+  ] },
+  { name: "C · Walls and towers", note: "How fortified a place is: a fenced hut, a palisade, stone walls with towers, a walled keep with a banner.", sprites: [
+    S(["..k..", ".kbk.", "kbbbk", "kwkwk", "b.b.b"], P),
+    S([".bbbbb.", "b.....b", "b.kwk.b", "b.kkk.b", "b.....b", ".bb.bb."], P),
+    S(["kk.....kk", "kgkkkkkgk", ".k.....k.", ".k.kwk.k.", ".k.kkk.k.", ".k.....k.", "kgkk.kkgk", "kk.....kk"], P),
+    S(["....kff....", "....kfF....", "....k......", "kk.kkkkk.kk", "kgkkgggkkgk", ".k.kgwgk.k.", ".k.kgggk.k.", ".k.kkkkk.k.", "kgkkk.kkkgk", "kk.......kk"], P),
+  ] },
+];
+
+function blit(g, sp, x, y, u) {
+  for (let j = 0; j < sp.h; j++) for (let i = 0; i < sp.w; i++) {
+    const ch = sp.rows[j][i];
+    if (ch === ".") continue;
+    g.fillStyle = sp.pal[ch];
+    g.fillRect(x + i * u, y + j * u, u, u);
+  }
+}
+/* dithered ground, so the sprites sit on something like the map */
+function ground(g, x, y, w, h, a, b, px) {
+  for (let j = 0; j < h; j += px) for (let i = 0; i < w; i += px) {
+    g.fillStyle = ((i / px + j / px) % 2 === 0 && ((i * 7 + j * 3) / px) % 5 < 2) ? b : a;
+    g.fillRect(x + i, y + j, px, px);
+  }
+}
+
+const host = document.getElementById("sets");
+for (const set of SETS) {
+  const box = document.createElement("section");
+  box.className = "set";
+  box.innerHTML = "<h2></h2><p></p>";
+  box.querySelector("h2").textContent = set.name;
+  box.querySelector("p").textContent = set.note;
+  const scales = [2, 3, 5], cellW = 88, rowH = 80;
+  const cv = document.createElement("canvas");
+  cv.width = GROUND.length * (cellW * 4 + 20); cv.height = scales.length * rowH;
+  cv.style.width = cv.width / 1 + "px";
+  const g = cv.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  scales.forEach(function (u, si) {
+    GROUND.forEach(function (gr, gi) {
+      const x0 = gi * (cellW * 4 + 20), y0 = si * rowH;
+      ground(g, x0, y0, cellW * 4, rowH, gr[1], gr[2], u);
+      set.sprites.forEach(function (sp, k) {
+        const cx = x0 + k * cellW + cellW / 2, cy = y0 + rowH / 2;
+        blit(g, sp, Math.round(cx - sp.w * u / 2), Math.round(cy - sp.h * u / 2), u);
+      });
+    });
+  });
+  box.appendChild(cv);
+  const lab = document.createElement("div");
+  lab.className = "labels";
+  ["village", "town", "city", "capital"].forEach(function (t) { const s = document.createElement("span"); s.textContent = t; lab.appendChild(s); });
+  box.appendChild(lab);
+  host.appendChild(box);
+}
+
+/* roads: three styles, between a capital and three villages, at map resolution x3 */
+const roads = document.createElement("section");
+roads.className = "set";
+roads.innerHTML = "<h2>Roads</h2><p>1 · dotted track (what the map draws now) · 2 · solid track · 3 · paved road with a light edge</p>";
+const rc = document.createElement("canvas");
+const RW = 380, RH = 200, PX = 3;
+rc.width = RW * 3 + 40; rc.height = RH;
+const rg = rc.getContext("2d");
+rg.imageSmoothingEnabled = false;
+const pts = [[60, 60], [160, 100], [300, 50], [250, 160], [90, 160]];
+const links = [[1, 0], [1, 2], [1, 3], [3, 4], [0, 4]];
+[0, 1, 2].forEach(function (style, k) {
+  const x0 = k * (RW + 20);
+  ground(rg, x0, 0, RW, RH, "#8fb04a", "#7a9a3c", PX);
+  links.forEach(function (l, li) {
+    const a = pts[l[0]], b = pts[l[1]], n = Math.round(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) / PX);
+    for (let s = 0; s <= n; s++) {
+      const x = Math.round((a[0] + (b[0] - a[0]) * s / n) / PX) * PX + x0, y = Math.round((a[1] + (b[1] - a[1]) * s / n) / PX) * PX;
+      if (style === 0 && s % 3 === 2) continue;
+      if (style === 2) { rg.fillStyle = "#c9b48a"; rg.fillRect(x - PX, y - PX, PX * 3, PX * 3); }
+      rg.fillStyle = style === 2 ? "#8c7a5c" : "#604426";
+      rg.fillRect(x, y, PX, PX);
+    }
+  });
+  const A = SETS[1].sprites;
+  pts.forEach(function (p, i) { const sp = i === 1 ? A[3] : A[0]; blit(rg, sp, x0 + p[0] - sp.w, p[1] - sp.h, 2); });
+});
+roads.appendChild(rc);
+host.appendChild(roads);
+</script>
+</body>
+</html>

@@ -1397,6 +1397,7 @@ function pageStory() {
 var G_KINDS = [["polity", "Polities"], ["figure", "Figures"], ["artifact", "Artifacts"], ["region", "Places"], ["event", "Events"]];
 var G_CAPS = [50, 100, 150, 250, 400];
 var G_EVENT_CAP = 300;
+var G_SHARE = { polity: 2, figure: 2, artifact: 1, region: 1 };
 var G_BASE = { polity: 5, figure: 2.5, artifact: 3.5, region: 3, event: 2.5 };
 
 function gKey(kind, id) { return kind + ":" + id; }
@@ -1459,10 +1460,30 @@ function gBuild(focus, old) {
       fr = nx;
     }
     pick = Object.keys(dist).sort(function (a, b) { return dist[a] - dist[b] || (m[b] || 0) - (m[a] || 0) || (a < b ? -1 : 1); });
+    pick = pick.filter(function (k) { var s = gSplit(k); return !!ent(s.kind, s.id); }).slice(0, gs.n);
   } else {
-    pick = Object.keys(m).filter(okKind).sort(function (a, b) { return m[b] - m[a] || (a < b ? -1 : 1); });
+    /* realms are named far more often than anyone else, so each kind gets its share of the
+       places in turn (G_SHARE per round), most-named first, instead of one ranking for all */
+    var lists = {};
+    Object.keys(m).filter(okKind).forEach(function (k) {
+      var s = gSplit(k);
+      if (ent(s.kind, s.id)) (lists[s.kind] = lists[s.kind] || []).push(k);
+    });
+    Object.keys(lists).forEach(function (kd) { lists[kd].sort(function (a, b) { return m[b] - m[a] || (a < b ? -1 : 1); }); });
+    pick = [];
+    var at = {}, left = true;
+    while (pick.length < gs.n && left) {
+      left = false;
+      G_KINDS.forEach(function (kd) {
+        var l = lists[kd[0]];
+        for (var i = 0; l && i < (G_SHARE[kd[0]] || 1) && pick.length < gs.n; i++) {
+          var j = at[kd[0]] || 0;
+          if (j >= l.length) break;
+          pick.push(l[j]); at[kd[0]] = j + 1; left = true;
+        }
+      });
+    }
   }
-  pick = pick.filter(function (k) { var s = gSplit(k); return !!ent(s.kind, s.id); }).slice(0, gs.n);
   var sel = {};
   pick.forEach(function (k) { sel[k] = 1; });
   if (on.event) {
@@ -1654,7 +1675,7 @@ function gDraw() {
     b.forEach(function (l) { var a = pos[l.s.key], z = pos[l.t.key]; c.moveTo(a.x, a.y); c.lineTo(z.x, z.y); });
     c.strokeStyle = i >= 2 ? col.red : col.ink;
     c.lineWidth = i % 2 ? 1.6 : 0.8;
-    c.globalAlpha = (hv ? 0.25 : 1) * (i >= 2 ? 0.55 : 0.22);
+    c.globalAlpha = (hv ? 0.25 : 1) * (i >= 2 ? 0.3 : 0.22);
     c.stroke();
   });
   c.globalAlpha = 0.9;
@@ -1679,15 +1700,15 @@ function gDraw() {
   /* labels: greedy, most important first, skipping any that would overlap one already set */
   var order = g.nodes.filter(function (n) {
     if (lit) return lit[n.key];
-    return n === g.focus || n.r * k * v.k >= (n.kind === "polity" ? 3.2 : 5.5);
+    return n === g.focus || n.r * k * v.k >= (n.kind === "polity" ? 9 : 6);
   });
   order.sort(function (a, b) {
     function rank(n) { return n === hv ? 3 : n === g.focus ? 2 : n.kind === "polity" ? 1 : 0; }
     return rank(b) - rank(a) || b.r - a.r;
   });
-  var boxes = [], set = 0;
+  var boxes = [], set = 0, most = Math.max(20, Math.round(u.w * u.h / 12000));
   c.textBaseline = "middle"; c.lineJoin = "round";
-  for (var i = 0; i < order.length && set < 140; i++) {
+  for (var i = 0; i < order.length && set < most; i++) {
     var n = order[i], p = pos[n.key], big = n.kind === "polity";
     c.font = (big ? "" : "italic ") + (n === hv ? 14 : big ? 13 : n.kind === "event" ? 11 : 12) + "px " + col.serif;
     var tw = c.measureText(n.label).width, x = p.x - tw / 2, y = p.y + n.r * k + 10;
@@ -1872,7 +1893,6 @@ function gShow(en) {
     S.g.sig = sig;
     S.g.focusSig = JSON.stringify(en.focus || null);
   }
-  S.g.hover = null;
   gResize();
   gStatus();
   gDraw();

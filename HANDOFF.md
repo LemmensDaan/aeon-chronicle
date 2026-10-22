@@ -104,7 +104,24 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
 - Note: the Write/Edit tools turned `̀` escapes into literal characters, which broke the script on a
   page without a charset. `fold()` filters by char code instead; keep this file ASCII.
 
+## Graph view (in `js/chronicle.js`, section "Graph")
+
+- Obsidian-style graph as a fifth chronicle tab (`{ v: "graph", focus? }` nav entries). Two names are
+  tied by a thread when one chronicle entry names both; rulers are tied to their realm (`polityId`),
+  makers to their artifacts (`creatorId`). Threads between polities in `derived().wars` are red.
+- Kinds toggle: polities (wax seals), figures (ink dots), artifacts (red lozenges), places (ruled
+  squares), events (red stars, off by default, filtered by importance, max 300). Places/events off by default.
+- Whole-world mode takes "the N most named" with each kind getting a share per round (`G_SHARE`),
+  because realms are named far more than anyone else. Every entity page has "Show its threads in the
+  graph", which opens a local graph one or two threads out.
+- Force layout is d3-like (O(n²) charge, fine up to ~700 nodes), positions persist across rebuilds;
+  canvas colours come from the `--ch-*` variables, so it follows the parchment theme.
+- While the graph is open the host gets `.ch-graphing` and widens to 64vw (`app.css`).
+
 ## Known loose ends
+
+- The map doesn't refit when the chronicle widens for the graph (its zoom snaps to whole pixel steps,
+  so a narrower map letterboxes). ui.js only redraws on resize.
 
 - The fantasy namer produces duplicate settlement names (two Thornmouths, two Nantgarths in seed 7).
 

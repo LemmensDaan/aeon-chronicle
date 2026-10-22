@@ -1,0 +1,177 @@
+/* Aeon — parchment look (style F). Loaded after app.css and overrides it, and the chronicle's
+   injected `.ch-` styles. Textures come from js/parchment.js as --pp-* variables; they are
+   1 texel per pixel and shown at 2x, so they match the pixel map. Torn edges are pseudo
+   elements that hang off a sheet and overlap the map. */
+
+:root, :root[data-theme="light"], :root[data-theme="dark"] {
+  --ae-bg: #2a1d12;            /* the desk under the sheets */
+  --ae-panel: #e9d6ad;
+  --ae-panel2: #dcc597;
+  --ae-border: #b38b57;
+  --ae-text: #3a2614;
+  --ae-dim: #6b4a2a;
+  --ae-accent: #8e1d1d;
+  --ae-accent-ink: #f3e4c4;
+  --ae-serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+  --ae-sans: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+  --pp-ink: #3a2614;
+  --pp-soft: #6b4a2a;
+  --pp-red: #8a3a22;
+  --pp-ribbon: #8e1d1d;
+  --pp-rule: rgba(58, 38, 20, .28);
+  color-scheme: light;
+}
+
+html, body { font-family: var(--ae-serif); }
+.pp-label { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.ae-theme-toggle { display: none; }
+
+::-webkit-scrollbar-thumb { background: rgba(58, 38, 20, .35); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: rgba(58, 38, 20, .55); }
+
+/* a sheet of parchment, and its torn edges */
+.pp-sheet, .ae-header, .ae-modes, .ae-transport, .ae-chronicle, .ae-progress, .ae-tip, .ae-pack, .ae-setup-inner {
+  background: var(--pp-paper) #e9d6ad; background-size: 48px 48px; image-rendering: pixelated; color: var(--pp-ink);
+}
+.ae-header, .ae-modes, .ae-transport, .ae-chronicle { position: relative; border: 0; }
+.ae-modes::after, .ae-transport::before, .ae-chronicle::before, .ae-header::after {
+  content: ""; position: absolute; pointer-events: none; image-rendering: pixelated; z-index: 3;
+}
+.ae-modes::after { left: 0; right: 0; top: 100%; height: 12px; background: var(--pp-edge-b) repeat-x 0 0 / 80px 12px; }
+.ae-transport::before { left: 0; right: 0; bottom: 100%; height: 12px; background: var(--pp-edge-t) repeat-x 0 0 / 80px 12px; }
+.ae-chronicle::before { top: 0; bottom: 0; right: 100%; width: 12px; background: var(--pp-edge-l) repeat-y 0 0 / 12px 80px; }
+/* the header and the mode strip are one sheet: a ruled line divides them */
+.ae-header { border-bottom: 1px solid var(--pp-rule); z-index: 4; }
+.ae-modes { z-index: 4; }
+.ae-transport { z-index: 4; }
+.ae-chronicle { z-index: 5; }
+.ae-main { position: relative; }
+
+/* ============================================================ header */
+.ae-header { flex-basis: 56px; padding: 0 18px; gap: 22px; }
+.ae-brand { gap: 10px; }
+.ae-brand-mark { display: none; }
+.ae-worldname b { font-size: 15px; color: var(--pp-ink); font-style: italic; }
+.ae-worldname span { font-family: var(--ae-serif); font-size: 11px; color: var(--pp-soft); letter-spacing: .04em; }
+.ae-stat b { font-family: var(--ae-serif); font-size: 16px; font-weight: 600; color: var(--pp-ink); }
+.ae-stat i { font-family: var(--ae-serif); font-style: italic; text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--pp-soft); }
+.ae-stat:first-child b { color: var(--pp-red); }
+
+/* buttons: ink-ruled, no fill; the primary one is a red wax plate */
+.ae-btn {
+  border: 1px solid var(--pp-ink); border-radius: 0; background: transparent; color: var(--pp-ink);
+  padding: 7px 14px; box-shadow: 2px 2px 0 rgba(58, 38, 20, .25);
+}
+.ae-btn:hover { background: rgba(58, 38, 20, .08); border-color: var(--pp-ink); }
+.ae-btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 rgba(58, 38, 20, .25); }
+.ae-btn.primary { background: var(--pp-ribbon); color: #f3e4c4; border-color: #4a0e0e; box-shadow: inset 0 0 0 2px #b0352a, 3px 3px 0 rgba(30, 10, 4, .35); }
+.ae-btn.primary:hover { filter: none; background: #a3241f; }
+.ae-btn.round { border-radius: 0; width: 34px; height: 34px; }
+
+/* ============================================================ map modes: tabs with a ribbon */
+.ae-modes { padding: 6px 16px 8px; gap: 6px; }
+.ae-mode {
+  border: 0; border-radius: 0; background: none; color: var(--pp-ink); padding: 5px 9px 6px 18px; position: relative;
+  font-family: var(--ae-serif); font-size: 13px; font-variant: small-caps; text-transform: lowercase; letter-spacing: .08em;
+}
+.ae-mode .pp-label { margin: 2px 0; }
+.ae-mode:hover { background: none; color: var(--pp-ink); box-shadow: inset 0 -1px 0 rgba(58, 38, 20, .35); }
+.ae-mode.on { color: var(--pp-red); border: 0; }
+/* the bookmark hangs from the top edge of the strip, beside the selected tab's name;
+   every tab keeps room on its left for it, so switching tabs doesn't shift the row */
+.ae-mode.on::after {
+  content: ""; position: absolute; left: 4px; top: -6px; width: 9px; height: 30px; z-index: 6;
+  background: var(--pp-ribbon); box-shadow: inset -4px 0 0 #681313, inset 2px 0 0 #b0352a;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); pointer-events: none;
+}
+.ae-check { color: var(--pp-soft); font-style: italic; }
+.ae-check input { accent-color: var(--pp-ribbon); }
+
+/* ============================================================ transport: an inked rule with a manicule */
+.ae-transport { flex-basis: 54px; padding: 0 18px; gap: 12px; }
+.ae-scrub { -webkit-appearance: none; appearance: none; background: transparent; height: 34px; cursor: pointer; margin: 0; }
+.ae-scrub::-webkit-slider-runnable-track {
+  height: 10px; background:
+    linear-gradient(var(--pp-ink), var(--pp-ink)) 0 100% / 100% 2px no-repeat,
+    repeating-linear-gradient(90deg, rgba(58, 38, 20, .5) 0 2px, transparent 2px 5%) 0 100% / 100% 8px no-repeat;
+}
+.ae-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 22px; margin-top: -12px; border: 0;
+  background: var(--pp-manicule) center / 18px 22px no-repeat; image-rendering: pixelated;
+}
+.ae-scrub::-moz-range-track { height: 2px; background: var(--pp-ink); }
+.ae-scrub::-moz-range-thumb { width: 18px; height: 22px; border: 0; border-radius: 0; background: var(--pp-manicule) center / 18px 22px no-repeat; }
+.ae-select { border: 1px solid var(--pp-ink); border-radius: 0; background: transparent; color: var(--pp-ink); }
+
+/* ============================================================ progress, tooltip */
+.ae-progress { border: 0; border-radius: 0; backdrop-filter: none; box-shadow: 4px 4px 0 rgba(20, 10, 4, .4); outline: 1px solid var(--pp-ink); outline-offset: -5px; }
+.ae-progress-label { font-family: var(--ae-serif); font-style: italic; color: var(--pp-soft); font-size: 13px; }
+.ae-progress-track { background: rgba(58, 38, 20, .15); border-radius: 0; height: 4px; }
+.ae-progress-track > i { background: var(--pp-ribbon); }
+.ae-tip { border: 1px solid var(--pp-ink); border-radius: 0; backdrop-filter: none; box-shadow: 3px 3px 0 rgba(20, 10, 4, .45); color: var(--pp-ink); }
+.ae-tip b { color: var(--pp-red); }
+.ae-tip .dim { color: var(--pp-soft); font-style: italic; }
+
+/* ============================================================ the chronicle: a book page */
+.ae-chronicle { border-left: 0; }
+html .ae-app .ae-chronicle .ch-root {
+  --ch-bg: #e9d6ad; --ch-panel: #e3cda0; --ch-ink: #3a2614; --ch-mute: #6b4a2a; --ch-rule: rgba(58, 38, 20, .25);
+  --ch-accent: #8a3a22; --ch-link: #2f4a6e; --ch-hi: rgba(142, 29, 29, .1); --ch-i5: #7a1f12;
+  --ch-serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif; --ch-sans: var(--ch-serif);
+  background: transparent; font-size: 16px;
+}
+.ae-chronicle .ch-bar, .ae-chronicle .ch-filters { background: transparent; border-bottom: 1px solid var(--ch-rule); }
+.ae-chronicle .ch-btn { border-radius: 0; border-color: transparent; font-variant: small-caps; text-transform: lowercase; letter-spacing: .06em; padding: 3px 9px; }
+.ae-chronicle .ch-btn:hover:not(:disabled) { background: none; box-shadow: inset 0 -1px 0 var(--ch-mute); }
+.ae-chronicle .ch-btn.ch-on { background: none; color: var(--pp-red); border-color: transparent; box-shadow: inset 0 -2px 0 var(--pp-ribbon); }
+.ae-chronicle .ch-input { border: 0; border-bottom: 1px solid var(--ch-mute); border-radius: 0; background: transparent; font-style: italic; }
+.ae-chronicle .ch-link { border-bottom-style: dotted; }
+.ae-chronicle .ch-link:hover { background: none; color: var(--pp-ribbon); }
+.ae-chronicle h1.ch-h1 { color: var(--pp-red); font-weight: 400; font-variant: small-caps; letter-spacing: .03em; }
+.ae-chronicle h2.ch-h2 { color: var(--pp-red); font-weight: 400; border-bottom: 0; text-align: center; }
+.ae-chronicle h2.ch-h2::before, .ae-chronicle h2.ch-h2::after { content: " \2767 "; color: var(--ch-mute); font-size: .8em; }
+.ae-chronicle h2.ch-h2::before { content: " \2619 "; }
+.ae-chronicle .ch-kicker { font-variant: small-caps; text-transform: lowercase; letter-spacing: .12em; }
+.ae-chronicle .ch-story .ch-lede:first-letter { color: var(--pp-ribbon); font-size: 3.6em; text-shadow: 2px 2px 0 #cba875; }
+.ae-chronicle .ch-story h2.ch-h2 { font-size: 1.45rem; font-variant: small-caps; }
+.ae-chronicle .ch-fate { border-left: 3px solid var(--pp-ribbon); background: rgba(142, 29, 29, .06); }
+.ae-chronicle .ch-era { border-bottom: 0; text-align: center; padding-bottom: 18px; }
+.ae-chronicle .ch-era h2 { font-weight: 400; font-variant: small-caps; color: var(--pp-red); }
+.ae-chronicle .ch-era::after { content: "\2619  \2766  \2767"; display: block; color: var(--ch-mute); margin-top: 6px; letter-spacing: .4em; }
+.ae-chronicle .ch-cent { font-variant: small-caps; text-transform: lowercase; font-style: italic; }
+.ae-chronicle .ch-yr { color: var(--pp-red); font-style: italic; }
+.ae-chronicle .ch-i5 { border-color: var(--pp-ribbon); }
+.ae-chronicle .ch-brush { background: rgba(58, 38, 20, .05); border-radius: 0; border-color: var(--ch-rule); }
+.ae-chronicle .ch-brush > b { background: var(--pp-ribbon); border-color: var(--pp-ribbon); }
+.ae-chronicle .ch-chip, .ae-chronicle .ch-strata, .ae-chronicle .ch-barx { border-radius: 0; }
+.ae-chronicle .ch-swatch { border-radius: 0; border-color: var(--pp-ink); }
+.ae-chronicle .ch-res mark { background: rgba(142, 29, 29, .14); }
+.ae-chronicle .ch-gstatus { font-style: italic; }
+.ae-chronicle .ch-gstatus b { font-style: normal; }
+
+/* ============================================================ setup: the title page */
+.ae-setup { background: radial-gradient(ellipse at 50% 30%, #3a2818, #1c130b 75%); }
+.ae-setup-inner {
+  position: relative; padding: 44px 48px 40px; width: min(900px, 100%);
+  box-shadow: 0 0 0 1px #946a3c, 6px 8px 0 rgba(0, 0, 0, .35);
+  outline: 1px solid rgba(58, 38, 20, .5); outline-offset: -12px;
+}
+.ae-title { display: flex; justify-content: center; margin: 0 0 6px; }
+.ae-tagline { color: var(--pp-soft); }
+.ae-label { font-family: var(--ae-serif); font-variant: small-caps; text-transform: lowercase; letter-spacing: .12em; font-weight: 400; font-size: 14px; color: var(--pp-soft); }
+.ae-pack { border: 1px solid rgba(58, 38, 20, .5); border-radius: 0; background-color: #efdfba; position: relative; color: var(--pp-ink); }
+.ae-pack:hover { transform: none; border-color: var(--pp-ink); }
+.ae-pack.on { border-color: var(--pp-ink); box-shadow: 3px 3px 0 rgba(58, 38, 20, .3); }
+.ae-pack.on::after {
+  content: ""; position: absolute; right: 14px; top: -1px; width: 12px; height: 34px; background: var(--pp-ribbon);
+  box-shadow: inset -4px 0 0 #681313, inset 2px 0 0 #b0352a; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%);
+}
+.ae-pack-name { color: var(--pp-red); }
+.ae-pack-blurb { color: var(--pp-soft); font-style: italic; }
+.ae-pack-meta { font-family: var(--ae-serif); color: var(--pp-soft); border-top: 1px dashed var(--pp-rule); }
+.ae-input { background: transparent; border: 0; border-bottom: 1px solid var(--pp-ink); border-radius: 0; color: var(--pp-ink); font-family: var(--ae-serif); font-size: 16px; }
+.ae-input:focus { border-color: var(--pp-ribbon); }
+.ae-span { font-family: var(--ae-serif); font-style: italic; color: var(--pp-soft); }
+.ae-empty { color: var(--pp-soft); }
+.ae-chronicle { overflow: visible; }
+.ae-pack-icon { filter: sepia(1) saturate(.7) brightness(.8); }

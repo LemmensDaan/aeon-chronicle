@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aeon — Smooth sample (The Mortal Age)</title>
+<style>
+  :root { --paper: #ece3cf; --ink: #2e2a24; --ink2: #5b5244; --rule: #8a7a5e; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #d9ceb4; color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+  body { background:
+    radial-gradient(ellipse at 50% 45%, #efe7d4 0%, #e3d8bf 60%, #cbbd9c 100%); }
+  .plate { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -54%);
+    padding: 16px; background: var(--paper);
+    box-shadow: 0 18px 50px rgba(60,45,20,.35), 0 0 0 1px rgba(60,45,20,.15); }
+  .frame { position: relative; border: 2px solid var(--ink); padding: 5px; }
+  .frame::before { content: ""; position: absolute; inset: 2px; border: 1px solid var(--ink); pointer-events: none; }
+  canvas { display: block; }
+  .cartouche { position: absolute; left: 34px; bottom: 30px; width: 330px; padding: 18px 22px 16px;
+    background: #f0e8d6; border: 1px solid var(--ink);
+    outline: 1px solid var(--ink); outline-offset: 3px; text-align: center; }
+  .cartouche .pre { font-size: 10.5px; letter-spacing: 3px; font-style: italic; color: var(--ink2); }
+  .cartouche h1 { margin: 6px 0 4px; font-weight: 400; font-size: 31px; letter-spacing: 6px; }
+  .cartouche .sub { font-size: 12.5px; font-style: italic; color: var(--ink2); line-height: 1.5; }
+  .cartouche .orn { margin: 10px auto; width: 70%; height: 1px; background: var(--ink); position: relative; }
+  .cartouche .orn::after { content: "❦"; position: absolute; left: 50%; top: -10px; transform: translateX(-50%);
+    background: rgba(240,232,214,1); padding: 0 8px; font-size: 14px; }
+  .cartouche nav a { display: block; color: var(--ink); text-decoration: none; font-variant: small-caps;
+    letter-spacing: 2px; font-size: 15px; padding: 4px 0; cursor: pointer; }
+  .cartouche nav a:hover { color: #8a2f1d; }
+  .cartouche nav a.first::before { content: "☞ "; }
+  .cartouche .seed { margin-top: 8px; font-size: 10.5px; font-style: italic; color: var(--ink2); }
+</style>
+</head>
+<body>
+<div class="plate"><div class="frame">
+  <canvas id="map"></canvas>
+  <div class="cartouche">
+    <div class="pre">AN ATLAS &amp; CHRONICLE OF</div>
+    <h1>THE MORTAL AGE</h1>
+    <div class="sub">being a faithful account of the known world<br>from 3000 BC to the year 1500</div>
+    <div class="orn"></div>
+    <nav>
+      <a class="first" id="begin">Begin the Chronicle</a>
+      <a>Open an Archive</a>
+      <a>Index of Realms</a>
+    </nav>
+    <div class="seed" id="seed"></div>
+  </div>
+</div></div>
+
+<script src="../js/rng.js"></script>
+<script src="../js/planetgen.js"></script>
+<script src="../js/worldgen.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+"use strict";
+
+const seed = SAMPLE.nav("smooth.html");
+const world = SAMPLE.makeWorld(seed);
+const GW = world.width, GH = world.height;
+document.getElementById("seed").textContent = "Plate No. " + seed;
+document.getElementById("begin").addEventListener("click", function () {
+  location.hash = "seed=" + Math.floor(Math.random() * 1e6);
+});
+
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
+
+function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function sstep(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+
+const C = {
+  seaShallow: [206, 217, 211], seaDeep: [164, 186, 190], seaLine: [118, 146, 152], coast: [52, 48, 40],
+  wet: [186, 198, 152], dry: [222, 203, 156], cold: [218, 219, 210], high: [181, 157, 122], snow: [246, 243, 234],
+  contour: [120, 92, 60], river: "#4b7385",
+};
+
+function render() {
+  const maxW = innerWidth * 0.92 - 46, maxH = innerHeight * 0.86 - 46;
+  const CW = Math.floor(Math.min(maxW, maxH * GW / GH)), CH = Math.floor(CW * GH / GW);
+  canvas.width = CW; canvas.height = CH;
+  canvas.style.width = CW + "px"; canvas.style.height = CH + "px";
+
+  const sx = GW / CW, sy = GH / CH, N = CW * CH;
+  const E = new Float32Array(N), T = new Float32Array(N), M = new Float32Array(N);
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+    const fx = (x + 0.5) * sx, fy = (y + 0.5) * sy, i = y * CW + x;
+    E[i] = SAMPLE.field(world, "elevation", fx, fy);
+    T[i] = SAMPLE.field(world, "temperature", fx, fy);
+    M[i] = SAMPLE.field(world, "moisture", fx, fy);
+  }
+
+  const img = ctx.createImageData(CW, CH), d = img.data;
+  const cstep = 1 / 22;
+  let grain = seed * 9301 + 49297;
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+    const i = y * CW + x, e = E[i];
+    grain = (grain * 1103515245 + 12345) & 0x7fffffff;
+    const noise = (grain / 0x7fffffff - 0.5) * 7;
+    const eR = E[i + (x < CW - 1 ? 1 : 0)], eD = E[i + (y < CH - 1 ? CW : 0)];
+    let col;
+
+    if (e <= 0.5) {
+      const depth = 0.5 - e;
+      col = mix(C.seaShallow, C.seaDeep, sstep(0, 0.12, depth));
+      /* engraved water-lines that shadow the coast */
+      if (depth < 0.055) {
+        const f = (depth * 190) % 1;
+        if (f < 0.16) col = mix(col, C.seaLine, 0.55 * (1 - depth / 0.055));
+      }
+      if (eR > 0.5 || eD > 0.5 || (x > 0 && E[i - 1] > 0.5) || (y > 0 && E[i - CW] > 0.5)) col = C.coast;
+    } else {
+      const cold = sstep(0.36, 0.14, T[i]), dry = sstep(0.5, 0.18, M[i]);
+      col = mix(C.wet, C.dry, dry);
+      col = mix(col, C.cold, cold);
+      const h = sstep(0.52, 0.9, e);
+      col = mix(col, C.high, h * 0.75);
+      if (e > 0.86) col = mix(col, C.snow, sstep(0.86, 0.94, e));
+      /* hillshade, light from the north-west */
+      const eNW = E[Math.max(0, y - 2) * CW + Math.max(0, x - 2)], eSE = E[Math.min(CH - 1, y + 2) * CW + Math.min(CW - 1, x + 2)];
+      const shade = Math.max(0.72, Math.min(1.18, 1 + (eNW - eSE) * 22));
+      col = [col[0] * shade, col[1] * shade, col[2] * shade];
+      /* contour lines */
+      if (Math.floor(e / cstep) !== Math.floor(eR / cstep) || Math.floor(e / cstep) !== Math.floor(eD / cstep)) {
+        if (e > 0.53) col = mix(col, C.contour, 0.38);
+      }
+      if (eR <= 0.5 || eD <= 0.5 || (x > 0 && E[i - 1] <= 0.5) || (y > 0 && E[i - CW] <= 0.5)) col = C.coast;
+    }
+    d[i * 4] = col[0] + noise; d[i * 4 + 1] = col[1] + noise; d[i * 4 + 2] = col[2] + noise * 0.8; d[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const toPx = function (r) { return [(r.x + 0.5) / sx, (r.y + 0.5) / sy]; };
+
+  /* graticule */
+  ctx.strokeStyle = "rgba(70,55,35,.18)"; ctx.lineWidth = 0.7;
+  for (let k = 1; k < 12; k++) { const x = CW * k / 12; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CH); ctx.stroke(); }
+  for (let k = 1; k < 8; k++) { const y = CH * k / 8; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CW, y); ctx.stroke(); }
+
+  /* rivers: follow each source downstream, Chaikin-smooth, taper by flow */
+  const R = world.regions;
+  const isSource = function (r) {
+    return r.river && !r.neighbors.some(function (n) { return R[n].flowTo === r.id && R[n].river; });
+  };
+  ctx.strokeStyle = C.river; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const src of R) {
+    if (!isSource(src)) continue;
+    let pts = [], flows = [], cur = src, guard = 0;
+    while (cur && guard++ < 400) {
+      pts.push(toPx(cur)); flows.push(cur.river || world.riverThreshold);
+      if (cur.flowTo < 0) break;
+      const nx = R[cur.flowTo];
+      if (nx.barren) { pts.push(toPx(nx)); flows.push(cur.river); break; }
+      cur = nx;
+    }
+    if (pts.length < 2) continue;
+    /* relax the path first: grid paths have long straight runs with right-angle bends,
+       which corner-cutting alone leaves looking man-made. Neighbour-averaging turns
+       those runs into diagonals; endpoints stay pinned so mouths stay on the coast. */
+    for (let it = 0; it < 6; it++) {
+      const rp = pts.map(function (p) { return p.slice(); });
+      for (let k = 1; k < pts.length - 1; k++) {
+        rp[k][0] = pts[k - 1][0] * 0.25 + pts[k][0] * 0.5 + pts[k + 1][0] * 0.25;
+        rp[k][1] = pts[k - 1][1] * 0.25 + pts[k][1] * 0.5 + pts[k + 1][1] * 0.25;
+      }
+      pts = rp;
+    }
+    for (let it = 0; it < 3; it++) {
+      const np = [pts[0]], nf = [flows[0]];
+      for (let k = 0; k < pts.length - 1; k++) {
+        const a = pts[k], b = pts[k + 1];
+        np.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+        nf.push(flows[k], flows[k + 1]);
+      }
+      np.push(pts[pts.length - 1]); nf.push(flows[flows.length - 1]);
+      pts = np; flows = nf;
+    }
+    for (let k = 0; k < pts.length - 1; k++) {
+      ctx.lineWidth = Math.min(3.2, 0.6 + Math.log(1 + flows[k] / world.riverThreshold) * 0.75) * (CW / 1100);
+      ctx.beginPath(); ctx.moveTo(pts[k][0], pts[k][1]); ctx.lineTo(pts[k + 1][0], pts[k + 1][1]); ctx.stroke();
+    }
+  }
+
+  const rng = AEON.RNG(seed + ":smooth");
+  const scale = CW / 1100;
+  const cb = document.querySelector(".cartouche").getBoundingClientRect(), mb = canvas.getBoundingClientRect();
+  const hidden = function (p) {
+    return p[0] > cb.left - mb.left - 90 && p[0] < cb.right - mb.left + 10 &&
+           p[1] > cb.top - mb.top - 14 && p[1] < cb.bottom - mb.top + 14;
+  };
+
+  /* sea names in spaced italics over the most open water */
+  const open = [];
+  for (const r of R) {
+    if (!r.barren || r.x < 8 || r.y < 8 || r.x > GW - 9 || r.y > GH - 9) continue;
+    let ok = true;
+    for (let dy = -6; dy <= 6 && ok; dy += 2) for (let dx = -10; dx <= 10; dx += 2) {
+      if (!R[(r.y + dy) * GW + (r.x + dx)].barren) { ok = false; break; }
+    }
+    if (ok) open.push(r);
+  }
+  const seas = [];
+  for (const r of rng.shuffle(open)) {
+    if (seas.length >= 3) break;
+    if (hidden(toPx(r))) continue;
+    if (seas.every(function (s) { return Math.hypot(s.x - r.x, s.y - r.y) > 30; })) seas.push(r);
+  }
+  ctx.fillStyle = "rgba(60,80,88,.75)"; ctx.textAlign = "center";
+  ctx.font = "italic " + Math.round(15 * scale) + "px 'Palatino Linotype', Palatino, Georgia, serif";
+  for (const s of seas) {
+    const p = toPx(s);
+    const nm = ("Mare " + SAMPLE.name(rng, "history")).toUpperCase().split("").join(String.fromCharCode(8202));
+    ctx.fillText(nm, p[0], p[1]);
+  }
+
+  /* cities */
+  const towns = SAMPLE.sites(world, 14, 12, rng).filter(function (r) { return !hidden(toPx(r)); }).slice(0, 10);
+  towns.forEach(function (r, k) {
+    const p = toPx(r), cap = k === 0;
+    ctx.fillStyle = "#2e2a24"; ctx.strokeStyle = "#2e2a24"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(p[0], p[1], (cap ? 4.2 : 3) * scale + 1, 0, 6.283); ctx.fillStyle = "#f4ecda"; ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(p[0], p[1], (cap ? 2 : 1.2) * scale + 0.5, 0, 6.283); ctx.fillStyle = "#2e2a24"; ctx.fill();
+    const nm = SAMPLE.name(rng, "history");
+    ctx.font = (cap ? "600 " : "") + Math.round((cap ? 14 : 12) * scale) + "px 'Palatino Linotype', Palatino, Georgia, serif";
+    ctx.textAlign = "left";
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(240,232,214,.85)";
+    ctx.strokeText(cap ? nm.toUpperCase() : nm, p[0] + 7 * scale + 2, p[1] + 4 * scale);
+    ctx.fillStyle = "#2e2a24";
+    ctx.fillText(cap ? nm.toUpperCase() : nm, p[0] + 7 * scale + 2, p[1] + 4 * scale);
+  });
+
+  compass(CW - 70 * scale - 20, 82 * scale + 14, 52 * scale);
+  scaleBar(CW - 230 * scale - 24, CH - 30 * scale - 6, 200 * scale);
+
+  /* soft vignette for an aged-print feel */
+  const vg = ctx.createRadialGradient(CW / 2, CH / 2, Math.min(CW, CH) * 0.45, CW / 2, CH / 2, Math.max(CW, CH) * 0.75);
+  vg.addColorStop(0, "rgba(90,70,40,0)"); vg.addColorStop(1, "rgba(90,70,40,.16)");
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, CW, CH);
+}
+
+function compass(x, y, r) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.strokeStyle = "#2e2a24"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.82, 0, 6.283); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.74, 0, 6.283); ctx.stroke();
+  for (let k = 0; k < 32; k++) {
+    const a = k / 32 * 6.283, l = k % 8 === 0 ? 0.62 : k % 4 === 0 ? 0.68 : 0.71;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * l, Math.sin(a) * r * l); ctx.lineTo(Math.cos(a) * r * 0.74, Math.sin(a) * r * 0.74); ctx.stroke();
+  }
+  for (let k = 0; k < 8; k++) {
+    const a = k / 8 * 6.283 - Math.PI / 2, len = k % 2 === 0 ? r : r * 0.55, w = r * (k % 2 === 0 ? 0.13 : 0.09);
+    const ax = Math.cos(a), ay = Math.sin(a), px = -ay, py = ax;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(px * w, py * w); ctx.lineTo(ax * len, ay * len); ctx.closePath();
+    ctx.fillStyle = "#2e2a24"; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-px * w, -py * w); ctx.lineTo(ax * len, ay * len); ctx.closePath();
+    ctx.fillStyle = "#f2ead6"; ctx.fill(); ctx.stroke();
+  }
+  ctx.fillStyle = "#2e2a24"; ctx.textAlign = "center";
+  ctx.font = "600 " + Math.round(r * 0.3) + "px 'Palatino Linotype', Palatino, Georgia, serif";
+  ctx.fillText("N", 0, -r - 4);
+  ctx.restore();
+}
+
+function scaleBar(x, y, w) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.strokeStyle = "#2e2a24"; ctx.lineWidth = 1;
+  for (let k = 0; k < 5; k++) {
+    ctx.fillStyle = k % 2 ? "#f2ead6" : "#2e2a24";
+    ctx.fillRect(k * w / 5, 0, w / 5, 5); ctx.strokeRect(k * w / 5, 0, w / 5, 5);
+  }
+  ctx.fillStyle = "#2e2a24"; ctx.textAlign = "center";
+  ctx.font = "italic " + Math.max(10, Math.round(w / 18)) + "px 'Palatino Linotype', Palatino, Georgia, serif";
+  ctx.fillText("0", 0, -5); ctx.fillText("500", w, -5);
+  ctx.fillText("Leagues", w / 2, 19);
+  ctx.restore();
+}
+
+render();
+let rt = 0;
+addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(render, 150); });
+})();
+</script>
+</body>
+</html>

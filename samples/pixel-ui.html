@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aeon — Pixel UI styles</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07090f; overflow: hidden; }
+  #stage { position: absolute; overflow: hidden; }
+  #map { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
+  canvas.pt { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #ui > * { position: absolute; box-sizing: border-box; }
+  :where(#ui) button { all: unset; cursor: pointer; }
+
+  /* ---- layout shared by every style; --px is one map pixel in CSS pixels ---- */
+  .title   { left: calc(8 * var(--px)); top: calc(8 * var(--px)); padding: calc(6 * var(--px)) calc(8 * var(--px)); }
+  .title .era { margin-top: calc(4 * var(--px)); }
+  .modes   { right: calc(8 * var(--px)); top: calc(8 * var(--px)); display: flex; gap: calc(2 * var(--px)); padding: calc(3 * var(--px)); }
+  .modes button { padding: calc(3 * var(--px)) calc(5 * var(--px)); }
+  .panel   { right: calc(8 * var(--px)); top: calc(34 * var(--px)); width: calc(150 * var(--px));
+             max-height: calc(100% - 82 * var(--px)); overflow: hidden; padding: calc(7 * var(--px)) calc(8 * var(--px)); }
+  .panel .head { display: flex; align-items: center; gap: calc(4 * var(--px)); }
+  .panel .swatch { width: calc(7 * var(--px)); height: calc(7 * var(--px)); flex: none; }
+  .panel .meta { margin: calc(4 * var(--px)) 0 calc(6 * var(--px)); }
+  .panel .sec { margin: calc(7 * var(--px)) 0 calc(4 * var(--px)); }
+  .panel .ev { margin-bottom: calc(5 * var(--px)); }
+  .panel .ev .y { display: block; margin-bottom: 2px; }
+  .bar     { left: calc(8 * var(--px)); right: calc(8 * var(--px)); bottom: calc(8 * var(--px)); height: calc(30 * var(--px));
+             display: flex; align-items: center; gap: calc(7 * var(--px)); padding: 0 calc(8 * var(--px)); }
+  .bar .play { width: calc(14 * var(--px)); height: calc(14 * var(--px)); display: grid; place-items: center; flex: none; }
+  .bar .year { width: calc(78 * var(--px)); flex: none; }
+  .track   { position: relative; flex: 1; height: calc(12 * var(--px)); cursor: pointer; }
+  .track .eras { position: absolute; left: 0; right: 0; top: calc(4 * var(--px)); height: calc(4 * var(--px)); display: flex; }
+  .track .eras span { height: 100%; }
+  .track .thumb { position: absolute; top: 0; width: calc(5 * var(--px)); height: calc(12 * var(--px)); margin-left: calc(-2 * var(--px)); }
+  .names   { left: 0; top: 0; pointer-events: none; }
+
+  /* ---- surfaces: every box is one of these. ink surfaces are for reading, dark ones for handling ---- */
+  .box { border: calc(4 * var(--px)) solid transparent; background-clip: padding-box; image-rendering: pixelated; }
+  .sf-paper    { border-width: calc(3 * var(--px)); border-image: var(--ledgerf) 3 / calc(3 * var(--px)) stretch;
+                 background: var(--paper) #e9d6ad; background-size: calc(16 * var(--px)); }
+  .sf-woodpaper{ border-image: var(--woodf) 4 / calc(4 * var(--px)) stretch; background: var(--paper) #e9d6ad;
+                 background-size: calc(16 * var(--px)); box-shadow: inset 0 0 0 var(--px) #3a2614, inset 0 0 0 calc(2 * var(--px)) #c6a46c; }
+  .sf-page     { border-image: var(--leatherf) 4 / calc(4 * var(--px)) stretch; background: var(--paper) #e9d6ad;
+                 background-size: calc(16 * var(--px));
+                 box-shadow: inset 0 0 0 var(--px) #a8854f, inset 0 0 0 calc(2 * var(--px)) #c4a26a, inset 0 0 0 calc(4 * var(--px)) #d8bd8a; }
+  .sf-wood     { border-image: var(--woodf) 4 / calc(4 * var(--px)) stretch; background: var(--grain) #7a4f2c; background-size: calc(32 * var(--px)); }
+  .sf-leather  { border-image: var(--leatherf) 4 / calc(4 * var(--px)) stretch; background: var(--hide) #5a2219; background-size: calc(16 * var(--px)); }
+
+  .ink  { color: #3a2614; font: 13px/1.38 Georgia, "Times New Roman", serif; }
+  .ink .meta { font-style: italic; color: #6b4a2a; }
+  .ink button.on { background: #3a2614; }
+  .ink button:not(.on):hover { background: #d9c28f; }
+  .ink .play { background: #3a2614; }
+  .ink .swatch { box-shadow: 0 0 0 var(--px) #3a2614; }
+  .dark { color: #f7e8c6; font: 13px/1.38 Georgia, "Times New Roman", serif; text-shadow: 0 1px 0 #1a0d05; }
+  .dark .meta { color: #e0c48f; }
+  .dark button.on { background: #1f1007; box-shadow: inset 0 0 0 var(--px) #e2b84a; }
+  .dark button:not(.on):hover { background: rgba(0, 0, 0, .2); }
+  .dark .play { background: #1f1007; box-shadow: inset 0 0 0 var(--px) #e2b84a; }
+  .dark .swatch { box-shadow: 0 0 0 var(--px) #1a0d05, 0 0 0 calc(2 * var(--px)) #e2b84a; }
+  .sf-wood .ev { padding: calc(3 * var(--px)) calc(4 * var(--px)); background: rgba(26, 13, 5, .28); }
+
+  /* timeline: a ruler on parchment, or a slot cut into wood or leather */
+  .track.slot { background: #2a1509; box-shadow: inset 0 var(--px) 0 #120804, 0 var(--px) 0 rgba(255, 220, 160, .25); }
+  .track.ruler .eras { top: calc(5 * var(--px)); height: calc(2 * var(--px)); }
+  .dark .track.ruler { background: #e9d6ad; box-shadow: 0 0 0 var(--px) #1a0d05, inset 0 calc(-1 * var(--px)) 0 #c6a46c; }
+  .tick { position: absolute; top: calc(3 * var(--px)); width: var(--px); height: calc(6 * var(--px)); background: #3a2614; }
+  .tick.minor { top: calc(4 * var(--px)); height: calc(4 * var(--px)); opacity: .55; }
+  .ruler .thumb { background: #9a2b1e; box-shadow: 0 0 0 var(--px) #3a2614; }
+  .slot .thumb { background: #e2b84a; box-shadow: inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 #8a6416, 0 0 0 var(--px) #1a0d05; }
+
+  /* ---- E · Tome: extras that make it a book rather than a board ---- */
+  .s-tome .modes { padding: calc(3 * var(--px)) calc(4 * var(--px)) 0; border-bottom-width: var(--px); gap: var(--px); }
+  .s-tome .modes button { padding-bottom: calc(5 * var(--px)); }
+  .s-tome .modes button.on { background: #e9d6ad; box-shadow: inset 0 var(--px) 0 #f6ead0; }
+  .s-tome .panel { padding-top: calc(9 * var(--px)); }
+  .s-tome .panel::after { content: ""; position: absolute; right: calc(14 * var(--px)); top: 0; width: calc(7 * var(--px)); height: calc(30 * var(--px));
+                          background: #8e1d1d; box-shadow: inset calc(-2 * var(--px)) 0 0 #6a1212, inset var(--px) 0 0 #b33a2e;
+                          clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%); }
+  /* ---- F · Parchment: torn, aged sheets laid on the map; faded ink, nothing boxed ---- */
+  .sf-torn { border: 0; background: none no-repeat 0 0 / 100% 100%; filter: drop-shadow(0 var(--px) 0 rgba(30, 16, 4, .4)); }
+  .sf-torn.title { padding: calc(8 * var(--px)) calc(11 * var(--px)); }
+  .sf-torn.modes { padding: calc(5 * var(--px)) calc(8 * var(--px)); gap: calc(4 * var(--px)); }
+  .sf-torn.panel { padding: calc(10 * var(--px)) calc(11 * var(--px)); }
+  .sf-torn.bar { padding: 0 calc(12 * var(--px)); }
+  .faded { color: #4a3320; }
+  .faded .meta { color: #7a5a3a; }
+  .faded button.on { background: none; box-shadow: inset 0 calc(-1 * var(--px)) 0 #8a3a22; }
+  .faded button:not(.on):hover { background: none; box-shadow: inset 0 calc(-1 * var(--px)) 0 rgba(74, 51, 32, .35); }
+  .faded .play { background: none; box-shadow: inset 0 0 0 var(--px) #4a3320; }
+  .faded .swatch { box-shadow: 0 0 0 var(--px) #4a3320; opacity: .85; }
+  .faded .ev + .ev { border-top: var(--px) dashed rgba(74, 51, 32, .3); padding-top: calc(4 * var(--px)); }
+  .faded .track { background: none; box-shadow: none; }
+  .faded .track .eras { top: calc(6 * var(--px)); height: var(--px); background: #4a3320; }
+  .faded .track .eras span { background: none !important; position: relative; }
+  .faded .track .eras span + span::before { content: ""; position: absolute; left: 0; top: calc(-4 * var(--px)); width: var(--px);
+                                            height: calc(9 * var(--px)); background: #4a3320; }
+  .faded .tick { top: calc(5 * var(--px)); height: calc(3 * var(--px)); background: #4a3320; opacity: .45; }
+  .faded .tick.minor { display: none; }
+  .faded .thumb { width: calc(3 * var(--px)); margin-left: calc(-1 * var(--px)); background: #8a3a22; box-shadow: none; }
+
+  /* F's tome details: ribbon bookmark, wax seal, rubricated capital, fleuron, manicule, folio */
+  .s-parchment .modes { z-index: 2; }
+  .s-parchment .modes button.on { position: relative; box-shadow: none; }
+  .s-parchment .modes button.on::after { content: ""; position: absolute; left: 50%; top: calc(100% - var(--px)); width: calc(6 * var(--px));
+      margin-left: calc(-3 * var(--px)); height: calc(18 * var(--px)); background: #8e1d1d;
+      box-shadow: inset calc(-2 * var(--px)) 0 0 #681313, inset var(--px) 0 0 #b0352a;
+      clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%); }
+  .s-parchment .panel { padding-bottom: calc(16 * var(--px)); }
+  .s-parchment .head .seal { flex: none; margin: calc(-2 * var(--px)) 0; }
+  .s-parchment .sec { display: flex; align-items: center; justify-content: center; gap: calc(3 * var(--px)); margin-top: calc(9 * var(--px)); }
+  .s-parchment .cap { float: left; margin: calc(1 * var(--px)) calc(3 * var(--px)) 0 0; }
+  .s-parchment .folio { position: absolute; right: calc(11 * var(--px)); bottom: calc(6 * var(--px)); }
+  .s-parchment .track .thumb { background: none; width: auto; height: auto; top: calc(-4 * var(--px)); margin-left: calc(-4 * var(--px)); }
+
+  .s-tome .panel .head, .s-tome .panel .meta { margin-right: calc(14 * var(--px)); }
+  .s-tome .sec { display: flex; justify-content: center; }
+  .s-tome .cap { float: left; margin: calc(2 * var(--px)) calc(3 * var(--px)) 0 0; }
+  .s-tome .bar { gap: calc(9 * var(--px)); }
+
+  /* comparison switcher -- not part of any style */
+  .pick { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 100; display: flex; gap: 2px; padding: 5px;
+          border-radius: 999px; background: rgba(12, 14, 18, .86); border: 1px solid rgba(255, 255, 255, .12);
+          font: 12px system-ui, "Segoe UI", sans-serif; }
+  .pick a { color: #cfd5df; text-decoration: none; padding: 6px 13px; border-radius: 999px; }
+  .pick a:hover { background: rgba(255, 255, 255, .08); }
+  .pick a.on { background: #e8eaef; color: #111; }
+  .pick span { color: #8a91a0; padding: 6px 10px; font-family: Consolas, monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="map"></canvas><div id="ui"></div></div>
+
+<script src="../js/rng.js"></script>
+<script src="../js/core.js"></script>
+<script src="../js/planetgen.js"></script>
+<script src="../js/worldgen.js"></script>
+<script src="../packs/fantasy.js"></script>
+<script>
+(function () {
+"use strict";
+
+/* ============================================================ setup === */
+const STYLES = [["ledger", "A · Ledger"], ["wood", "C · Woodcut"], ["framed", "D · Framed"], ["tome", "E · Tome"], ["parchment", "F · Parchment"]];
+const hashArg = function (k) { const m = new RegExp(k + "=([^&]+)").exec(location.hash); return m ? decodeURIComponent(m[1]) : null; };
+const seed = Number(hashArg("seed")) || 7;
+let style = STYLES.some(function (s) { return s[0] === hashArg("ui"); }) ? hashArg("ui") : "parchment";
+
+const world = AEON.createWorld({ packId: "fantasy", seed: seed });
+AEON.runAll(world);
+const pack = world.pack;
+let year = Number(hashArg("year")) || -400;
+let mode = "realms", playing = false;
+
+const VW = 600, VH = 380, PPC = 4;
+const stage = document.getElementById("stage"), mapC = document.getElementById("map"), ui = document.getElementById("ui");
+const mctx = mapC.getContext("2d");
+mapC.width = VW; mapC.height = VH;
+let S = 2;
+
+/* =================================================== terrain (pixel) === */
+const P = {
+  deep: "#16295f", mid: "#1f4294", shallow: "#3570c4", foam: "#a6dbff",
+  sand: ["#d4b56c", "#e6cd88", "#f3e2a6"],
+  grassland: ["#4a9438", "#5fae45", "#80c95a"], forest: ["#215a2a", "#2c7436", "#3b8f44"],
+  jungle: ["#1b663d", "#25804f", "#349b60"], savanna: ["#949539", "#b0af4a", "#cbc865"],
+  desert: ["#c2924c", "#d9b066", "#eacb88"], swamp: ["#384e30", "#48633e", "#5c794e"],
+  taiga: ["#2a5143", "#356453", "#477a65"], tundra: ["#7b8b74", "#94a48c", "#b2bfa7"],
+  ice: ["#b4c5db", "#d3dfed", "#f1f6fc"], mountain: ["#584c42", "#796a5b", "#9a8b79"],
+  snow: ["#c3cddb", "#e3eaf2", "#ffffff"], river: "#3570c4", ink: "#10131f",
+};
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const bayer = function (x, y) { return (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16; };
+const rgb = function (h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+
+const W = world.width, H = world.height, R = world.regions;
+function cellAt(fx, fy) {
+  const x = ((Math.floor(fx) % W) + W) % W, y = Math.max(0, Math.min(H - 1, Math.floor(fy)));
+  return R[y * W + x];
+}
+function elev(fx, fy) {
+  let x = fx - 0.5, y = Math.max(0, Math.min(H - 1, fy - 0.5));
+  const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0, y1 = Math.min(y0 + 1, H - 1);
+  const e = function (i, j) { return R[j * W + ((i % W) + W) % W].elevation; };
+  return (e(x0, y0) * (1 - tx) + e(x0 + 1, y0) * tx) * (1 - ty) + (e(x0, y1) * (1 - tx) + e(x0 + 1, y1) * tx) * ty;
+}
+
+const N = VW * VH, E = new Float32Array(N), land = new Uint8Array(N), cellOf = new Int32Array(N);
+for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+  const i = y * VW + x, c = cellAt((x + 0.5) / PPC, (y + 0.5) / PPC);
+  E[i] = elev((x + 0.5) / PPC, (y + 0.5) / PPC);
+  cellOf[i] = c.id;
+  land[i] = E[i] > 0.5 && !c.lake ? 1 : 0;
+}
+const terrain = new Uint8ClampedArray(N * 4);
+function put(buf, i, c) { buf[i * 4] = c[0]; buf[i * 4 + 1] = c[1]; buf[i * 4 + 2] = c[2]; buf[i * 4 + 3] = 255; }
+const HEX = {};
+const H3 = function (h) { return HEX[h] || (HEX[h] = rgb(h)); };
+for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+  const i = y * VW + x, e = E[i], t = bayer(x, y), c0 = R[cellOf[i]];
+  if (!land[i]) {
+    if (c0.lake) { put(terrain, i, H3((x + y) % 5 ? P.shallow : P.mid)); continue; }
+    let coast = false;
+    for (let dy = -1; dy <= 1 && !coast; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = (x + dx + VW) % VW, ny = y + dy;
+      if (ny >= 0 && ny < VH && land[ny * VW + nx]) { coast = true; break; }
+    }
+    const d = 0.5 - e;
+    put(terrain, i, H3(coast ? P.foam : d < 0.018 + t * 0.012 ? P.shallow : d < 0.075 + t * 0.03 ? P.mid : P.deep));
+    continue;
+  }
+  const c = cellAt((x + 0.5) / PPC + (t - 0.5) * 0.9, (y + 0.5) / PPC + (bayer(y + 1, x + 2) - 0.5) * 0.9);
+  const biome = c.barren ? "grassland" : c.biome;
+  const eNW = E[Math.max(0, y - 1) * VW + (x + VW - 1) % VW], eSE = E[Math.min(VH - 1, y + 1) * VW + (x + 1) % VW];
+  const lvl = Math.min(2, Math.floor(Math.max(0, Math.min(0.999, 0.55 + (eNW - eSE) * 38)) * 2 + t));
+  if (e < 0.506 && biome !== "ice" && biome !== "swamp") put(terrain, i, H3(P.sand[lvl]));
+  else if (biome === "mountain" && e > 0.86) put(terrain, i, H3(P.snow[lvl]));
+  else put(terrain, i, H3((P[biome] || P.grassland)[lvl]));
+}
+/* rivers, drawn into the terrain buffer */
+for (const r of R) {
+  if (!r.river || r.flowTo < 0) continue;
+  const t = R[r.flowTo], s = r.river > world.riverThreshold * 6 ? 2 : 1;
+  let bx = t.x;
+  if (bx - r.x > W / 2) bx -= W; else if (r.x - bx > W / 2) bx += W;
+  for (let k = 0; k <= 8; k++) {
+    const px = Math.round((r.x + (bx - r.x) * k / 8) * PPC + 2), py = Math.round((r.y + (t.y - r.y) * k / 8) * PPC + 2);
+    for (let a = 0; a < s; a++) for (let b = 0; b < s; b++) {
+      const xx = ((px + a) % VW + VW) % VW, yy = py + b;
+      if (yy < VH && land[yy * VW + xx]) put(terrain, yy * VW + xx, H3(P.river));
+    }
+  }
+}
+
+/* ================================================== political overlay === */
+const img = mctx.createImageData(VW, VH);
+function drawMap() {
+  const view = AEON.viewAt(world, year);
+  const own = new Array(R.length);
+  for (let k = 0; k < R.length; k++) own[k] = view.regions[k].owner;
+  img.data.set(terrain);
+  const px = img.data, col = {};
+  const colorOf = function (id) { return col[id] || (col[id] = rgb(world.polities[id].color)); };
+  if (mode === "realms") for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+    const i = y * VW + x;
+    if (!land[i]) continue;
+    const o = own[cellOf[i]];
+    const oR = own[cellOf[y * VW + (x + 1) % VW]], oD = y + 1 < VH ? own[cellOf[i + VW]] : o;
+    const oL = own[cellOf[y * VW + (x + VW - 1) % VW]], oU = y > 0 ? own[cellOf[i - VW]] : o;
+    if (o == null) continue;
+    const c = colorOf(o);
+    if (o !== oR || o !== oD || o !== oL || o !== oU) {
+      /* two-pixel border: realm colour inside, dark ink where it meets a different owner */
+      px[i * 4] = c[0] * 0.55; px[i * 4 + 1] = c[1] * 0.55; px[i * 4 + 2] = c[2] * 0.55;
+    } else {
+      const a = bayer(x, y) < 0.5 ? 0.5 : 0.32;
+      px[i * 4] += (c[0] - px[i * 4]) * a; px[i * 4 + 1] += (c[1] - px[i * 4 + 1]) * a; px[i * 4 + 2] += (c[2] - px[i * 4 + 2]) * a;
+    }
+  }
+  mctx.putImageData(img, 0, 0);
+
+  /* settlements: capitals get a keep, other towns of tier 2+ a dot */
+  for (const id in view.polities) {
+    const p = view.polities[id];
+    if (p.ended) continue;
+    const r = R[p.capital];
+    keep(r.x * PPC - 2, r.y * PPC - 5, world.polities[id].color);
+  }
+  for (let k = 0; k < R.length; k++) {
+    const s = view.regions[k].settlement;
+    if (!s || s.tier < 2 || own[k] == null) continue;
+    mctx.fillStyle = P.ink; mctx.fillRect(R[k].x * PPC + 1, R[k].y * PPC + 1, 3, 3);
+    mctx.fillStyle = "#fff4d6"; mctx.fillRect(R[k].x * PPC + 2, R[k].y * PPC + 2, 1, 1);
+  }
+  /* realm names: largest realms first, skipped when they would collide */
+  const live = Object.keys(view.polities).map(function (id) { return view.polities[id]; }).filter(function (p) { return !p.ended; });
+  const size = {};
+  for (const o of own) if (o != null) size[o] = (size[o] || 0) + 1;
+  live.sort(function (a, b) { return (size[b.id] || 0) - (size[a.id] || 0); });
+  const placed = [];
+  for (const p of live.slice(0, 14)) {
+    if ((size[p.id] || 0) < 12) break;
+    const name = p.name.replace(/^The /, "").toUpperCase(), w = textWidth(name, 1);
+    const r = R[p.capital], x = Math.round(r.x * PPC + 2 - w / 2), y = r.y * PPC + 5;
+    if (x < 2 || x + w > VW - 2 || placed.some(function (b) { return x < b[2] && x + w > b[0] && y < b[3] && y + 9 > b[1]; })) continue;
+    placed.push([x - 3, y - 2, x + w + 3, y + 11]);
+    for (const d of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) text(mctx, name, x + d[0], y + d[1], P.ink, 1);
+    text(mctx, name, x, y, "#fff4d6", 1);
+  }
+}
+function keep(x, y, color) {
+  const rows = ["k.k.k", "kwkwk", "kwwwk", "kwrwk", "kkkkk"];
+  for (let j = 0; j < 5; j++) for (let i = 0; i < 5; i++) {
+    const ch = rows[j][i];
+    if (ch === ".") continue;
+    mctx.fillStyle = ch === "k" ? P.ink : ch === "w" ? "#efe6d6" : color;
+    mctx.fillRect(x + i, y + j, 1, 1);
+  }
+}
+
+/* ========================================================= pixel font === */
+const GLYPHS = {
+  A: [14,17,17,31,17,17,17], B: [30,17,17,30,17,17,30], C: [14,17,16,16,16,17,14], D: [28,18,17,17,17,18,28],
+  E: [31,16,16,30,16,16,31], F: [31,16,16,30,16,16,16], G: [14,17,16,23,17,17,15], H: [17,17,17,31,17,17,17],
+  I: [14,4,4,4,4,4,14], J: [7,2,2,2,2,18,12], K: [17,18,20,24,20,18,17], L: [16,16,16,16,16,16,31],
+  M: [17,27,21,21,17,17,17], N: [17,17,25,21,19,17,17], O: [14,17,17,17,17,17,14], P: [30,17,17,30,16,16,16],
+  Q: [14,17,17,17,21,18,13], R: [30,17,17,30,20,18,17], S: [15,16,16,14,1,1,30], T: [31,4,4,4,4,4,4],
+  U: [17,17,17,17,17,17,14], V: [17,17,17,17,17,10,4], W: [17,17,17,21,21,21,10], X: [17,17,10,4,10,17,17],
+  Y: [17,17,10,4,4,4,4], Z: [31,1,2,4,8,16,31],
+  "0": [14,17,19,21,25,17,14], "1": [4,12,4,4,4,4,14], "2": [14,17,1,2,4,8,31], "3": [31,2,4,2,1,17,14],
+  "4": [2,6,10,18,31,2,2], "5": [31,16,30,1,1,17,14], "6": [6,8,16,30,17,17,14], "7": [31,1,2,4,8,8,8],
+  "8": [14,17,17,14,17,17,14], "9": [14,17,17,15,1,2,12],
+  " ": [0,0,0,0,0,0,0], ".": [0,0,0,0,0,12,12], ",": [0,0,0,0,12,4,8], "-": [0,0,0,31,0,0,0],
+  "'": [4,4,8,0,0,0,0], "!": [4,4,4,4,4,0,4], "?": [14,17,1,2,4,0,4], ":": [0,12,12,0,12,12,0],
+  "/": [1,1,2,4,8,16,16], ">": [16,24,28,30,28,24,16], "(": [2,4,8,8,8,4,2], ")": [8,4,2,2,2,4,8], "·": [0,0,0,4,0,0,0], "*": [0,4,14,31,14,4,0],
+};
+function textWidth(s, sc) { return s.length * 6 * sc - sc; }
+function text(ctx, s, x, y, color, sc) {
+  sc = sc || 1; s = String(s).toUpperCase(); ctx.fillStyle = color;
+  for (let n = 0; n < s.length; n++) {
+    const g = GLYPHS[s[n]] || GLYPHS["?"];
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++) if (g[r] & (16 >> c)) ctx.fillRect(x + (n * 6 + c) * sc, y + r * sc, sc, sc);
+  }
+}
+/* pixel text as an element, drawn in map pixels and scaled by S like the map */
+function pt(s, color, sc, shadow) {
+  sc = sc || 1; s = String(s).toUpperCase();
+  const c = document.createElement("canvas"), sh = shadow ? sc : 0;
+  c.width = Math.max(1, textWidth(s, sc) + sh); c.height = 7 * sc + sh;
+  const g = c.getContext("2d");
+  if (shadow) text(g, s, sc, sc, shadow, sc);
+  text(g, s, 0, 0, color, sc);
+  c.className = "pt"; c.style.width = c.width * S + "px"; c.style.height = c.height * S + "px";
+  return c;
+}
+
+/* ===================================================== frame sprites === */
+function sprite(w, h, draw) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  draw(c.getContext("2d"), function (col, x, y, ww, hh) { c.getContext("2d").fillStyle = col; c.getContext("2d").fillRect(x, y, ww || 1, hh || 1); });
+  return "url(" + c.toDataURL() + ")";
+}
+/* Ledger: ink outline with clipped corners, a pale inner edge and a ruled line */
+const LEDGER_FRAME = sprite(9, 9, function (g, f) {
+  f("#3a2614", 1, 0, 7, 1); f("#3a2614", 1, 8, 7, 1); f("#3a2614", 0, 1, 1, 7); f("#3a2614", 8, 1, 1, 7);
+  f("#f6ead0", 1, 1, 7, 1); f("#f6ead0", 1, 1, 1, 7); f("#c6a46c", 1, 7, 7, 1); f("#c6a46c", 7, 1, 1, 7);
+  f("#e9d6ad", 2, 2, 5, 5);
+});
+const PAPER = sprite(16, 16, function (g, f) {
+  f("#e9d6ad", 0, 0, 16, 16);
+  const dots = [[1, 2], [5, 7], [11, 3], [14, 12], [8, 13], [3, 10], [12, 8], [6, 1]];
+  for (const d of dots) f("#dcc597", d[0], d[1]);
+  f("#f2e3c0", 9, 5); f("#f2e3c0", 2, 14); f("#f2e3c0", 13, 0);
+});
+/* Woodcut: dark outline, carved bevel, brass pins in the corners */
+const WOOD_FRAME = sprite(12, 12, function (g, f) {
+  f("#1a0d05", 1, 0, 10, 1); f("#1a0d05", 1, 11, 10, 1); f("#1a0d05", 0, 1, 1, 10); f("#1a0d05", 11, 1, 1, 10);
+  f("#b98550", 1, 1, 10, 1); f("#b98550", 1, 1, 1, 10); f("#4a2a12", 1, 10, 10, 1); f("#4a2a12", 10, 1, 1, 10);
+  f("#93633a", 2, 2, 8, 2); f("#93633a", 2, 2, 2, 8); f("#5e3a1c", 2, 8, 8, 2); f("#5e3a1c", 8, 2, 2, 8);
+  for (const c of [[2, 2], [8, 2], [2, 8], [8, 8]]) { f("#e2b84a", c[0], c[1], 2, 2); f("#fff0a8", c[0], c[1]); f("#7a5410", c[0] + 1, c[1] + 1); }
+  f("#7a4f2c", 4, 4, 4, 4);
+});
+const GRAIN = sprite(32, 32, function (g, f) {
+  f("#7a4f2c", 0, 0, 32, 32);
+  const lines = [[0, 3, 14], [17, 3, 11], [4, 9, 20], [0, 15, 7], [11, 15, 18], [2, 21, 13], [19, 22, 13], [6, 27, 22]];
+  for (const l of lines) f("#6c4426", l[0], l[1], l[2], 1);
+  f("#87593a", 9, 6, 9, 1); f("#87593a", 21, 18, 8, 1); f("#87593a", 1, 25, 6, 1);
+  f("#5d3a1f", 24, 9, 3, 2); f("#4f3018", 25, 9, 1, 1);
+});
+
+/* Leather: a dark binding with a tooled gold rule and gold corner studs */
+const LEATHER_FRAME = sprite(12, 12, function (g, f) {
+  f("#120504", 1, 0, 10, 1); f("#120504", 1, 11, 10, 1); f("#120504", 0, 1, 1, 10); f("#120504", 11, 1, 1, 10);
+  f("#5a2219", 1, 1, 10, 10);
+  f("#7d3426", 1, 1, 10, 1); f("#7d3426", 1, 1, 1, 10); f("#35100b", 1, 10, 10, 1); f("#35100b", 10, 1, 1, 10);
+  f("#c9a24a", 3, 2, 6, 1); f("#c9a24a", 3, 9, 6, 1); f("#c9a24a", 2, 3, 1, 6); f("#c9a24a", 9, 3, 1, 6);
+  for (const c of [[2, 2], [9, 2], [2, 9], [9, 9]]) f("#f1d27a", c[0], c[1]);
+});
+const HIDE = sprite(16, 16, function (g, f) {
+  f("#5a2219", 0, 0, 16, 16);
+  for (const d of [[2, 3], [9, 1], [13, 6], [5, 9], [11, 12], [1, 14], [7, 5], [14, 15]]) f("#4c1c14", d[0], d[1]);
+  for (const d of [[4, 1], [12, 3], [8, 11], [2, 7]]) f("#66281e", d[0], d[1]);
+});
+
+/* Parchment: a torn, aged sheet drawn at map resolution for one box. The tear and the
+   stains come from a coordinate hash, so a sheet redrawn at the same size looks the same. */
+const SHEETS = {};
+function hash2(a, b) {
+  let h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function smooth(x, y, k) {
+  const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0;
+  const a = hash2(x0 + k, y0), b = hash2(x0 + 1 + k, y0), c = hash2(x0 + k, y0 + 1), d = hash2(x0 + 1 + k, y0 + 1);
+  return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+}
+function sheet(w, h, k) {
+  const key = w + "x" + h + ":" + k;
+  if (SHEETS[key]) return SHEETS[key];
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"), im = g.createImageData(w, h), d = im.data;
+  const TONES = [[150, 108, 62], [181, 141, 89], [204, 170, 118], [218, 191, 144]];
+  const BASE = [232, 214, 172], SPECK = [219, 197, 152], STAIN = [222, 200, 156];
+  /* how far the tear bites in along each edge: 0-3 pixels, varying in runs */
+  const bite = function (t, side) { const n = smooth(t / 5, side * 7.3, k * 31); return n < 0.3 ? 0 : n < 0.6 ? 1 : n < 0.85 ? 2 : 3; };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    const dt = y - bite(x, 1), db = h - 1 - y - bite(x, 2), dl = x - bite(y, 3), dr = w - 1 - x - bite(y, 4);
+    const e = Math.min(dt, db, dl, dr);
+    if (e < 0) continue;
+    let col = BASE;
+    const stain = smooth(x / 14, y / 10, k * 17 + 5);
+    if (e < TONES.length && (e < 2 || hash2(x + k, y) < 0.7)) col = TONES[e];
+    else if (stain > 0.72 && (x + y) % 2 === 0) col = STAIN;
+    else if (hash2(x * 3 + k, y * 5) < 0.035) col = SPECK;
+    /* foxing: a few darker age spots */
+    else if (hash2(x + 101 * k, y + 7) < 0.0035) col = TONES[2];
+    d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+  return (SHEETS[key] = c.toDataURL());
+}
+
+/* small pixel sprites for F, returned as scaled canvases like pt() */
+function art(rows, pal) {
+  const c = document.createElement("canvas"); c.width = rows[0].length; c.height = rows.length;
+  const g = c.getContext("2d");
+  rows.forEach(function (r, y) { for (let x = 0; x < r.length; x++) if (r[x] !== ".") { g.fillStyle = pal[r[x]]; g.fillRect(x, y, 1, 1); } });
+  c.className = "pt"; c.style.width = c.width * S + "px"; c.style.height = c.height * S + "px";
+  return c;
+}
+const shade = function (hex, k) { const c = rgb(hex); return "rgb(" + c.map(function (v) { return Math.round(Math.min(255, v * k)); }).join(",") + ")"; };
+/* a wax seal in the realm's colour: blobby rim, pressed ring, a mark in the middle */
+function seal(color) {
+  return art([
+    "...ddddd...",
+    "..dmmmmmd..",
+    ".dmllmmmmd.",
+    "dmlmdddmmmd",
+    "dmmd...dmmd",
+    "dmmd.x.dmmd",
+    "dmmd...dmmd",
+    "dmmmdddmmmd",
+    ".dmmmmmmmd.",
+    "..dmmmmmd..",
+    "...dd.dd...",
+  ], { d: shade(color, 0.45), m: shade(color, 0.85), l: shade(color, 1.35), x: shade(color, 0.45) });
+}
+/* a manicule -- the pointing hand scribes drew in margins -- pointing down at the year */
+function manicule() {
+  return art([
+    ".kkkkkkk.",
+    ".krrrrrk.",
+    ".kkkkkkk.",
+    "kpppppppk",
+    "kpkpkpkpk",
+    "kpppppppk",
+    ".kkkpkkk.",
+    "...kpk...",
+    "...kpk...",
+    "...kpk...",
+    "....k....",
+  ], { k: "#3a2614", r: "#8e1d1d", p: "#f2e3c0" });
+}
+/* a fleuron rule for either side of a heading; flip for the right-hand side */
+function fleuron(flip) {
+  const rows = [
+    "...........k.",
+    "kkkkkkkkkkkkk",
+    "...........k.",
+  ];
+  const c = art(flip ? rows.map(function (r) { return r.split("").reverse().join(""); }) : rows, { k: "#4a3320" });
+  c.style.opacity = ".7";
+  return c;
+}
+function roman(n) {
+  const T = [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"], [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
+  let out = "";
+  for (const t of T) while (n >= t[0]) { out += t[1]; n -= t[0]; }
+  return out;
+}
+
+/* ======================================================== theme data === */
+/* text colours per surface: "ink" surfaces are parchment, "dark" ones wood or leather */
+const INK  = { head: "#9a2b1e", shadow: null, soft: "#6b4a2a", on: "#f3e4c4", off: "#3a2614", play: "#f3e4c4",
+               eras: ["#c49a52", "#9a2b1e", "#6b4a2a", "#8b7a5a", "#4a3a2a"] };
+const WOOD = { head: "#f2cf6a", shadow: "#1a0d05", soft: "#e0c48f", on: "#f2cf6a", off: "#f7e8c6", play: "#f2cf6a",
+               eras: ["#e2b84a", "#c0563a", "#6f8fb0", "#7aa05a", "#a39a8a"] };
+const FADED = { cls: "ink faded", head: "#8a3a22", shadow: null, soft: "#7a5a3a", on: "#8a3a22", off: "#4a3320", play: "#4a3320", eras: [] };
+const GILT = { head: "#e8c35a", shadow: "#1c0806", soft: "#d9b98a", on: "#3a2614", off: "#e9d2a6", play: "#e8c35a", eras: WOOD.eras };
+/* per style: [surface class, palette] for each part of the screen, and the timeline kind */
+const THEME = {
+  ledger: { title: ["sf-paper", INK], modes: ["sf-paper", INK], panel: ["sf-paper", INK], bar: ["sf-paper", INK], track: "ruler" },
+  wood:   { title: ["sf-wood", WOOD], modes: ["sf-wood", WOOD], panel: ["sf-wood", WOOD], bar: ["sf-wood", WOOD], track: "slot" },
+  framed: { title: ["sf-woodpaper", INK], modes: ["sf-wood", WOOD], panel: ["sf-woodpaper", INK], bar: ["sf-wood", WOOD], track: "ruler" },
+  parchment: { title: ["sf-torn", FADED], modes: ["sf-torn", FADED], panel: ["sf-torn", FADED], bar: ["sf-torn", FADED], track: "ruler" },
+  tome:   { title: ["sf-leather", GILT], modes: ["sf-leather", GILT], panel: ["sf-page", INK], bar: ["sf-leather", GILT], track: "ruler" },
+};
+
+/* =============================================================== UI === */
+const el = function (tag, cls, kids) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  for (const k of [].concat(kids || [])) e.appendChild(typeof k === "string" ? document.createTextNode(k) : k);
+  return e;
+};
+function eraAt(y) { let e = pack.eras[0]; for (const x of pack.eras) if (y >= x.from) e = x; return e; }
+function rulerAt(p, y) {
+  let best = null;
+  for (const id of p.rulers || []) {
+    const f = world.figures[id];
+    if (f && f.born <= y && (f.died == null || f.died >= y)) best = f;
+  }
+  return best;
+}
+function focusRealm(view) {
+  const size = {};
+  for (const r of view.regions) if (r.owner != null) size[r.owner] = (size[r.owner] || 0) + 1;
+  let best = null;
+  for (const id in size) if (!best || size[id] > size[best]) best = id;
+  return best ? { p: world.polities[best], size: size[best] } : null;
+}
+function eventsNear(pid, y) {
+  const out = [];
+  for (let k = world.chronicle.length - 1; k >= 0 && out.length < 4; k--) {
+    const e = world.chronicle[k];
+    if (e.year > y || e.importance < 2) continue;
+    if (e.actors.some(function (a) { return a.id === pid; })) out.push(e);
+  }
+  return out;
+}
+const clip = function (s) { return s.length > 170 ? s.slice(0, 168).replace(/\s+\S*$/, "") + "…" : s; };
+
+function buildUI() {
+  const T = THEME[style], view = AEON.viewAt(world, year);
+  ui.className = "s-" + style;
+  for (const v of [["--ledgerf", LEDGER_FRAME], ["--woodf", WOOD_FRAME], ["--leatherf", LEATHER_FRAME],
+                   ["--paper", PAPER], ["--grain", GRAIN], ["--hide", HIDE]]) ui.style.setProperty(v[0], v[1]);
+  ui.innerHTML = "";
+  const box = function (cls, part) { return el("div", cls + " box " + part[0] + " " + (part[1].cls || (part[1] === INK ? "ink" : "dark"))); };
+
+  /* title */
+  const C = T.title[1], title = box("title", T.title);
+  title.appendChild(pt(pack.name, C.head, 2, C.shadow));
+  const era = el("div", "era"); era.appendChild(pt(eraAt(year).name, C.soft, 1)); title.appendChild(era);
+  ui.appendChild(title);
+
+  /* map modes */
+  const M = T.modes[1], modes = box("modes", T.modes);
+  for (const m of [["realms", "Realms"], ["land", "Land"], ["faith", "Faiths"]]) {
+    const b = el("button", m[0] === mode ? "on" : "");
+    b.appendChild(pt(m[1], m[0] === mode ? M.on : M.off, 1));
+    b.onclick = function () { if (m[0] !== "faith") { mode = m[0]; drawMap(); buildUI(); } };
+    modes.appendChild(b);
+  }
+  ui.appendChild(modes);
+
+  /* realm card */
+  const f = focusRealm(view), Pn = T.panel[1];
+  if (f) {
+    const panel = box("panel", T.panel);
+    const head = el("div", "head"), sw = el("div", "swatch");
+    sw.style.background = f.p.color;
+    if (style === "parchment") { const w = seal(f.p.color); w.classList.add("seal"); head.appendChild(w); }
+    else head.appendChild(sw);
+    head.appendChild(pt(f.p.name.replace(/^The /, "").slice(0, 22), Pn.head, 1, Pn.shadow));
+    panel.appendChild(head);
+    const ruler = rulerAt(f.p, year);
+    panel.appendChild(el("div", "meta", f.p.archetypeName + " · founded " + pack.yearLabel(f.p.founded) + " · " + f.size + " provinces"));
+    if (ruler) panel.appendChild(el("div", "", ruler.title + " " + ruler.name + ", reigning"));
+    const sec = el("div", "sec");
+    if (style === "parchment") sec.appendChild(fleuron(false));
+    sec.appendChild(pt(style === "tome" ? "* Chronicle *" : "Chronicle", Pn.head, 1, Pn.shadow));
+    if (style === "parchment") sec.appendChild(fleuron(true));
+    panel.appendChild(sec);
+    eventsNear(f.p.id, year).forEach(function (e, i) {
+      const ev = el("div", "ev"), y = el("span", "y"), txt = clip(e.text);
+      y.appendChild(pt(pack.yearLabel(e.year), Pn.soft, 1));
+      ev.appendChild(y);
+      if ((style === "tome" || style === "parchment") && i === 0) {
+        /* an illuminated capital on the first entry */
+        const cap = pt(txt[0], style === "tome" ? "#9a2b1e" : "#8e1d1d", 3, style === "tome" ? "#d8bd8a" : "#cdb07c"); cap.classList.add("cap");
+        ev.appendChild(cap); ev.appendChild(document.createTextNode(txt.slice(1)));
+      } else ev.appendChild(document.createTextNode(txt));
+      panel.appendChild(ev);
+    });
+    if (style === "parchment") {
+      let n = 0;
+      for (const e of world.chronicle) { if (e.year > year) break; n++; }
+      const fo = el("div", "folio"); fo.appendChild(pt("fol. " + roman(Math.floor(n / 12) + 1), Pn.soft, 1)); panel.appendChild(fo);
+    }
+    ui.appendChild(panel);
+    /* a page ends on a whole entry: drop the ones that would be cut off */
+    const evs = panel.querySelectorAll(".ev");
+    for (let k = evs.length - 1; k > 0 && panel.scrollHeight > panel.clientHeight; k--) evs[k].remove();
+  }
+
+  /* playback bar */
+  const B = T.bar[1], bar = box("bar", T.bar);
+  const play = el("button", "play");
+  play.appendChild(pt(playing ? "II" : ">", B.play, 1));
+  play.onclick = function () { playing = !playing; buildUI(); };
+  bar.appendChild(play);
+  const yb = el("div", "year"); yb.appendChild(pt(pack.yearLabel(year), B.head, 2, B.shadow)); bar.appendChild(yb);
+  const track = el("div", "track " + T.track), eras = el("div", "eras"), span = world.endYear - world.startYear;
+  const ERAS = T.track === "ruler" ? INK.eras : WOOD.eras;
+  pack.eras.forEach(function (e, i) {
+    const to = i + 1 < pack.eras.length ? pack.eras[i + 1].from : world.endYear;
+    const s = el("span"); s.style.width = ((to - e.from) / span * 100) + "%"; s.style.background = ERAS[i % ERAS.length];
+    s.title = e.name; eras.appendChild(s);
+  });
+  track.appendChild(eras);
+  if (T.track === "ruler") for (let k = 0; k <= 32; k++) {
+    const t = el("div", "tick" + (k % 2 ? " minor" : "")); t.style.left = (k / 32 * 100) + "%"; track.appendChild(t);
+  }
+  const thumb = el("div", "thumb");
+  if (style === "parchment") thumb.appendChild(manicule());
+  thumb.style.left = ((year - world.startYear) / span * 100) + "%";
+  track.appendChild(thumb);
+  const seek = function (ev) {
+    const r = track.getBoundingClientRect();
+    year = Math.round((world.startYear + Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * span) / 5) * 5;
+    drawMap(); buildUI();
+  };
+  track.onpointerdown = function (ev) {
+    seek(ev);
+    const move = function (e) { seek(e); };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", function () { removeEventListener("pointermove", move); }, { once: true });
+  };
+  bar.appendChild(track);
+  ui.appendChild(bar);
+  ui.querySelectorAll(".sf-torn").forEach(function (b, i) {
+    b.style.backgroundImage = "url(" + sheet(Math.round(b.offsetWidth / S), Math.round(b.offsetHeight / S), i + 1) + ")";
+  });
+}
+
+/* ============================================================ layout === */
+function layout() {
+  S = Math.max(1, Math.floor(Math.min(innerWidth / VW, (innerHeight - 50) / VH)));
+  const w = VW * S, h = VH * S;
+  stage.style.width = w + "px"; stage.style.height = h + "px";
+  stage.style.left = Math.round((innerWidth - w) / 2) + "px"; stage.style.top = Math.max(0, Math.round((innerHeight - 50 - h) / 2)) + "px";
+  mapC.style.width = w + "px"; mapC.style.height = h + "px";
+  ui.style.setProperty("--px", S + "px");
+  buildUI();
+}
+
+const pick = el("div", "pick");
+for (const s of STYLES) {
+  const a = el("a", s[0] === style ? "on" : "", s[1]);
+  a.href = "#seed=" + seed + "&ui=" + s[0];
+  a.onclick = function (e) {
+    e.preventDefault(); style = s[0];
+    history.replaceState(null, "", "#seed=" + seed + "&ui=" + style + "&year=" + year);
+    pick.querySelectorAll("a").forEach(function (x) { x.className = x === a ? "on" : ""; });
+    buildUI();
+  };
+  pick.appendChild(a);
+}
+pick.appendChild(el("span", "", "seed " + seed + " · keys 1-5"));
+document.body.appendChild(pick);
+addEventListener("keydown", function (e) {
+  const i = "12345".indexOf(e.key);
+  if (i >= 0) pick.querySelectorAll("a")[i].click();
+  if (e.key === " ") { playing = !playing; buildUI(); e.preventDefault(); }
+});
+
+let last = 0;
+function tick(now) {
+  if (playing && now - last > 90) {
+    last = now; year += 10;
+    if (year > world.endYear) { year = world.endYear; playing = false; }
+    drawMap(); buildUI();
+  }
+  requestAnimationFrame(tick);
+}
+addEventListener("resize", layout);
+drawMap(); layout();
+requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

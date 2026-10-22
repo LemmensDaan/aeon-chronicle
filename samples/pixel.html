@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aeon — Pixel sample (Age of Myth)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0d1c; overflow: hidden; }
+  canvas { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+
+<script src="../js/rng.js"></script>
+<script src="../js/planetgen.js"></script>
+<script src="../js/worldgen.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+"use strict";
+
+/* ===================================================== virtual screen === */
+const VW = 600, VH = 380, PPC = 4;           // virtual pixels, pixels per cell
+const seed = SAMPLE.nav("pixel.html");
+const world = SAMPLE.makeWorld(seed);
+const rng = AEON.RNG(seed + ":pixel");
+
+const screen = document.getElementById("screen");
+const sctx = screen.getContext("2d");
+const vc = document.createElement("canvas");  // virtual frame, composed each tick
+vc.width = VW; vc.height = VH;
+const v = vc.getContext("2d");
+
+/* ============================================================ palette === */
+const P = {
+  deep: "#16295f", mid: "#1f4294", shallow: "#3570c4", foamA: "#a6dbff", foamB: "#e9f7ff",
+  sand: ["#d4b56c", "#e6cd88", "#f3e2a6"],
+  grassland: ["#4a9438", "#5fae45", "#80c95a"],
+  forest:    ["#215a2a", "#2c7436", "#3b8f44"],
+  jungle:    ["#1b663d", "#25804f", "#349b60"],
+  savanna:   ["#949539", "#b0af4a", "#cbc865"],
+  desert:    ["#c2924c", "#d9b066", "#eacb88"],
+  swamp:     ["#384e30", "#48633e", "#5c794e"],
+  taiga:     ["#2a5143", "#356453", "#477a65"],
+  tundra:    ["#7b8b74", "#94a48c", "#b2bfa7"],
+  ice:       ["#b4c5db", "#d3dfed", "#f1f6fc"],
+  mountain:  ["#584c42", "#796a5b", "#9a8b79"],
+  snow:      ["#c3cddb", "#e3eaf2", "#ffffff"],
+  river: "#3570c4", ink: "#10131f", gold: "#f6c945", goldDark: "#9a6a12",
+};
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const bayer = (x, y) => (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+
+/* ========================================================== base map === */
+const base = document.createElement("canvas");
+base.width = VW; base.height = VH;
+const bctx = base.getContext("2d");
+const img = bctx.createImageData(VW, VH);
+const px = img.data;
+const land = new Uint8Array(VW * VH);
+const elevAt = (x, y) => SAMPLE.field(world, "elevation", x / PPC, y / PPC);
+
+function hex(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const HEX = {};
+function put(i, color) {
+  const c = HEX[color] || (HEX[color] = hex(color));
+  px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = 255;
+}
+
+const E = new Float32Array(VW * VH);
+for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+  const e = elevAt(x + 0.5, y + 0.5);
+  E[y * VW + x] = e;
+  land[y * VW + x] = e > 0.5 && !SAMPLE.cell(world, (x + 0.5) / PPC, (y + 0.5) / PPC).lake ? 1 : 0;
+}
+
+const foam = [];
+for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+  const i = y * VW + x, e = E[i], t = bayer(x, y);
+  if (!land[i]) {
+    /* lakes are calm water: no surf ring, which turned one-cell lakes into outlines */
+    if (SAMPLE.cell(world, (x + 0.5) / PPC, (y + 0.5) / PPC).lake) { put(i, (x + y) % 5 ? P.shallow : P.mid); continue; }
+    let coast = false;
+    for (let dy = -1; dy <= 1 && !coast; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < VW && ny < VH && land[ny * VW + nx]) { coast = true; break; }
+    }
+    if (coast) { foam.push(i); put(i, P.foamA); continue; }
+    const d = 0.5 - e;
+    put(i, d < 0.018 + t * 0.012 ? P.shallow : d < 0.075 + t * 0.03 ? P.mid : P.deep);
+    continue;
+  }
+  /* jitter the biome lookup with the dither matrix so biome borders break up into pixels */
+  const jx = (t - 0.5) * 0.9, jy = (bayer(y + 1, x + 2) - 0.5) * 0.9;
+  const c = SAMPLE.cell(world, (x + 0.5) / PPC + jx, (y + 0.5) / PPC + jy);
+  let biome = c.barren ? "grassland" : c.biome;
+  /* hillshade from the elevation gradient, light from the north-west */
+  const eNW = E[Math.max(0, y - 1) * VW + Math.max(0, x - 1)];
+  const eSE = E[Math.min(VH - 1, y + 1) * VW + Math.min(VW - 1, x + 1)];
+  const s = Math.max(0, Math.min(0.999, 0.55 + (eNW - eSE) * 38));
+  const lvl = Math.min(2, Math.floor(s * 2 + t));
+  if (e < 0.506 && biome !== "ice" && biome !== "swamp") { put(i, P.sand[lvl]); continue; }
+  if (biome === "mountain" && e > 0.86) { put(i, P.snow[lvl]); continue; }
+  put(i, (P[biome] || P.grassland)[lvl]);
+}
+bctx.putImageData(img, 0, 0);
+
+/* rivers: curves through jittered cell centres (midpoint-to-midpoint quadratics),
+   so they meander instead of stepping along the grid */
+bctx.fillStyle = P.river;
+function centre(r) {
+  const h = Math.sin(r.id * 12.9898) * 43758.5453;
+  const j = h - Math.floor(h);
+  return [r.x * PPC + 2 + (j - 0.5) * 2.4, r.y * PPC + 2 + ((j * 7.3) % 1 - 0.5) * 2.4];
+}
+function plot(x, y, s) { bctx.fillRect(Math.round(x), Math.round(y), s, s); }
+for (const r of world.regions) {
+  if (!r.river || r.flowTo < 0) continue;
+  const t = world.regions[r.flowTo];
+  const s = r.river > world.riverThreshold * 6 ? 2 : 1;
+  /* the planet wraps east-west: pull neighbours across the seam next to this cell */
+  const near = function (p, ref) { const span = world.width * PPC; return p[0] - ref[0] > span / 2 ? [p[0] - span, p[1]] : ref[0] - p[0] > span / 2 ? [p[0] + span, p[1]] : p; };
+  const a = centre(r), b = near(centre(t), a);
+  const m1 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const u = t.flowTo >= 0 && t.river ? world.regions[t.flowTo] : null;
+  const m2 = u ? (function () { const c = near(centre(u), b); return [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2]; })() : b;
+  const hasUp = world.regions.length && r.neighbors.some(function (n) { return world.regions[n].flowTo === r.id && world.regions[n].river; });
+  if (!hasUp) for (let k = 0; k <= 6; k++) plot(a[0] + (m1[0] - a[0]) * k / 6, a[1] + (m1[1] - a[1]) * k / 6, s);
+  for (let k = 0; k <= 10; k++) {
+    const q = k / 10, iq = 1 - q;
+    plot(iq * iq * m1[0] + 2 * iq * q * b[0] + q * q * m2[0], iq * iq * m1[1] + 2 * iq * q * b[1] + q * q * m2[1], s);
+  }
+}
+
+/* ============================================================ sprites === */
+function sprite(rows, palette) { return { rows: rows, pal: palette, w: rows[0].length, h: rows.length }; }
+function blit(ctx, sp, x, y) {
+  for (let j = 0; j < sp.h; j++) for (let i = 0; i < sp.w; i++) {
+    const ch = sp.rows[j][i];
+    if (ch === ".") continue;
+    ctx.fillStyle = sp.pal[ch];
+    ctx.fillRect(x + i, y + j, 1, 1);
+  }
+}
+
+const PEAK = sprite([
+  "....k....",
+  "...kwk...",
+  "..kwwlk..",
+  "..kwlldk.",
+  ".kllddddk",
+  "kllldddddk".slice(0, 9),
+  "kkkkkkkkk",
+], { k: "#2a2420", w: "#ffffff", l: "#a39482", d: "#6b5d4f" });
+const PINE = sprite([
+  "..k..",
+  ".kgk.",
+  ".kgk.",
+  "kgggk",
+  ".kbk.",
+], { k: "#14301f", g: "#2f6e45", b: "#5a3d22" });
+const TREE = sprite([
+  ".kkk.",
+  "kgglk",
+  "kgggk",
+  ".kbk.",
+], { k: "#13361b", g: "#3a8f42", l: "#6cc160", b: "#5a3d22" });
+const PALM = sprite([
+  "kg.gk",
+  ".ggg.",
+  "..b..",
+  "..b..",
+], { k: "#14451f", g: "#2fa055", b: "#7a5a2e" });
+const CASTLE = sprite([
+  "k.k.k.k.k",
+  "kwkwkwkwk",
+  "kwwwwwwwk",
+  "kwwrrrwwk",
+  "kwwrrrwwk",
+  "kwwwdwwwk",
+  "kwwwdwwwk",
+  "kkkkkkkkk",
+], { k: "#1d1a24", w: "#e6dfd2", r: "#b8392f", d: "#3b2d26" });
+
+const props = [];
+for (const r of world.regions) {
+  if (r.barren) continue;
+  if (r.biome === "mountain" && (r.x + r.y * 2) % 3 === 0) props.push([PEAK, r.x * PPC - 3, r.y * PPC - 4, r.y]);
+  else if ((r.biome === "forest" || r.biome === "jungle") && (r.x * 3 + r.y) % 2 === 0)
+    props.push([r.biome === "jungle" ? PALM : TREE, r.x * PPC, r.y * PPC - 1, r.y]);
+  else if (r.biome === "taiga" && (r.x + r.y) % 2 === 0) props.push([PINE, r.x * PPC, r.y * PPC - 1, r.y]);
+}
+props.sort((a, b) => a[3] - b[3]);
+for (const p of props) blit(bctx, p[0], p[1], p[2]);
+
+const towns = SAMPLE.sites(world, 7, 16, rng).map(function (r) {
+  return { x: r.x * PPC - 2, y: r.y * PPC - 4, name: SAMPLE.name(rng, "fantasy").toUpperCase() };
+});
+for (const t of towns) blit(bctx, CASTLE, t.x, t.y);
+
+/* ========================================================= pixel font === */
+const GLYPHS = {
+  A: [14,17,17,31,17,17,17], B: [30,17,17,30,17,17,30], C: [14,17,16,16,16,17,14], D: [28,18,17,17,17,18,28],
+  E: [31,16,16,30,16,16,31], F: [31,16,16,30,16,16,16], G: [14,17,16,23,17,17,15], H: [17,17,17,31,17,17,17],
+  I: [14,4,4,4,4,4,14], J: [7,2,2,2,2,18,12], K: [17,18,20,24,20,18,17], L: [16,16,16,16,16,16,31],
+  M: [17,27,21,21,17,17,17], N: [17,17,25,21,19,17,17], O: [14,17,17,17,17,17,14], P: [30,17,17,30,16,16,16],
+  Q: [14,17,17,17,21,18,13], R: [30,17,17,30,20,18,17], S: [15,16,16,14,1,1,30], T: [31,4,4,4,4,4,4],
+  U: [17,17,17,17,17,17,14], V: [17,17,17,17,17,10,4], W: [17,17,17,21,21,21,10], X: [17,17,10,4,10,17,17],
+  Y: [17,17,10,4,4,4,4], Z: [31,1,2,4,8,16,31],
+  "0": [14,17,19,21,25,17,14], "1": [4,12,4,4,4,4,14], "2": [14,17,1,2,4,8,31], "3": [31,2,4,2,1,17,14],
+  "4": [2,6,10,18,31,2,2], "5": [31,16,30,1,1,17,14], "6": [6,8,16,30,17,17,14], "7": [31,1,2,4,8,8,8],
+  "8": [14,17,17,14,17,17,14], "9": [14,17,17,15,1,2,12],
+  " ": [0,0,0,0,0,0,0], ".": [0,0,0,0,0,12,12], ",": [0,0,0,0,12,4,8], "-": [0,0,0,31,0,0,0],
+  "'": [4,4,8,0,0,0,0], "!": [4,4,4,4,4,0,4], "?": [14,17,1,2,4,0,4], ":": [0,12,12,0,12,12,0],
+  "/": [1,1,2,4,8,16,16], ">": [16,24,28,30,28,24,16], "(": [2,4,8,8,8,4,2], ")": [8,4,2,2,2,4,8],
+};
+function textWidth(s, sc) { return s.length * 6 * sc - sc; }
+function text(ctx, s, x, y, color, sc, shadow) {
+  sc = sc || 1;
+  s = String(s).toUpperCase();
+  if (shadow) text(ctx, s, x + sc, y + sc, shadow, sc);
+  ctx.fillStyle = color;
+  for (let n = 0; n < s.length; n++) {
+    const g = GLYPHS[s[n]] || GLYPHS["?"];
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++) {
+      if (g[r] & (16 >> c)) ctx.fillRect(x + (n * 6 + c) * sc, y + r * sc, sc, sc);
+    }
+  }
+}
+function outlined(ctx, s, x, y, color, sc) {
+  for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,1],[-1,1],[1,-1]]) text(ctx, s, x + dx, y + dy, P.ink, sc);
+  text(ctx, s, x, y, color, sc);
+}
+
+for (const t of towns) {
+  const w = textWidth(t.name, 1);
+  outlined(bctx, t.name, Math.round(t.x + 4 - w / 2), t.y + 11, "#fff4d6", 1);
+}
+
+/* ================================================================= UI === */
+function windowBox(ctx, x, y, w, h) {
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, "#2a3fa8"); g.addColorStop(1, "#101a5c");
+  ctx.fillStyle = P.ink; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = "#d8dcef"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#6b75b0"; ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.fillStyle = g; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+}
+
+const MENU = ["New chronicle", "Continue", "Archives", "Options"];
+let cursor = 0, toast = "", toastUntil = 0;
+
+const clouds = [];
+for (let k = 0; k < 5; k++) clouds.push({ x: rng.range(0, VW), y: rng.range(20, VH - 60), w: rng.int(26, 48), s: rng.range(4, 9) });
+const sparkles = [];
+for (let k = 0; k < 340; k++) {
+  const x = rng.int(0, VW - 1), y = rng.int(0, VH - 1);
+  if (!land[y * VW + x] && E[y * VW + x] < 0.47) sparkles.push([x, y, rng.range(0, 6.28), rng.range(1.5, 3.5)]);
+}
+
+function frame(now) {
+  const t = now / 1000;
+  v.drawImage(base, 0, 0);
+
+  /* palette-cycled shoreline foam */
+  v.fillStyle = Math.floor(t * 1.6) % 2 ? P.foamA : P.foamB;
+  for (let k = 0; k < foam.length; k++) {
+    const i = foam[k];
+    if (((i * 7) + Math.floor(t * 1.6)) % 3 === 0) v.fillRect(i % VW, (i / VW) | 0, 1, 1);
+  }
+  v.fillStyle = "#cfeaff";
+  for (const s of sparkles) if (Math.sin(t * s[3] + s[2]) > 0.93) v.fillRect(s[0], s[1], 1, 1);
+
+  /* drifting cloud shadows, dithered */
+  for (const c of clouds) {
+    c.x += c.s / 60;
+    if (c.x > VW + 60) c.x = -c.w - 10;
+    v.fillStyle = "rgba(10,14,40,.22)";
+    for (let j = 0; j < 10; j++) for (let i = 0; i < c.w; i++) {
+      const dx = (i - c.w / 2) / (c.w / 2), dy = (j - 5) / 5;
+      if (dx * dx + dy * dy < 1 && bayer(i, j) < 0.55) v.fillRect(Math.round(c.x + i), Math.round(c.y + j), 1, 1);
+    }
+  }
+
+  /* title */
+  const title = "AGE OF MYTH";
+  const tw = textWidth(title, 3);
+  v.fillStyle = "rgba(8,10,24,.55)";
+  v.fillRect(0, 10, VW, 44);
+  text(v, title, Math.round(VW / 2 - tw / 2) + 2, 16 + 2, P.ink, 3);
+  text(v, title, Math.round(VW / 2 - tw / 2), 16, P.goldDark, 3);
+  text(v, title, Math.round(VW / 2 - tw / 2), 15, P.gold, 3);
+  const sub = "A CHRONICLE OF 3,200 YEARS";
+  text(v, sub, Math.round(VW / 2 - textWidth(sub, 1) / 2), 41, "#cdd3ff", 1, P.ink);
+
+  /* menu */
+  const mx = 18, my = VH - 82;
+  windowBox(v, mx, my, 128, 64);
+  MENU.forEach(function (m, i) {
+    text(v, m, mx + 20, my + 9 + i * 13, i === cursor ? "#ffffff" : "#aab4e8", 1, P.ink);
+  });
+  if (Math.floor(t * 3) % 2 === 0) text(v, ">", mx + 9, my + 9 + cursor * 13, "#ffffff", 1, P.ink);
+
+  /* info */
+  const ix = VW - 146, iy = VH - 56;
+  windowBox(v, ix, iy, 128, 38);
+  text(v, "SEED " + seed, ix + 9, iy + 9, "#ffffff", 1, P.ink);
+  text(v, "YEAR 2000 BR", ix + 9, iy + 22, "#aab4e8", 1, P.ink);
+
+  if (toast && now < toastUntil) {
+    const w = textWidth(toast, 1) + 18;
+    windowBox(v, Math.round(VW / 2 - w / 2), VH / 2 - 12, w, 22);
+    text(v, toast, Math.round(VW / 2 - w / 2) + 9, VH / 2 - 4, "#ffffff", 1, P.ink);
+  }
+
+  present();
+  requestAnimationFrame(frame);
+}
+
+/* integer-scale the virtual frame to the window */
+function present() {
+  const scale = Math.max(1, Math.floor(Math.min(innerWidth / VW, innerHeight / VH)));
+  const W = VW * scale, H = VH * scale;
+  if (screen.width !== W || screen.height !== H) {
+    screen.width = W; screen.height = H;
+    screen.style.width = W + "px"; screen.style.height = H + "px";
+  }
+  screen.style.left = Math.round((innerWidth - W) / 2) + "px";
+  screen.style.top = Math.round((innerHeight - H) / 2) + "px";
+  sctx.imageSmoothingEnabled = false;
+  sctx.drawImage(vc, 0, 0, W, H);
+}
+
+function choose() {
+  if (cursor === 0) { location.hash = "seed=" + Math.floor(Math.random() * 1e6); return; }
+  toast = "NOT IN THIS SAMPLE"; toastUntil = performance.now() + 1400;
+}
+addEventListener("keydown", function (e) {
+  if (e.key === "ArrowDown") cursor = (cursor + 1) % MENU.length;
+  if (e.key === "ArrowUp") cursor = (cursor + MENU.length - 1) % MENU.length;
+  if (e.key === "Enter" || e.key === " ") choose();
+});
+screen.addEventListener("click", function (e) {
+  const r = screen.getBoundingClientRect(), sc = r.width / VW;
+  const x = (e.clientX - r.left) / sc, y = (e.clientY - r.top) / sc;
+  const mx = 18, my = VH - 82;
+  if (x > mx && x < mx + 128 && y > my + 6 && y < my + 60) { cursor = Math.min(3, Math.floor((y - my - 6) / 13)); choose(); }
+});
+
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

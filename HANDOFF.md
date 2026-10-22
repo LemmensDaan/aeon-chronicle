@@ -28,7 +28,7 @@ Open `aeon/chronicle/index.html`. Deep link: `index.html#pack=historical&seed=42
 | `js/worldgen.js` | dispatches planet → `planetgen`; still holds the **galaxy** generator and an old planet fallback |
 | `js/pixelmap.js` | **pixel map renderer for planets** (replaces `AEON.render`; galaxies fall through to `render.js`) |
 | `js/render.js` | old 2D renderer — now only used for the sci-fi galaxy |
-| `js/chronicle.js` | the encyclopedia: story, virtualised timeline, atlas, search, entity pages |
+| `js/chronicle/*.js` | the encyclopedia, in parts loaded in order: `base` (state, helpers, indexes, derived data, navigation), `style` (injected CSS), `timeline`, `pages` (entity pages), `atlas` (atlas + search), `story`, `graph`, `shell` (render, mount, public API). Plain scripts, not modules (file://); each part imports from `AEON._chronicle` at the top and exports at the bottom. Parts only import from earlier parts; `render()` is called upward as `C.render()`. A new shared helper must be added to its part's export line |
 | `js/ui.js` | app shell: genre picker, generation, playback/scrubbing, deep links, export |
 | `packs/*.js` | four genre packs: `historical` (86 events), `fantasy` (82), `scifi` (64, galaxy scale), `althistory` (88) |
 | `PACK_API.md` | the contract packs are written against |
@@ -104,7 +104,7 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
 - Note: the Write/Edit tools turned `̀` escapes into literal characters, which broke the script on a
   page without a charset. `fold()` filters by char code instead; keep this file ASCII.
 
-## Graph view (in `js/chronicle.js`, section "Graph")
+## Graph view (`js/chronicle/graph.js`)
 
 - Obsidian-style graph as a fifth chronicle tab (`{ v: "graph", focus? }` nav entries). Two names are
   tied by a thread when one chronicle entry names both; rulers are tied to their realm (`polityId`),
@@ -127,7 +127,7 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
 
 - `worldgen.js` still contains the old planet generator as a fallback; it can be deleted.
 - The pixel sample doesn't wrap its bilinear terrain sampling at the seam (tiny edge discontinuity).
-- `chronicle.js` doesn't export `setYear`, so the encyclopedia doesn't follow the scrubber. The UI
+- The chronicle (`js/chronicle/shell.js`) doesn't export `setYear`, so the encyclopedia doesn't follow the scrubber. The UI
   checks for it, so adding it is safe.
 - The historical pack keeps 58–80 polities alive at once (its own soft cap), so its maps are busy.
 

@@ -18,6 +18,14 @@ Open `aeon/chronicle/index.html`. Deep link: `index.html#pack=historical&seed=42
 renderer moved to their own project, `random-shit-go/galaxy-generator`. This repo is planets only.
 `samples/lowpoly.html` stays: it is the approved low-poly style for the globe, despite its title.
 
+**Split off (2026-10-22):** the alternate-history pack ("What If") moved to its own project,
+`random-shit-go/alt-history-generator`, a full copy of this app at `dce3a84`.
+
+**Direction (Daan, 2026-10-22):** Aeon becomes *one* world generator with settings on the setup
+page, such as how many empires to start with and how much magic: none / low / medium / high (so
+historical and fantasy become two ends of one generator). Not started; the two packs stay as
+they are until then.
+
 ## Working agreement with Daan
 
 - **One piece at a time.** Do one focused piece, verify it, report briefly, then stop and wait. No
@@ -38,7 +46,7 @@ renderer moved to their own project, `random-shit-go/galaxy-generator`. This rep
 | `js/stats.js`, `css/stats.css` | the statistics sheet over the map (see below) |
 | `js/chronicle/*.js` | the encyclopedia, in parts loaded in order: `base` (state, helpers, indexes, derived data, navigation), `style` (injected CSS), `timeline`, `pages` (entity pages), `atlas` (atlas + search), `story`, `graph`, `shell` (render, mount, public API). Plain scripts, not modules (file://); each part imports from `AEON._chronicle` at the top and exports at the bottom. Parts only import from earlier parts; `render()` is called upward as `C.render()`. A new shared helper must be added to its part's export line |
 | `js/ui.js` | app shell: genre picker, generation, playback/scrubbing, deep links, export |
-| `packs/*.js` | three genre packs: `historical` (86 events), `fantasy` (82), `althistory` (88) |
+| `packs/*.js` | two genre packs: `historical` (86 events) and `fantasy` (82) |
 | `PACK_API.md` | the contract packs are written against |
 | `samples/pixel.html`, `samples/lowpoly.html` | the two approved style samples; `smooth.html` was rejected |
 
@@ -168,7 +176,7 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
 2. ~~**Ages per realm**~~ done 2026-10-22. `pack.ages` (see PACK_API 3.1b) on a non-feedback
    `learning` counter in `core.js` (`advanceAge`), calibrated so the median realm reaches each age
    when the matching era begins. Historical: Bronze → Iron → Classical → Medieval → Powder;
-   alt-history: its seven eras; fantasy has its own ladder (Hearths → Runes → Towers → Charters →
+   (alt-history, since split off, used its seven eras); fantasy has its own ladder (Hearths → Runes → Towers → Charters →
    Clockwork) because its eras are events. Shown as numbered pixel pennants on the chart (our own
    style, not AoE's shields), in the readouts, the map tooltip, the table and the polity page.
 3. ~~**Settlement growth**~~ done 2026-10-22. Tiers are named village / town / city / great city
@@ -179,8 +187,8 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
    growth; polity pages count cities; the sheet has a **Cities** tab (tier 3+, replayed from
    `ownerLog` + `settleLog`). Alt-history packs never change a tier, so there cities are capitals.
 4. **Wonders.** New wonder built / destroyed events per pack: historical (temples, monuments), fantasy
-   (wonder-like things too), and alt-history as megaprojects that were planned or dreamed of in real
-   history, e.g. the Volkshalle, or a bridge or dam across Gibraltar.
+   (wonder-like things too). Alt-history is split off; its megaproject idea (Volkshalle, a Gibraltar
+   bridge or dam) is in that project's HANDOFF.
 
 ## Settlements on the map (2026-10-22)
 

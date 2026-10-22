@@ -363,6 +363,36 @@ function generate(world, pack, rng) {
   sea = 0.5;
   const isOcean = (i) => E[i] <= 0.5;
 
+  /* ----- seam: the map wraps east-west, so turn the planet until the left/right edge runs
+     through the widest stretch of open water instead of cutting a continent in two. Every
+     per-cell layer that later stages read is rolled by the same number of columns. ----- */
+  const srcAmp = new Float32Array(N);
+  for (let i = 0; i < N; i++) srcAmp[i] = srcOf[i] >= 0 ? effAmp[srcOf[i]] : 0;
+  {
+    const colLand = new Float32Array(W);
+    for (let i = 0; i < N; i++) if (!isOcean(i)) colLand[i % W]++;
+    /* the seam sits between columns c-1 and c; columns nearest it count most */
+    const WT = [[-3, 1], [-2, 2], [-1, 3], [0, 3], [1, 2], [2, 1]];
+    let best = 0, bestScore = Infinity;
+    for (let c = 0; c < W; c++) {
+      let s = 0;
+      for (const [d, wgt] of WT) s += colLand[wx(c + d)] * wgt;
+      if (s < bestScore) { bestScore = s; best = c; }
+    }
+    const off = (W - best) % W;
+    if (off) {
+      const roll = function (a) {
+        const src = a.slice();
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) a[y * W + wx(x + off)] = src[y * W + x];
+      };
+      [E, plateOf, cont, uplift, stress, srcAmp].forEach(roll);
+      const at = (i) => ((i / W) | 0) * W + wx(i % W + off);
+      plates.forEach(function (p) { p.seed = at(p.seed); });
+      hotspots.forEach(function (h) { h.x = wx(h.x + off); });
+    }
+    world.seamShift = off;
+  }
+
   /* distance from the sea (for continentality) */
   const coastDist = new Float32Array(N).fill(99);
   {
@@ -663,7 +693,7 @@ function generate(world, pack, rng) {
 
     if (basin[i] && P[i] < 0.3) reg.features.push("salt-flat");
     if (uplift[i] > 0.2 && stress[i] > 0) reg.features.push("fault");
-    if (Math.abs(effAmp[srcOf[i]] || 0) > 0 && effAmp[srcOf[i]] < -0.05 && cont[i]) reg.features.push("rift");
+    if (srcAmp[i] < -0.05 && cont[i]) reg.features.push("rift");
 
     const nr = nf(noise3, i, 0.12, 3, 0.5);
     const foodBase = { grassland: 0.78, forest: 0.6, jungle: 0.58, savanna: 0.55, swamp: 0.42, taiga: 0.32, tundra: 0.14, desert: 0.08, mountain: 0.12, ice: 0.02 };

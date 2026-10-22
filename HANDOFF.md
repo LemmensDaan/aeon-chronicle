@@ -2,6 +2,10 @@
 
 Read this first when resuming. State as of 2026-10-18.
 
+> **2026-10-22: see `../PLAN.md` first.** Chronicle (website) and the game (standalone) will share
+> one terrain generator. The current focus is fine-tuning the world generator here in chronicle; it
+> gets extracted into a shared package afterwards.
+
 ## What it is
 
 A world-and-history generator that runs in the browser from `file://`. No server, no build step, no
@@ -61,6 +65,12 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
   elevation ≤ 0.5. Don't decide "water" from elevation alone.
 - Debug layers are on `world._gen` (non-enumerable): plates, uplift, temperature, rainfall, wind,
   accumulation, lakes.
+- **Seam:** after elevation is final, the planet is rolled east-west so the wrap seam runs through
+  the most open water (`world.seamShift` = columns rolled). Every layer later stages read is rolled
+  with it; a new early layer that a later stage uses must be added to that roll list.
+- The seam roll changed every seed's map, so worlds from before 2026-10-22 don't reproduce.
+- Tried and rejected (2026-10-22): polar caps (sinking land + pack ice along the top/bottom rows).
+  Daan found the ice band looked like clouds and prefers land running off the north/south edges.
 - Generation takes about 0.4 s. A typical world: 3–9% mountains, roughly 20% desert, 1–4% ice.
 
 ## Visual direction (decided)

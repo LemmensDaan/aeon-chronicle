@@ -240,6 +240,21 @@ function loop() {
 
 /* --------------------------------------------------------------- map --- */
 
+/* The map's ambient animation (shore foam, sea glints, cloud shadows) runs at about 11 frames a
+   second while nothing else is redrawing it, and never for readers who ask for reduced motion. */
+const AMBIENT_MS = 90;
+const reducedMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+function ambientOn() { return !(reducedMotion && reducedMotion.matches); }
+let ambientTimer = null;
+function startAmbient() {
+  if (ambientTimer || !ambientOn()) return;
+  ambientTimer = setInterval(function () {
+    if (!world || simulating || playing || scrubbing || document.hidden) return;
+    if (AEON.stats && AEON.stats.isOpen()) return;
+    drawMap();
+  }, AMBIENT_MS);
+}
+
 /* the legend for a data mode: its name, the ramp, and what the two ends mean */
 const LEGENDS = {
   population: ["People", "few", "many"],
@@ -274,6 +289,7 @@ function drawMap() {
       selectedRegion: selectedRegion,
       showRivers: true,
       showRoads: showRoads,
+      time: ambientOn() ? performance.now() : null,
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
   } catch (e) {
@@ -384,6 +400,7 @@ function buildApp() {
   wireMap();
   updateStatus();
   requestAnimationFrame(function () { fitView(); drawMap(); });
+  startAmbient();
 }
 
 function buildChronicle() {

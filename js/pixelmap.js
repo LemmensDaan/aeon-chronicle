@@ -226,10 +226,28 @@ function buildTerrain(world) {
   }
   props.sort(function (a, b) { return a[3] - b[3]; });
 
+  /* what the ambient animation needs: the foam pixels along the shore, a scatter of deep-sea
+     pixels that glint, and a few clouds. All picked by hash, so a world always looks the same. */
+  const foam = [], glints = [];
+  for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+    const i = y * VW + x;
+    if (land[i] || R[cellOf[i]].lake) continue;
+    let coast = false;
+    for (let dy = -1; dy <= 1 && !coast; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const ny = y + dy;
+      if (ny >= 0 && ny < VH && land[ny * VW + (x + dx + VW) % VW]) { coast = true; break; }
+    }
+    if (coast) foam.push(i);
+    else if (E[i] < 0.47 && cellRand(i, 21) < 0.006) glints.push([i, cellRand(i, 22) * 6.28, 1.5 + cellRand(i, 23) * 2]);
+  }
+  const clouds = [];
+  for (let k = 0; k < Math.round(VW / 70); k++) clouds.push({ x: cellRand(k, 31) * VW, y: 10 + cellRand(k, 32) * (VH - 40), w: 26 + Math.floor(cellRand(k, 33) * 30), s: 3 + cellRand(k, 34) * 5 });
+
   const frame = document.createElement("canvas");
   frame.width = VW; frame.height = VH;
   return {
     W: W, H: H, VW: VW, VH: VH, land: land, cellOf: cellOf, terrain: terrain, props: props, propLayer: null,
+    foam: foam, glints: glints, clouds: clouds,
     terrainPx: g.getImageData(0, 0, VW, VH).data,
     frame: frame, fctx: frame.getContext("2d"), fimg: frame.getContext("2d").createImageData(VW, VH), key: null,
   };
@@ -391,6 +409,33 @@ function drawRoads(c, w, d) {
   }
 }
 
+/* ------------------------------------------------------------ ambient animation */
+/* After samples/pixel.html: the shore foam shimmers between two pale tones, glints come and go on
+   the deep sea, and dithered cloud shadows drift east across the map and wrap round. Drawn at map
+   resolution (P device pixels per map pixel), clipped to the map, for a time in milliseconds. */
+const FOAM_A = "#a6dbff", FOAM_B = "#dcefff", GLINT = "#cfeaff";
+function drawAmbient(ctx, c, v, X0, now) {
+  const P = v.P, VW = c.VW, Y0 = v.Y0, t = now / 1000, tick = Math.floor(t * 1.6);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(X0, Y0, VW * P, c.VH * P); ctx.clip();
+  ctx.fillStyle = tick % 2 ? FOAM_A : FOAM_B;
+  for (let k = 0; k < c.foam.length; k++) {
+    const i = c.foam[k];
+    if ((i * 7 + tick) % 3 === 0) ctx.fillRect(X0 + (i % VW) * P, Y0 + ((i / VW) | 0) * P, P, P);
+  }
+  ctx.fillStyle = GLINT;
+  for (const g of c.glints) if (Math.sin(t * g[2] + g[1]) > 0.93) ctx.fillRect(X0 + (g[0] % VW) * P, Y0 + ((g[0] / VW) | 0) * P, P, P);
+  ctx.fillStyle = "rgba(10, 14, 40, .2)";
+  for (const cl of c.clouds) {
+    const cx = ((cl.x + t * cl.s) % (VW + 80)) - 40;
+    for (let j = 0; j < 10; j++) for (let i = 0; i < cl.w; i++) {
+      const dx = (i - cl.w / 2) / (cl.w / 2), dy = (j - 5) / 5;
+      if (dx * dx + dy * dy < 1 && bayer(i, j) < 0.55) ctx.fillRect(X0 + Math.round(cx + i) * P, Y0 + Math.round(cl.y + j) * P, P, P);
+    }
+  }
+  ctx.restore();
+}
+
 /* ------------------------------------------------------------ scenery */
 /* Peaks and woods, drawn in screen space at the settlements' scale (u device pixels per sprite
    pixel), so they grow with the zoom as gently as the settlements do instead of with the land.
@@ -541,6 +586,7 @@ function draw(canvas, world, opts) {
   ctx.fillStyle = INK;
   ctx.fillRect(X0 - 1, v.Y0 - 1, mw + 2, mh + 2);
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
+  if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time);
   drawOverlay(ctx, world, c, v, opts, [X0]);
 }
 

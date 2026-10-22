@@ -235,6 +235,14 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
 - Data modes use one hue light to dark (`RAMPS`, exposed as `AEON.mapRamps`) and show a legend
   plaque in the map's lower left corner.
 
+## Ambient animation (2026-10-23)
+
+From `samples/pixel.html`, which Daan loved: shore foam shimmering between two pale tones, glints on
+the deep sea, dithered cloud shadows drifting east and wrapping round (`drawAmbient` in
+`pixelmap.js`; foam/glint/cloud lists built once in the cache). `ui.js` redraws the map every 90 ms
+while nothing else does, pauses while the statistics sheet is open or the tab is hidden, and never
+runs with prefers-reduced-motion. Water keeps Aeon's colours (the sample was "very blue").
+
 ## Known loose ends
 
 - The map doesn't refit when the chronicle widens for the graph (its zoom snaps to whole pixel steps,

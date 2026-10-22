@@ -99,13 +99,14 @@ const PEAK = sprite(["....k....", "...kwk...", "..kwwlk..", "..kwlldk.", ".klldd
 const PINE = sprite(["..k..", ".kgk.", ".kgk.", "kgggk", ".kbk."], { k: "#14301f", g: "#2f6e45", b: "#5a3d22" });
 const TREE = sprite([".kkk.", "kgglk", "kgggk", ".kbk."], { k: "#13361b", g: "#3a8f42", l: "#6cc160", b: "#5a3d22" });
 const PALM = sprite(["kg.gk", ".ggg.", "..b..", "..b.."], { k: "#14451f", g: "#2fa055", b: "#7a5a2e" });
-/* the four settlement types, the "Rooftops" set chosen from samples/settlements.html: a cottage,
-   a house with a spire, a small walled city, and the capital's castle, which flies its realm's
-   colours (f, F are replaced when drawn) and stands clearly taller than a city */
+/* the four settlement types, exactly the "Rooftops" set chosen from samples/settlements.html: a
+   cottage, two cottages and a spire, a walled city (the sample's, one column trimmed off each side
+   and one row lower, so it stays smaller than the capital), and the capital's castle, which flies
+   its realm's colours (f, F are replaced when drawn) */
 const ROOF = { k: INK, w: "#efe6d6", r: "#b5452e", g: "#b7b1a4", b: "#7a4a22", f: "#3a6ea5", F: "#244a73" };
 const VILLAGE = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."], ROOF);
-const TOWN = sprite([".....k.", "....kgk", "..k.kgk", ".krkkwk", "krrrkwk", "kwwwkwk", "kwkwkwk", "kkkkkkk"], ROOF);
-const CITY = sprite(["k.......k", "kk.krk.kk", "kgkrrrkgk", "kgkwwwkgk", "kgggggggk", "kggkbkggk", "kkkkkkkkk"], ROOF);
+const TOWN = sprite(["......k....", ".....kgk...", "..k..kgk...", ".krk.kwk.k.", "krrrkkwkkrk", "kwwwkkwkkwk", "kwkwkkwkkwk", "kkkkkkkkkkk"], ROOF);
+const CITY = sprite(["k.k.....k.k", "kgk.k.k.kgk", "kgkkgkgkkgk", "kgggggggggk", "kgrrkgkrrgk", "kgwwkgkwwgk", "kgggkkkgggk", "kggkbbbkggk", "kkkkkkkkkkk"], ROOF);
 const KEEP = sprite(["......kff....", "......kfff...", "......kff....", "......k......", "..k.k.k.k.k..", "..kgkgkgkgk..",
                      "..kgggggggk..", "k.kgggggggk.k", "kgkgwwgwwgkgk", "kgkgggkgggkgk", "kgkggkbkggkgk", "kkkkkkkkkkkkk"], ROOF);
 /* a realm colour, darkened for the shaded side of its banner */
@@ -511,15 +512,17 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   const sites = [];
   for (let k = 0; k < R.length; k++) {
     const s = R[k].settlement, cap = capitals[k];
-    if (cap) sites.push({ r: R[k], cap: cap, tier: 9 });
-    else if (s && s.tier >= minTier && R[k].owner != null) sites.push({ r: R[k], tier: s.tier });
+    if (cap) sites.push({ r: R[k], cap: cap, tier: 9, rank: 1000 + cap.regions.length });
+    else if (s && s.tier >= minTier && R[k].owner != null) sites.push({ r: R[k], tier: s.tier, rank: s.tier });
   }
-  sites.sort(function (a, b) { return b.tier - a.tier; });
+  /* capitals first, the biggest realms' first, then cities, towns, villages; nothing is drawn
+     on top of another marker, so where capitals crowd together only the greater ones show */
+  sites.sort(function (a, b) { return b.rank - a.rank || a.r.id - b.r.id; });
   for (const st of sites) {
     const sp = st.cap ? KEEP : st.tier >= 3 ? CITY : st.tier === 2 ? TOWN : VILLAGE;
     const x = Math.round(sx(st.r.x + 0.5) - sp.w * u / 2), y = Math.round(sy(st.r.y + 0.5) - sp.h * u / 2);
     const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
-    if (!st.cap && !free(b)) continue;
+    if (!free(b)) continue;
     boxes.push(b);
     const banner = st.cap ? { f: st.cap.color, F: darker(st.cap.color) } : null;
     drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, banner); });

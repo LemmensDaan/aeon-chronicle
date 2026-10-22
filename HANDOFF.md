@@ -255,6 +255,22 @@ the parchment UI back").
 `ui.js` fits and centres the map in the open area left of the panel (`openWidth`). The DOM is
 unchanged, so this is all one stylesheet loaded last.
 
+## A sparser world (2026-10-23)
+
+Daan found the map too busy (too many realms, towns and events, settlements in the mountains) and
+asked that biome, elevation and habitability decide where settlements go.
+- `AEON.siteSuitability(region)` (0..1): habitability, cut hard for ice, mountains, tundra, dry
+  desert and swamp, and cut further with height. `AEON.maxTier` caps a settlement by it (mountain or
+  ice: village; poor land: town; good land: city). `foundSettlement` clamps to the cap and the
+  once-a-tick settlement scan trims anything above it (packs raise tiers directly). Founding on new
+  land is likelier on good sites; pack events pick sites with `ctx.pickSite` (weighted by
+  suitability squared) and read `ctx.maxTier`.
+- Fewer realms and events: `seedPolities` 7 (both packs), `eventsPerTick` 5, historical living cap
+  30 (40 for the greeting event), fantasy 20.
+- Seeds 42/7/1234 average: historical 88 → 41 realms, 625 → 408 settlements, 9.6% → 1.1% of them in
+  mountains, 8,392 → 6,528 events; fantasy 54 → 44 realms, 512 → 359 settlements, 8.0% → 4.3%.
+  Changes every seed.
+
 ## Known loose ends
 
 - The map doesn't refit when the chronicle widens for the graph (its zoom snaps to whole pixel steps,

@@ -458,7 +458,7 @@ function provText(w, art) {
   return " Its keepers had been " + pv.map(function (x) { return pn(w.polities[x.holder]) + " (" + yl(x.year) + ")"; }).join(", then ") + ".";
 }
 function countArch(w, id) { return livingPolities(w).filter(function (p) { return p.archetypeId === id; }).length; }
-function crowded(w) { return livingPolities(w).length >= 26; }
+function crowded(w) { return livingPolities(w).length >= 20; }
 function dragons(w) { return livingPolities(w).filter(function (p) { return p.archetypeId === "dragon-fief"; }); }
 
 /* prophecy bookkeeping: a prophecy is a chronicle event tagged "prophecy";
@@ -724,7 +724,7 @@ const SPINE = [
     id: "settlers-push-out", scope: "polity", weight: 8,
     test: function (c) { return c.polity.regions.length < 14 && openNear(c, c.polity).length > 0; },
     run: function (c) {
-      const p = c.polity, t = c.pick(openNear(c, p));
+      const p = c.polity, t = c.pickSite(openNear(c, p)) || c.pick(openNear(c, p));
       c.transfer(t, p);
       c.foundSettlement(t, 1);
       return mk(2, ["founding", "expansion"], [c.actor(p), c.actor(t)], t.id,
@@ -734,11 +734,11 @@ const SPINE = [
   },
   {
     id: "city-founded", scope: "polity", weight: 5, cooldown: 40,
-    test: function (c) { return c.polity.wealth > 0.35 && c.regionsOf().some(function (r) { return !r.settlement || r.settlement.tier < 3; }); },
+    test: function (c) { return c.polity.wealth > 0.35 && !!c.pickSite(c.regionsOf().filter(function (r) { return (r.settlement ? r.settlement.tier : 0) < Math.min(3, c.maxTier(r)); })); },
     run: function (c) {
       const p = c.polity;
-      const rs = c.regionsOf().filter(function (r) { return !r.settlement || r.settlement.tier < 3; });
-      const r = c.pick(rs);
+      const rs = c.regionsOf().filter(function (r) { return (r.settlement ? r.settlement.tier : 0) < Math.min(3, c.maxTier(r)); });
+      const r = c.pickSite(rs);
       const old = r.settlement ? r.settlement.tier : 0;
       const oldName = r.settlement ? r.settlement.name : null;
       c.foundSettlement(r, old + 1);
@@ -2412,7 +2412,8 @@ AEON.registerPack({
   startYear: -2000,
   endYear: 1200,
   timeStep: 5,
-  seedPolities: 9,
+  seedPolities: 7,
+  eventsPerTick: 5,
 
   yearLabel: yl,
 

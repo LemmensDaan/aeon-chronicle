@@ -11,7 +11,7 @@ AEON.registerPack = function (def) {
   if (!def || !def.id) { console.error("[aeon] pack needs an id", def); return; }
   def.scale = "planet";        /* galaxy-scale packs moved to the galaxy-generator project */
   def.timeStep = def.timeStep || 5;
-  def.seedPolities = def.seedPolities || 8;
+  def.seedPolities = def.seedPolities || 7;
   def.events = def.events || [];
   def.eras = def.eras || [{ id: "default", name: "The Age", from: -Infinity }];
   def.archetypes = def.archetypes || [{ id: "state", name: "State", traitBias: {} }];
@@ -306,6 +306,15 @@ function makeCtx(world, subject) {
     },
     transfer: function (region, to) { return transferRegion(world, region, to); },
     foundSettlement: function (region, tier) { return foundSettlement(world, region, tier); },
+    /* how well a place can hold people (0..1), and the biggest settlement it can hold */
+    siteSuitability: function (region) { return AEON.siteSuitability(region); },
+    maxTier: function (region) { return AEON.maxTier(region); },
+    /* a place to found a settlement among some regions: weighted by suitability, and only where
+       one could stand; null if none */
+    pickSite: function (regions) {
+      const ok = (regions || []).filter(function (r) { return !r.barren && AEON.siteSuitability(r) >= 0.12; });
+      return ok.length ? rng.weighted(ok, function (r) { const s = AEON.siteSuitability(r); return s * s; }) : null;
+    },
     endPolity: function (p, fate) { return endPolity(world, p, fate); },
     spawnPolity: function (region, archetypeId) { return spawnPolity(world, region, archetypeId); },
 
@@ -403,6 +412,25 @@ function transferRegion(world, region, to) {
   return true;
 }
 
+/* How well a place can hold people, 0..1: its habitability (which already counts the biome, rivers
+   and coasts), cut hard for ice, mountains, tundra, dry desert and swamp, and cut further the
+   higher the ground. Decides how likely a settlement is founded there and how big it may grow
+   (AEON.maxTier), so a region's look on the map follows from its land. */
+AEON.siteSuitability = function (r) {
+  if (!r || r.barren) return 0;
+  const b = r.biome;
+  const biome = b === "ice" ? 0.05 : b === "mountain" ? 0.25 : b === "tundra" ? 0.45
+    : b === "desert" ? (r.river ? 0.8 : 0.4) : b === "swamp" ? 0.55 : 1;
+  const e = Math.max(0, (r.elevation - 0.5) / 0.5);          /* 0 at the shore, 1 on the peaks */
+  return clamp(r.habitability * biome * (1 - 0.7 * e * e) * 1.6, 0, 1);
+};
+/* the largest settlement a place can grow: a mountain or ice settlement stays a village, poor
+   land tops out at a town, and only good land holds a city */
+AEON.maxTier = function (r) {
+  const s = AEON.siteSuitability(r);
+  return s >= 0.55 ? 4 : s >= 0.36 ? 3 : s >= 0.18 ? 2 : 1;
+};
+
 /* Settlement sizes are tiers 1..4 (tier 4 is a city that has outgrown its walls; packs use
    the difference). Shown as four types: village, town, city, and capital, which is any
    settlement that is a living realm's seat, whatever its size. A pack may rename the
@@ -437,6 +465,7 @@ function logSettlements(world) {
   }
   const R = world.regions, obj = world._settleObj;
   for (let i = 0; i < R.length; i++) {
+    if (R[i].settlement && R[i].settlement.tier > AEON.maxTier(R[i])) R[i].settlement.tier = AEON.maxTier(R[i]);
     const cur = R[i].settlement || null, t = cur ? cur.tier : 0;
     if (cur !== obj[i]) {
       if (obj[i]) (world._pastSettle[i] || (world._pastSettle[i] = [])).push({ s: obj[i], until: world.year });
@@ -499,7 +528,7 @@ function foundSettlement(world, region, tier) {
   if (!region.name) region.name = callName(world, "place", { region: region, polity: polity });
   region.settlement = {
     name: callName(world, "settlement", { region: region, polity: polity }) || region.name,
-    tier: clamp(tier || 1, 1, 4),
+    tier: clamp(tier || 1, 1, AEON.maxTier(region)),
     founded: world.year,
   };
   return region.settlement;
@@ -754,7 +783,7 @@ function baselineTick(world) {
         /* harsh land is settled too, only far less eagerly: a soft frontier, not a wall */
         const target = rng.weighted(open, function (r) { return r.habitability * r.habitability + 0.004; });
         transferRegion(world, target, p);
-        if (rng.chance(0.12)) foundSettlement(world, target, rng.int(1, 2));
+        if (rng.chance(0.12 * Math.min(1, AEON.siteSuitability(target) * 1.6))) foundSettlement(world, target, rng.int(1, 2));
       }
     }
 

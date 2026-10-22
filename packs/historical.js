@@ -526,7 +526,7 @@ function H(w) {
 }
 function due(ctx, key, p, years) { const h = H(ctx.world); h.last = h.last || {}; const t = h.last[key + p.id]; return t == null || ctx.year - t >= years; }
 function mark(ctx, key, p) { const h = H(ctx.world); h.last = h.last || {}; h.last[key + p.id] = ctx.year; }
-function crowded(ctx, n) { return ctx.living().length >= (n || 58); }
+function crowded(ctx, n) { return ctx.living().length >= (n || 30); }
 function P(ctx) { return ctx.polity || (ctx.figure && ctx.world.polities[ctx.figure.polityId]) || null; }
 function eIdx(ctx) { return ERA_IDX[ctx.era] || 0; }
 function gOf(f) { return genderOfNum(parseInt(String(f.id).slice(1), 10)); }
@@ -740,7 +740,7 @@ const EVENTS = [
     const p = ctx.polity, open = openLand(ctx, p);
     const r = ctx.rng.weighted(open, function (x) { return x.habitability + 0.05; });
     ctx.transfer(r, p);
-    const town = ctx.chance(0.4) ? ctx.foundSettlement(r, 1) : null;
+    const town = ctx.chance(0.4 * Math.min(1, ctx.siteSuitability(r) * 1.6)) ? ctx.foundSettlement(r, 1) : null;
     const t = ctx.pick([
       "Families from " + seat(ctx, p) + " moved into " + provName(r) + ", which had been empty of anything but game.",
       "Surveyors and a few hundred settlers claimed " + provName(r) + " for " + p.name + "; no one disputed it, there being no one to dispute.",
@@ -766,20 +766,20 @@ const EVENTS = [
   } },
 
 { id: "settlement-founded", scope: "polity", weight: 3, cooldown: 20,
-  test: function (ctx) { return ctx.regionsOf(ctx.polity).some(function (r) { return !r.settlement && r.habitability > 0.2; }); },
+  test: function (ctx) { return !!ctx.pickSite(ctx.regionsOf(ctx.polity).filter(function (r) { return !r.settlement && r.habitability > 0.2; })); },
   run: function (ctx) {
     const p = ctx.polity;
-    const r = ctx.pick(ctx.regionsOf(p).filter(function (x) { return !x.settlement && x.habitability > 0.2; }));
+    const r = ctx.pickSite(ctx.regionsOf(p).filter(function (x) { return !x.settlement && x.habitability > 0.2; }));
     const s = ctx.foundSettlement(r, 1);
     const kind = pickEra([["a village of mud brick around a well"], ["a hill-fort and the village beneath it"], ["a garrison town on the main road"], ["a fortified market village"], ["a market town under a new charter"], ["a planned town with a grid of streets"]], ctx);
     return res(1, ["founding", "settlement"], A(ctx, p, r), r.id, s.name + " was founded in " + provName(r) + " by order of " + p.name + ": " + kind[0] + ".");
   } },
 
 { id: "settlement-grows", scope: "polity", weight: 3,
-  test: function (ctx) { return ctx.regionsOf(ctx.polity).some(function (r) { return r.settlement && r.settlement.tier < 4; }); },
+  test: function (ctx) { return ctx.regionsOf(ctx.polity).some(function (r) { return r.settlement && r.settlement.tier < ctx.maxTier(r); }); },
   run: function (ctx) {
     const p = ctx.polity;
-    const c = ctx.regionsOf(p).filter(function (r) { return r.settlement && ((r.settlement.tier < 3) || (r.settlement.tier === 3 && p.prestige > 0.35 && p.regions.length > 3)); });
+    const c = ctx.regionsOf(p).filter(function (r) { return r.settlement && r.settlement.tier < ctx.maxTier(r) && ((r.settlement.tier < 3) || (r.settlement.tier === 3 && p.prestige > 0.35 && p.regions.length > 3)); });
     if (!c.length) return null;
     const r = ctx.pick(c), s = r.settlement;
     s.tier++;
@@ -915,7 +915,7 @@ const EVENTS = [
   } },
 
 { id: "partition-between-heirs", scope: "polity", weight: 3, minEra: "classical",
-  test: function (ctx) { return !crowded(ctx, 80) && ungreeted(ctx, ctx.polity) && ctx.polity.regions.length >= 4; },
+  test: function (ctx) { return !crowded(ctx, 40) && ungreeted(ctx, ctx.polity) && ctx.polity.regions.length >= 4; },
   run: function (ctx) {
     const p = ctx.polity, prev = predecessor(ctx, p), f = rulerOf(ctx, p);
     const regs = secessionGroup(ctx, p, 0.4), np = splitRealm(ctx, p, regs, "successor", 0.4);
@@ -2055,7 +2055,8 @@ AEON.registerPack({
   startYear: -3000,
   endYear: 1500,
   timeStep: 5,
-  seedPolities: 10,
+  seedPolities: 7,
+  eventsPerTick: 5,
 
   yearLabel: yl,
 

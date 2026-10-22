@@ -303,6 +303,9 @@ once you looked closer).
 | `ctx.newArtifact(opts)` | creates and registers an artifact |
 | `ctx.transfer(region, toPolity)` | moves a region between owners, updates both |
 | `ctx.foundSettlement(region, tier)` | names and places a settlement |
+| `ctx.siteSuitability(region)` | how well a place can hold people, 0..1 (biome, height, habitability) |
+| `ctx.maxTier(region)` | the largest settlement the place can hold; `foundSettlement` clamps to it |
+| `ctx.pickSite(regions)` | a region to found a settlement in, weighted by suitability; `null` if none can hold one |
 | `ctx.endPolity(polity, fate)` | kills a polity, writes its fate, frees its regions |
 | `ctx.kill(figure, epitaph)` | kills a figure |
 | `ctx.spawnPolity(region, archetypeId)` | births a new polity |

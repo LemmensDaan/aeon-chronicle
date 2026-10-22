@@ -172,6 +172,24 @@ biomes: {
 }
 ```
 
+### 3.1b `ages` (optional)
+
+Levels a realm reaches on its own, unlike `eras`, which turn for the whole world at a date.
+
+```js
+ages: [
+  { id: "bronze", name: "The Bronze Age", short: "Bronze", at: 0 },     // where every realm starts
+  { id: "iron",   name: "The Iron Age",   short: "Iron",   at: 940 },
+]
+```
+
+`at` is **learning**: the engine adds `tech x years` to each realm every tick, so it keeps rising
+after `tech` saturates. A new realm starts from the learning of whoever held its land before it
+(a successor keeps its parent's age), or from half the median on empty land. The engine logs each
+crossing in `polity.ageLog` (`[{ age, year, inherited? }]`); `AEON.ageAt(world, polityId, year)`
+reads it. Nothing in the simulation reads learning, so adding or tuning ages never changes a
+history. Calibrate `at` to the median realm's learning at the year an age should typically begin.
+
 ### 3.2 `eras`
 
 An ordered ladder. The engine advances the era by year, and events can gate on it.

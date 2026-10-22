@@ -57,6 +57,7 @@
 .st-tiprow.on { font-weight: 600; }
 .st-tiprow .st-swatch { width: 11px; height: 11px; }
 .st-tipname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-tipage { color: var(--pp-soft); font-size: 12px; white-space: nowrap; }
 .st-tipval { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .st-tipfold { padding-left: 17px; font-size: 12px; }
 

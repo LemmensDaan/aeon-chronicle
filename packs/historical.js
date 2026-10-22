@@ -2082,6 +2082,18 @@ AEON.registerPack({
     { id: "powder",        name: "The Age of Powder",    from: 1300 },
   ],
 
+  /* ages a realm advances through on its own (core.js advanceAge). `at` is learning, tech x
+     years; each is the median realm's learning when that era begins, so the leaders get there
+     centuries early and the laggards late. Late Antiquity is a period, not a level, so it is
+     left out. */
+  ages: [
+    { id: "bronze",    name: "The Bronze Age",    short: "Bronze",    at: 0 },
+    { id: "iron",      name: "The Iron Age",      short: "Iron",      at: 940 },
+    { id: "classical", name: "The Classical Age", short: "Classical", at: 1650 },
+    { id: "medieval",  name: "The Medieval Age",  short: "Medieval",  at: 2800 },
+    { id: "powder",    name: "The Age of Powder", short: "Powder",    at: 3400 },
+  ],
+
   archetypes: [
     { id: "citystate",    name: "City-State League",   traitBias: { curiosity: 0.12, cunning: 0.1, stability: -0.05 }, blurb: "A cluster of walled towns, each jealous of the others and of the league that binds them." },
     { id: "riverkingdom", name: "River Kingdom",       traitBias: { stability: 0.2, piety: 0.15, aggression: -0.1 }, blurb: "A flood-plain state ruled by whoever can predict the river and keep the granaries." },

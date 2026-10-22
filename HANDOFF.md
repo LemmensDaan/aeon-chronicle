@@ -165,9 +165,12 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
 - Historical worlds have ~85 realms, so its "Other realms" band is large (~70%); that is honest.
 
 **Next steps, in order, one commit each** (Daan's notes from 2026-10-22):
-2. **Ages per realm.** Each pack defines its own ages as tech thresholds (realms already have a rising
-   `tech` value); the engine records the year a realm crosses one. Mark it on the chart in our own
-   style, *not* AoE's II/III/IV shields.
+2. ~~**Ages per realm**~~ done 2026-10-22. `pack.ages` (see PACK_API 3.1b) on a non-feedback
+   `learning` counter in `core.js` (`advanceAge`), calibrated so the median realm reaches each age
+   when the matching era begins. Historical: Bronze → Iron → Classical → Medieval → Powder;
+   alt-history: its seven eras; fantasy has its own ladder (Hearths → Runes → Towers → Charters →
+   Clockwork) because its eras are events. Shown as numbered pixel pennants on the chart (our own
+   style, not AoE's shields), in the readouts, the map tooltip, the table and the polity page.
 3. **Settlement growth.** Settlements as village / town / city (extra tiers welcome); record the year
    each grows, so the sheet can count cities per realm over time.
 4. **Wonders.** New wonder built / destroyed events per pack: historical (temples, monuments), fantasy

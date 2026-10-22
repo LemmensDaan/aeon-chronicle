@@ -114,9 +114,30 @@ function pagePolity(id) {
     stat("Population", (p.population || 0).toLocaleString()), stat("Technology", pct(p.tech) + "%"),
     stat("Wealth", Math.round(p.wealth || 0).toLocaleString()), stat("Military", Math.round((p.military || 0) * 100) / 100),
     stat("Prestige", Math.round((p.prestige || 0) * 100) / 100));
+  var ages = (S.world.pack && S.world.pack.ages) || null;
+  if (ages && p.ageLog && p.ageLog.length) st.appendChild(stat("Age", ages[p.age] ? ages[p.age].name : "unknown"));
   pg.appendChild(st);
   var s = section(pg, "Character");
   s.appendChild(bars(p.traits, ["aggression", "piety", "curiosity", "stability", "cunning"]));
+
+  /* the ages it advanced through; the first is where it began, inherited from its land */
+  if (ages && p.ageLog && p.ageLog.length) {
+    s = section(pg, "Ages");
+    var au = h("ul", "ch-ul");
+    p.ageLog.forEach(function (e, i) {
+      var a = ages[e.age];
+      if (!a) return;
+      var li = h("li");
+      add(li, h("b", null, a.name), " — " + (i === 0 ? (e.inherited && e.age > 0 ? "inherited at its founding, " : "at its founding, ") : "reached in ") + yr(e.year));
+      au.appendChild(li);
+    });
+    if (p.age + 1 < ages.length) {
+      var nx = h("li", "ch-lead");
+      nx.textContent = "Not yet reached: " + ages.slice(p.age + 1).map(function (a) { return a.name; }).join(", ") + ".";
+      au.appendChild(nx);
+    }
+    s.appendChild(au);
+  }
 
   s = section(pg, "Territory over time");
   var pts = territory(id), sp = timeSpan();

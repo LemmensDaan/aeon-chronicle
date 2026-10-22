@@ -2344,6 +2344,17 @@ AEON.registerPack({
 
   biomes: BIOMES,
   eras: ERAS,
+  /* ages a realm advances through on its own (core.js advanceAge). The world's eras here are
+     events (a sundering, a dusk), so realms get their own ladder, from hearth-magic to the
+     clockwork that replaces magic as it drains away. `at` is learning, tech x years, set so
+     the median realm arrives at -1300, -600, 100 and 800. */
+  ages: [
+    { id: "hearths",   name: "The Age of Hearths",  short: "Hearths",   at: 0 },
+    { id: "runes",     name: "The Rune Age",        short: "Runes",     at: 100 },
+    { id: "towers",    name: "The Age of Towers",   short: "Towers",    at: 340 },
+    { id: "charters",  name: "The Age of Charters", short: "Charters",  at: 780 },
+    { id: "clockwork", name: "The Clockwork Age",   short: "Clockwork", at: 1480 },
+  ],
   archetypes: ARCHETYPES,
   names: NAMES,
 

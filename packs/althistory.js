@@ -2323,6 +2323,18 @@ AEON.registerPack({
     { id: "late",       name: "The Late Modern",           from: 1990 }
   ],
 
+  /* ages a realm advances through on its own (core.js advanceAge); `at` is learning, tech x
+     years, set to the median realm's learning when that era begins */
+  ages: [
+    { id: "sail",       name: "The Age of Sail",            short: "Sail",       at: 0 },
+    { id: "powder",     name: "The Age of Powder",          short: "Powder",     at: 31 },
+    { id: "mechanical", name: "The Mechanical Age",         short: "Mechanical", at: 81 },
+    { id: "steam",      name: "The Age of Steam and Steel", short: "Steam",      at: 136 },
+    { id: "electric",   name: "The Electric Age",           short: "Electric",   at: 213 },
+    { id: "atomic",     name: "The Atomic Age",             short: "Atomic",     at: 275 },
+    { id: "late",       name: "The Late Modern",            short: "Late Modern", at: 320 },
+  ],
+
   archetypes: ARCHETYPES,
 
   names: N,

@@ -477,6 +477,17 @@ AEON.rulerAt = function (world, pid, year) {
   return next && next.crowned - best.died <= 2 * world.timeStep ? next : null;
 };
 
+/* The age a polity was in during a year: { index, age, since, inherited } or null (no ages in
+   this pack, or the realm had not been counted yet). */
+AEON.ageAt = function (world, pid, year) {
+  const p = world.polities[pid], ages = world.pack.ages;
+  if (!p || !ages || !p.ageLog || !p.ageLog.length) return null;
+  let e = null;
+  for (const x of p.ageLog) { if (x.year <= year) e = x; else break; }
+  if (!e) e = p.ageLog[0];
+  return { index: e.age, age: ages[e.age], since: e.year, inherited: !!e.inherited };
+};
+
 AEON.viewAt = function (world, year) {
   if (year == null || year >= world.year) year = world.year;
   let v = world._view;
@@ -528,6 +539,48 @@ function updateEra(world) {
   }
 }
 
+/* --------------------------------------------------------------- ages --
+   Each realm's progress toward the pack's ages (pack.ages: [{ id, name, at }], the first one
+   where every realm starts). `learning` grows by tech x years, so it keeps rising after tech
+   saturates and curious, advanced realms pull ahead. Nothing in the simulation reads it, so
+   it changes no history. A new realm starts from whoever held its land before it (a
+   successor keeps its parent's age), or, founded on empty land, from half the median of the
+   realms then living. */
+function inheritLearning(world, p, alive) {
+  const log = world.ownerLog, want = {};
+  let left = 0, best = -1;
+  for (const r of p.regions) { want[r] = true; left++; }
+  for (let i = log.length - 1, n = 0; i >= 0 && left > 0 && n < 50000; i--, n++) {
+    const e = log[i];
+    if (!want[e[1]] || e[2] === p.id) continue;
+    want[e[1]] = false; left--;
+    const prev = e[2] != null ? world.polities[e[2]] : null;
+    if (prev && prev.learning != null && prev.learning > best) best = prev.learning;
+  }
+  if (best >= 0) return best * 0.95;
+  const ls = alive.filter(function (q) { return q !== p && q.learning != null; }).map(function (q) { return q.learning; }).sort(function (a, b) { return a - b; });
+  return ls.length ? ls[Math.floor(ls.length / 2)] * 0.5 : 0;
+}
+function ageFor(pack, learning) {
+  const ages = pack.ages || [];
+  let k = 0;
+  while (k + 1 < ages.length && learning >= ages[k + 1].at) k++;
+  return k;
+}
+function advanceAge(world, p, alive) {
+  if (p.learning == null) {
+    p.learning = inheritLearning(world, p, alive);
+    p.age = ageFor(world.pack, p.learning);
+    p.ageLog = [{ age: p.age, year: world.year, inherited: true }];
+  }
+  p.learning = Math.round((p.learning + p.tech * world.timeStep) * 1000) / 1000;
+  const ages = world.pack.ages;
+  while (ages && p.age + 1 < ages.length && p.learning >= ages[p.age + 1].at) {
+    p.age++;
+    p.ageLog.push({ age: p.age, year: world.year });
+  }
+}
+
 function baselineTick(world) {
   const rng = world.rng;
   const alive = living(world);
@@ -538,6 +591,7 @@ function baselineTick(world) {
     p.population = Math.max(60, Math.round(p.population * (1 + growth)));
 
     p.tech = clamp(p.tech + 0.0016 * (0.4 + p.traits.curiosity * 1.6) * (1 + p.regions.length * 0.015), 0, 1);
+    advanceAge(world, p, alive);
     p.wealth = clamp(0.2 + (p.population / cap) * 0.5 + p.tech * 0.4, 0, 1);
     p.military = clamp(0.1 + p.traits.aggression * 0.5 + p.tech * 0.3 + p.regions.length * 0.01, 0, 1);
     p.prestige = clamp(p.prestige * 0.995 + p.regions.length * 0.004 + p.tech * 0.004, 0, 1);

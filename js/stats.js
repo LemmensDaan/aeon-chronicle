@@ -174,6 +174,36 @@ function drawSwords(ctx, x, y, u) {
   for (const d of [[-1, 0], [1, 0], [0, -1], [0, 1]]) paint(d[0], d[1], INK);
   paint(0, 0, null);
 }
+/* a pennant on a pole, 10x12, with the age's number on it in the map's pixel font: a realm
+   entering a new age */
+const PENNANT = [
+  "poooooooo.",
+  "pfffffffo.",
+  "pfffffffo.",
+  "pfffffffo.",
+  "pffffffo..",
+  "pfffffffo.",
+  "pfffffffo.",
+  "pfffffffo.",
+  "poooooooo.",
+  "p.........",
+  "p.........",
+  "pp........",
+];
+const PENNANT_PAL = { p: INK, o: INK, f: "#e0b84f" };
+function drawPennant(ctx, x, y, u, n) {
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = "#000";
+  for (let r = 0; r < 12; r++) for (let c = 0; c < 10; c++) if (PENNANT[r][c] !== ".") ctx.fillRect(x + (c + 1) * u, y + (r + 1) * u, u, u);
+  ctx.globalAlpha = 1;
+  for (let r = 0; r < 12; r++) for (let c = 0; c < 10; c++) {
+    const ch = PENNANT[r][c];
+    if (ch === ".") continue;
+    ctx.fillStyle = PENNANT_PAL[ch];
+    ctx.fillRect(x + c * u, y + r * u, u, u);
+  }
+  if (AEON.pixelFont) AEON.pixelFont.draw(ctx, String(n % 10), x + 2 * u, y + u, INK, u);
+}
 let hatchPattern = null;
 function hatchFor(ctx, dpr) {
   if (hatchPattern && hatchPattern.dpr === dpr) return hatchPattern.p;
@@ -277,6 +307,15 @@ function build() {
   k1.appendChild(sw); k1.appendChild(h("span", null, "Great battle"));
   const k2 = h("span", "st-key"); k2.appendChild(h("i", "st-yearkey")); k2.appendChild(h("span", null, "Year shown on the map (click the chart to change it)"));
   const k3 = h("span", "st-key"); k3.appendChild(h("i", "st-swatch st-hatch")); k3.appendChild(h("span", null, "Hatched: a colour close to its neighbour"));
+  const ages = w.pack.ages;
+  if (ages) {
+    const k4 = h("span", "st-key"), pc = h("canvas");
+    pc.width = 24; pc.height = 28; pc.style.width = "24px"; pc.style.height = "28px";
+    drawPennant(pc.getContext("2d"), 1, 1, 2, 2);
+    k4.appendChild(pc);
+    k4.appendChild(h("span", null, "New age: " + ages.map(function (a, i) { return (i + 1) + " " + (a.short || a.name); }).join(" · ")));
+    keys.appendChild(k4);
+  }
   keys.appendChild(k1); keys.appendChild(k2);
   if (S.data.bands.some(function (b) { return b.hatch; })) keys.appendChild(k3);
   el.appendChild(keys);
@@ -418,16 +457,37 @@ function directLabels(ctx, dpr, cols, H) {
   });
 }
 
-/* battle markers: only battles one of the named realms fought, on that realm's band, most
-   important first, kept well apart and capped so they stay highlights rather than texture */
-const MAX_MARKERS = 24, MARKER_ROOM = 22;          /* CSS pixels kept clear round each marker */
+/* markers on the bands of the named realms. First the ages each entered (in the band's upper
+   part), then battles: only those a named realm fought, most important first, kept well
+   apart and capped so they stay highlights rather than texture. */
+const MAX_MARKERS = 24, MARKER_ROOM = 22;          /* CSS pixels kept clear round each battle */
 function markers(ctx, dpr, H) {
   const d = S.data, u = Math.max(1, Math.round(2 * dpr)), size = 9 * u, room = Math.round(MARKER_ROOM * dpr), boxes = [];
-  const bandOf = {};
+  const bandOf = {}, hit = function (b) { return boxes.some(function (o) { return b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]; }); };
   d.bands.forEach(function (b, i) { bandOf[b.p.id] = i; });
   S.markers = [];
+  const ages = S.world.pack.ages;
+  if (ages) d.bands.forEach(function (b, bi) {
+    for (const e of b.p.ageLog || []) {
+      if (e.inherited) continue;
+      const t = Math.round((e.year - d.y0) / d.step);
+      if (t < 0 || t >= d.T) continue;
+      const r = stackAt(t, H).rows[bi];
+      if (!r || r.h < 4) continue;
+      /* the pole stands in the band's upper part; kept inside the chart at the top edge */
+      const x = Math.round(S.geo.xOf(t) * dpr - u / 2), y = Math.max(u, Math.round((r.y + r.h * 0.3) * dpr - 10 * u));
+      const box = [x - u, y - u, x + 11 * u, y + 13 * u];
+      if (hit(box)) continue;
+      boxes.push(box);
+      ctx.globalAlpha = S.hoverBand != null && S.hoverBand !== bi ? 0.35 : 1;
+      drawPennant(ctx, x, y, u, e.age + 1);
+      ctx.globalAlpha = 1;
+      S.markers.push({ kind: "age", p: b.p, age: e.age, year: e.year, box: [box[0] / dpr, box[1] / dpr, box[2] / dpr, box[3] / dpr] });
+    }
+  });
+  let battles = 0;
   for (const e of d.battles) {
-    if (S.markers.length >= MAX_MARKERS) break;
+    if (battles >= MAX_MARKERS) break;
     const t = Math.round((e.year - d.y0) / d.step);
     if (t < 0 || t >= d.T) continue;
     let bi = -1;
@@ -443,7 +503,8 @@ function markers(ctx, dpr, H) {
     ctx.globalAlpha = S.hoverBand != null && S.hoverBand !== (bi < d.bands.length ? bi : -1) ? 0.35 : 1;
     drawSwords(ctx, x, y, u);
     ctx.globalAlpha = 1;
-    S.markers.push({ e: e, box: [b[0] / dpr, b[1] / dpr, b[2] / dpr, b[3] / dpr] });
+    S.markers.push({ kind: "battle", e: e, box: [b[0] / dpr, b[1] / dpr, b[2] / dpr, b[3] / dpr] });
+    battles++;
   }
 }
 
@@ -488,8 +549,9 @@ function wire(cv) {
     if (!S || !S.geo) return;
     const p = local(e), m = markerAt(p);
     if (m) {
-      if (S.hooks.onSetYear) S.hooks.onSetYear(m.e.year);
-      if (S.hooks.onShowEvent) S.hooks.onShowEvent(m.e.id);
+      if (S.hooks.onSetYear) S.hooks.onSetYear(m.kind === "age" ? m.year : m.e.year);
+      if (m.kind === "age") { if (S.hooks.onShowPolity) S.hooks.onShowPolity(m.p.id); }
+      else if (S.hooks.onShowEvent) S.hooks.onShowEvent(m.e.id);
       return;
     }
     const t = S.geo.tickOf(Math.max(0, Math.min(S.geo.cols - 1, Math.floor(p.x / COL))));
@@ -501,7 +563,12 @@ function wire(cv) {
 function tip(e, p) {
   const d = S.data, el = S.tip, pack = S.world.pack;
   el.textContent = "";
-  if (S.hoverMarker) {
+  if (S.hoverMarker && S.hoverMarker.kind === "age") {
+    const m = S.hoverMarker, ages = S.world.pack.ages;
+    el.appendChild(h("div", "ae-tip-name", m.p.name + " entered " + ages[m.age].name));
+    el.appendChild(h("div", null, pack.yearLabel(m.year) + " · age " + (m.age + 1) + " of " + ages.length));
+    el.appendChild(h("div", "dim", "Click to open the realm in the chronicle"));
+  } else if (S.hoverMarker) {
     const ev = S.hoverMarker.e;
     el.appendChild(h("div", "ae-tip-name", "Great battle, " + pack.yearLabel(ev.year)));
     const t = String(ev.text || "");
@@ -518,6 +585,8 @@ function tip(e, p) {
       const row = h("div", "st-tiprow" + (S.hoverBand === i ? " on" : ""));
       row.appendChild(swatch(b.p.color, b.hatch));
       row.appendChild(h("span", "st-tipname", b.p.name.replace(/^The /, "")));
+      const ag = AEON.ageAt ? AEON.ageAt(S.world, b.p.id, d.y0 + t * d.step) : null;
+      if (ag && ag.age) row.appendChild(h("span", "st-tipage", ag.age.short || ag.age.name));
       row.appendChild(h("span", "st-tipval", fmt(r.value) + " · " + pct(r.share)));
       list.appendChild(row);
     });
@@ -549,7 +618,8 @@ function tip(e, p) {
 function table() {
   const d = S.data, pack = S.world.pack, key = S.measure.key, unit = S.measure.unit;
   const wrap = h("div", "st-tablewrap"), tb = h("table", "st-table"), hr = h("tr");
-  ["Realm", "Lived", "Peak " + unit, "Peak share", "Peak year"].forEach(function (c) { hr.appendChild(h("th", null, c)); });
+  const ages = S.world.pack.ages;
+  ["Realm", "Lived", "Peak " + unit, "Peak share", "Peak year"].concat(ages ? ["Furthest age"] : []).forEach(function (c) { hr.appendChild(h("th", null, c)); });
   tb.appendChild(hr);
   d.bands.forEach(function (b) {
     let pk = 0, pt = 0, ps = 0;
@@ -567,6 +637,10 @@ function table() {
     tr.appendChild(h("td", "st-num", pk.toLocaleString()));
     tr.appendChild(h("td", "st-num", pct(ps)));
     tr.appendChild(h("td", null, pack.yearLabel(d.y0 + pt * d.step)));
+    if (ages) {
+      const last = b.p.ageLog && b.p.ageLog[b.p.ageLog.length - 1], a = last && ages[last.age];
+      tr.appendChild(h("td", null, a ? a.name + (last.inherited ? " (from its founding)" : ", " + pack.yearLabel(last.year)) : ""));
+    }
     tb.appendChild(tr);
   });
   wrap.appendChild(tb);

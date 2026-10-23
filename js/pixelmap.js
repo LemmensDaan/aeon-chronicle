@@ -282,7 +282,8 @@ function elevRank(c, R) {
 
 /* ------------------------------------------------------------ the frame for a year and mode */
 /* contest (from mapfx.js), when given: regions changing hands, { rid: { from, to, phase } }. They
-   keep the old owner's borders while their 4-pixel blocks flicker between the two colours. */
+   keep the old owner's borders while their 2-pixel blocks, border pixels too (most such land is a
+   single cell, which is mostly border), flicker between the two colours. */
 function compose(c, w, mode, roads, contest) {
   const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0);
   if (c.key === key && !contest) return c.frame;
@@ -346,10 +347,14 @@ function compose(c, w, mode, roads, contest) {
       if (o == null && !ct) continue;
       const edge = o != null && (at(x + 1, y, o) !== o || at(x - 1, y, o) !== o || at(x, y + 1, o) !== o || at(x, y - 1, o) !== o);
       const edge2 = o != null && !edge && (at(x + 2, y, o) !== o || at(x - 2, y, o) !== o || at(x, y + 2, o) !== o || at(x, y - 2, o) !== o);
-      const show = ct && ct.phase >= 0 && !edge && (((x >> 2) + (y >> 2) + ct.phase) & 1) ? ct.to : o;
+      const show = ct && ct.phase >= 0 && (((x >> 1) + (y >> 1) + ct.phase) & 1) ? ct.to : o;
       if (show == null) continue;
       const cl = colorOf(show);
-      if (edge) {
+      if (ct && ct.phase >= 0) {
+        /* flickering land: solid blocks of the two colours, so the change reads on a single cell */
+        const k = edge ? 0.5 : 0.9;
+        d[i * 4] += (cl[0] * (edge ? 0.5 : 1) - d[i * 4]) * k; d[i * 4 + 1] += (cl[1] * (edge ? 0.5 : 1) - d[i * 4 + 1]) * k; d[i * 4 + 2] += (cl[2] * (edge ? 0.5 : 1) - d[i * 4 + 2]) * k;
+      } else if (edge) {
         const k = tint ? 0.5 : 0.62;
         d[i * 4] = cl[0] * k; d[i * 4 + 1] = cl[1] * k; d[i * 4 + 2] = cl[2] * k;
       } else if (tint || (borders && edge2)) {

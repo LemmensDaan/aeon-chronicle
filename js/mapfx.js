@@ -106,7 +106,7 @@ function changes(w, y0, y1) {
       }
       const m = origin != null ? MARCH : 0;
       out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), alt: flash, fx: { kind: "take", cells: g.cells, from: g.from, to: g.to, at: at, origin: origin, delay: delay,
-        march: m, dur: m + 2300, flick: [m + 1000, m + 1700], colTo: tp && tp.color, colFrom: fp && fp.color } });
+        march: m, dur: m + 2700, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color } });
     }
   }
   for (const id in P) {

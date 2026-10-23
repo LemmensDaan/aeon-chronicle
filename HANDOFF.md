@@ -42,6 +42,17 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   mode. Land changing hands is drawn by `compose()` itself (`AEON.mapfx.contested()`): it keeps the
   old owner's borders while its 4-pixel blocks flicker between the colours, then settles with a
   flash, as in the samples; land waiting for its ships keeps the old owner.
+- **War band (2026-10-23):** a land take by force now plays as in the sample: a band of three under a
+  banner marches up from the attacker's neighbouring land, two defenders come out to meet it, a
+  scuffle on the border, then the flicker and the flash (mapfx.js `band()`, take timings MARCH +
+  1000 + 700 ms). Most takes are a single region (fantasy: every border battle; historical: 58 of
+  99), which is the engine, not the animation; Daan does not want bigger conquests yet.
+- **Next to think through with Daan (not started, engine, changes histories):** a military and a
+  naval strength per realm, from its kind, size, population, tech or age and perhaps its biomes;
+  battles and who ends up holding a region decided by strength plus chance; the band sizes in the
+  animation could then follow the two sides' strengths (fewer, equal or more defenders). A long
+  list of realm types through the ages, after historical kinds of states and empires. Conquerors
+  that plunder, ravage or raze instead of only taking control, and keeping a record of it.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

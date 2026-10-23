@@ -1,8 +1,9 @@
 /* Aeon - map animations (the picks from samples/animations.html).
 
    While history plays, the changes playback passes are shown as short animations on the map:
-   land changing hands flickers between the old and new colours before it settles (with a
-   scuffle where it was taken by force), new land flashes in, a breakaway realm's capital is
+   land changing hands flickers between the old and new colours before it settles (where it was
+   taken by force, a war band first marches up to the border, defenders come out to meet it and
+   a scuffle boils up between them), new land flashes in, a breakaway realm's capital is
    crowned, the crown arcs over when a capital moves, laurels with the age's numeral pop up over
    a capital (I when a realm is founded), wonders rise out of the ground and fall into their
    dust, and razed settlements burn down to a smoking ruin. Setting the year by scrubbing or by
@@ -41,6 +42,9 @@ const LAURELS = NUMERAL.map(function (N) {
 
 /* how long each kind plays, in milliseconds */
 const DUR = { flash: 600, take: 1300, split: 1500, lost: 1100, crown: 1500, age: 2000, rise: 1900, fall: 2600, burn: 2800 };
+/* a take by force: the war band marches for MARCH ms, the scuffle lasts a second, then the land
+   flickers and settles (ms from the start, set per animation in changes()) */
+const MARCH = 900;
 /* the sea events of both packs, by type */
 const SEA = { "overseas-invasion": "invade", "sea-crossing": "invade", "overseas-colony": "colony", "far-shore-settled": "colony", "naval-raid": "raid" };
 /* at most this many animations besides flashes at once, and new ones come at about RATE a
@@ -76,7 +80,7 @@ function prevOwners(w) {
 /* every change in the years (y0, y1], as candidate animations with a priority */
 function changes(w, y0, y1) {
   const out = [], P = w.polities, born = function (p) { return p && p.founded > y0 && p.founded <= y1; };
-  const wait = sailings(w, y0, y1, out);
+  const wait = sailings(w, y0, y1, out), view = AEON.viewAt ? AEON.viewAt(w, y1) : null;
   /* land: grouped by who it passed from and to */
   const log = w.ownerLog, prev = prevOwners(w), groups = {};
   for (let k = after(log, y0, Y0); k < log.length && log[k][0] <= y1; k++) {
@@ -93,7 +97,17 @@ function changes(w, y0, y1) {
     if (g.to == null) out.push({ prio: 1 + Math.log2(1 + n), fx: { kind: "lost", cells: g.cells, from: g.from, to: null }, alt: null });
     else if (g.from == null) out.push({ prio: 0, fx: flash });
     else if (born(tp)) out.push({ prio: 4 + Math.log2(1 + n), fx: { kind: "split", cells: g.cells, from: g.from, to: g.to, capital: AEON.capitalAt(tp, y1) }, alt: flash });
-    else out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), fx: { kind: "take", cells: g.cells, from: g.from, to: g.to, at: g.cells[0], delay: delay }, alt: flash });
+    else {
+      /* where the war band comes from: the attacker's land next to what it took, if any */
+      let at = g.cells[0], origin = null;
+      if (view) for (const rid of g.cells) {
+        for (const nb of w.regions[rid].neighbors) if (view.regions[nb].owner === g.to && g.cells.indexOf(nb) < 0) { origin = nb; break; }
+        if (origin != null) { at = rid; break; }
+      }
+      const m = origin != null ? MARCH : 0;
+      out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), alt: flash, fx: { kind: "take", cells: g.cells, from: g.from, to: g.to, at: at, origin: origin, delay: delay,
+        march: m, dur: m + 2300, flick: [m + 1000, m + 1700], colTo: tp && tp.color, colFrom: fp && fp.color } });
+    }
   }
   for (const id in P) {
     const p = P[id];
@@ -126,7 +140,12 @@ function changes(w, y0, y1) {
   return out;
 }
 
-function start(c, t) { c.fx.start = t + (c.fx.delay || 0); c.fx.dur = c.fx.dur || DUR[c.fx.kind]; live.push(c.fx); }
+function start(c, t) {
+  const f = c.fx;
+  f.start = t + (f.delay || 0); f.dur = f.dur || DUR[f.kind];
+  if (!f.flick && FLICKER[f.kind]) f.flick = [0, f.dur * FLICKER[f.kind]];
+  live.push(f);
+}
 function majors() { let n = 0; for (const f of live) if (f.kind !== "flash") n++; return n; }
 
 /* the changes playback has just passed: the most important animated, within the budget */
@@ -298,17 +317,16 @@ function sailings(w, y0, y1, out) {
   return wait;
 }
 function isLive() { prune(now()); return live.length > 0; }
-/* regions in the flickering part of a change of hands, for the map to draw (pixelmap compose):
-   { rid: { from, to, phase } }, or null. Land still waiting for its ships keeps the old owner
-   (phase -1). */
-const FLICKER = { take: 0.55, split: 0.5, lost: 0.7 };
+/* regions in a change of hands, for the map to draw (pixelmap compose): { rid: { from, to,
+   phase } }, or null. Before its flicker (ships still sailing, the war band still marching or
+   fighting) land keeps the old owner (phase -1); f.flick is that window in ms from the start. */
+const FLICKER = { split: 0.5, lost: 0.7 };
 function contested() {
   const t = now();
   let out = null;
   for (const f of live) {
-    const until = FLICKER[f.kind];
-    if (until == null || t >= f.start + f.dur * until) continue;
-    const phase = t < f.start ? -1 : Math.floor((t - f.start) / 140) & 1;
+    if (!f.flick || t >= f.start + f.flick[1]) continue;
+    const rel = t - f.start, phase = rel < f.flick[0] ? -1 : Math.floor((rel - f.flick[0]) / 140) & 1;
     for (const rid of f.cells) (out || (out = {}))[rid] = { from: f.from, to: f.to, phase: phase };
   }
   return out;
@@ -403,21 +421,32 @@ function paint(g, env, cells, style, phase) {
 }
 /* contested land: while its blocks flicker (drawn by the map, see contested()), nothing here;
    then a flash of light as it settles */
-function settle(g, env, f, a) {
-  const until = FLICKER[f.kind];
-  if (a < until) return;
-  const b = (a - until) / (1 - until);
+function settle(g, env, f) {
+  const rel = env.now - f.start, until = f.flick[1];
+  if (rel < until) return;
+  const b = (rel - until) / (f.dur - until);
   paint(g, env, f.cells, "rgba(" + LIGHT + "," + (0.42 * (1 - b)).toFixed(3) + ")", null);
 }
 
 function drawUnder(g, env, f, a) {
   if (env.mode !== "political") return;
   if (f.kind === "flash") paint(g, env, f.cells, "rgba(" + LIGHT + "," + (0.45 * (1 - a)).toFixed(3) + ")", null);
-  else if (f.kind === "take" || f.kind === "split") settle(g, env, f, a);
+  else if (f.kind === "take" || f.kind === "split") settle(g, env, f);
 }
 
 const SHIP = sprite(["....k....", "...kfk...", "..kfffk..", "..kfffk..", "...kfk...", "....k....", "kbbbbbbbk", ".kbbbbbk."], { k: INK, f: "#888", b: "#7a4a22" });
 const SOLDIER = sprite(["....s", ".kk.s", ".kwks", "kffks", ".ffk.", ".kk..", ".k.k.", "k...k"], { k: INK, w: "#e8c9a0", f: "#888", s: "#c9ced6" });
+const STEP = sprite(["....s", ".kk.s", ".kwks", "kffks", ".ffk.", ".kk..", "..k..", ".kk.."], SOLDIER.pal);
+const BANNER = sprite(["kfff", "kfff", "kff.", "k...", "kkk.", "kwk.", "kff.", "kk..", "k.k."], { k: INK, w: "#e8c9a0", f: "#888" });
+/* a few soldiers in their realm's tabards, walking (or standing) and facing dir (1 right, -1
+   left), led by a banner bearer; (x, y) is the leader's feet */
+function band(g, env, x, y, n, color, dir, t, walking, banner) {
+  g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(env.u * dir, env.u);
+  const over = { f: color || "#888" }, step = walking ? Math.floor(t / 160) % 2 : 0;
+  if (banner) env.blit(g, BANNER, 1, -9, 1, over);
+  for (let i = 0; i < n; i++) env.blit(g, (step + i) % 2 ? STEP : SOLDIER, -5 - i * 5, -8 + (i % 2), 1, over);
+  g.restore();
+}
 const FLAG = sprite(["kff", "kff", "k..", "k..", "k.."], { k: INK, f: "#888" });
 const FOAM = "#a6dbff";
 /* where a fleet is along its lane at a time: [fraction, moving, direction] */
@@ -464,9 +493,20 @@ function frameAt(g, env, x, y, draw) {
 function drawOver(g, env, f, a) {
   const R = env.world.regions, t = env.now - f.start, S = env.sprites, blit = env.blit;
   const centre = function (rid) { const r = R[rid]; return [env.sx(r.x + 0.5), env.sy(r.y + 0.5)]; };
-  if (f.kind === "take" && a < 0.6) {
-    const p = centre(f.at);
-    frameAt(g, env, p[0], p[1], function () { brawl(g, t, 6); });
+  if (f.kind === "take") {
+    /* the war band marches up from the attacker's side, the defenders come out from the other,
+       and they meet in a scuffle on the border; distances in sprite pixels, so it reads at any zoom */
+    const B = centre(f.at), A = f.origin != null ? centre(f.origin) : null, u = env.u;
+    let dx = 1, dy = 0;
+    if (A && Math.abs(A[0] - B[0]) < env.c.VW * env.P / 2) { const L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1; dx = (B[0] - A[0]) / L; dy = (B[1] - A[1]) / L; }
+    const meet = [B[0] - dx * 2 * u, B[1] - dy * 2 * u], dir = dx >= 0 ? 1 : -1;
+    if (f.march && t < f.march) {
+      const q = ease(t / f.march), back = 26 * u * (1 - q) + 5 * u, d = 14 * u * (1 - ease((t - f.march * 0.3) / (f.march * 0.7))) + 5 * u;
+      band(g, env, meet[0] - dx * back, meet[1] - dy * back, 3, f.colTo, dir, t, true, true);
+      band(g, env, meet[0] + dx * d, meet[1] + dy * d, 2, f.colFrom, -dir, t + 80, t > f.march * 0.3, false);
+    } else if (t < f.march + 1000) {
+      frameAt(g, env, meet[0], meet[1] - 3 * u, function () { brawl(g, t, 6); });
+    }
   } else if (f.kind === "split" && f.capital != null) {
     /* the crown comes down on the new realm's seat */
     const p = centre(f.capital), top = -Math.ceil(S.PALACE.h / 2) - CROWN.h;

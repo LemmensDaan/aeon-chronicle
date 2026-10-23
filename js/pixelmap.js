@@ -504,11 +504,12 @@ function makeView(canvas, world, opts) {
 
 /* ------------------------------------------------------------ settlements and the cursor */
 /* No names are drawn on the map: places and realms are named in the tooltip on hover. */
+/* device pixels per sprite pixel: sprites grow with zoom, but only with its square root, so a
+   zoomed-in map fills up without the markers swelling as fast as the land */
+function spriteUnit(v) { return Math.max(1, Math.round(Math.min(6, Math.max(1, Math.sqrt(v.P / v.dpr) * 1.15)) * v.dpr)); }
 function drawOverlay(ctx, w, c, v, opts, tiles) {
   const dpr = v.dpr, pc = v.P / dpr;                         // CSS pixels per map pixel
-  /* device pixels per sprite pixel: sprites grow with zoom, but only with its square root, so a
-     zoomed-in map fills up without the markers swelling as fast as the land */
-  const u = Math.max(1, Math.round(Math.min(6, Math.max(1, Math.sqrt(pc) * 1.15)) * dpr));
+  const u = spriteUnit(v);
   const cell = PPC * v.P, R = w.regions;
   const boxes = [];
   const free = function (b) {
@@ -548,6 +549,7 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
     const base = baseOf(w), year = w.year, seen = {};
     for (const a of AEON.wonders(base)) {
       if (a.location == null || a.created > year || (a.destroyed != null && a.destroyed <= year) || seen[a.location]) continue;
+      if (AEON.mapfx && AEON.mapfx.hides(a.id)) continue;      /* still rising: mapfx.js draws it */
       seen[a.location] = true;
       const r = R[a.location];
       /* just right of a capital-sized marker on the same cell, standing on the same ground line */
@@ -605,7 +607,16 @@ function draw(canvas, world, opts) {
   ctx.fillRect(X0 - 1, v.Y0 - 1, mw + 2, mh + 2);
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
   if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time);
+  /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
+  const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null;
+  const cell = PPC * v.P, env = fx && {
+    world: world, c: c, P: v.P, X0: X0, Y0: v.Y0, u: spriteUnit(v), pc: v.P / v.dpr, mode: opts.mode || "political",
+    sx: function (gx) { return X0 + gx * cell; }, sy: function (gy) { return v.Y0 + gy * cell; },
+    sprites: { VILLAGE: VILLAGE, TOWN: TOWN, CITY: CITY, PALACE: PALACE, WONDER: WONDER }, blit: blit,
+  };
+  if (fx) fx.draw(ctx, env, "under");
   drawOverlay(ctx, world, c, v, opts, [X0]);
+  if (fx) fx.draw(ctx, env, "over");
 }
 
 function hitTest(canvas, world, px, py, opts) {

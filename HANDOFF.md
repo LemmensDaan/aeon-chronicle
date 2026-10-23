@@ -15,6 +15,19 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   alternate history to `../../alt-history-generator` (both plain copies, not repos). Daan's direction:
   Aeon becomes one world generator with setup options (number of starting empires; magic none / low /
   medium / high). Not started.
+- **Map animations (2026-10-23):** `js/mapfx.js` plays the land-based picks on the real map.
+  Read from the logs only (histories unchanged, checked on historical seed 7). Kinds: land taken
+  (old-colour flicker, scuffle cloud), split (flicker, crown comes down on the new capital), new
+  land (flash), land lost (fading flicker), capital move (crown arc), age reached / realm founded
+  (laurels I-V bubble), wonder raised / lost, settlement razed (fire, ruin fades). Territory
+  effects show in the political mode only; sprites in every mode. Wall-clock durations; at most 8
+  at once, about 4 new a second, the rest of the new land just flashes. Playback calls
+  `collect(world, from, to)` each frame; scrubbing (once it settles) and jumps call
+  `moment(world, year)`, which plays that tick once; `ui.js runFx()` keeps redrawing while paused.
+  No animations for readers who ask for reduced motion. Not wired yet: the sea animations (ships
+  for invasions and colonies, naval battles), the samples' persistent ruins (needs the engine).
+  Note: playback is fast (1x = 5 years a frame, 300 years a second), so only a few changes get
+  an animation; slower speeds would show more.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;
@@ -96,6 +109,7 @@ they are until then.
 | `js/planetgen.js` | planet terrain (I wrote this; see below) |
 | `js/worldgen.js` | dispatches to `planetgen`; still holds an old planet fallback |
 | `js/pixelmap.js` | **pixel map renderer** (`AEON.render`), also the 5x7 pixel font |
+| `js/mapfx.js` | **map animations** (`AEON.mapfx`): events shown on the map as playback passes them (see "Map animations") |
 | `js/stats.js`, `css/stats.css` | the statistics sheet over the map (see below) |
 | `js/chronicle/*.js` | the encyclopedia, in parts loaded in order: `base` (state, helpers, indexes, derived data, navigation), `style` (injected CSS), `timeline`, `pages` (entity pages), `atlas` (atlas + search), `story`, `graph`, `shell` (render, mount, public API). Plain scripts, not modules (file://); each part imports from `AEON._chronicle` at the top and exports at the bottom. Parts only import from earlier parts; `render()` is called upward as `C.render()`. A new shared helper must be added to its part's export line |
 | `js/ui.js` | app shell: genre picker, generation, playback/scrubbing, deep links, export |

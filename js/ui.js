@@ -198,13 +198,37 @@ function countAliveAt(year) {
   return n;
 }
 
-function setPlaybackYear(y) {
+/* how: "play" while playback runs (its changes are animated as it passes them), "scrub" while
+   the slider is dragged (the moment plays once it settles), otherwise a jump, which plays the
+   moment straight away (mapfx.js) */
+function setPlaybackYear(y, how) {
+  const from = playbackYear;
   playbackYear = Math.max(world.startYear, Math.min(world.endYear, y));
+  const fx = AEON.mapfx && !simulating && ambientOn() ? AEON.mapfx : null;
+  if (fx) {
+    if (how === "play") fx.collect(world, from, playbackYear);
+    else if (how === "scrub") fx.clear();
+    else fx.moment(world, playbackYear);
+  }
   dom.scrub.value = String(playbackYear);
   updateStatus();
   drawMap();
   if (AEON.chronicle && AEON.chronicle.setYear) AEON.chronicle.setYear(playbackYear);
   if (AEON.stats && AEON.stats.isOpen()) AEON.stats.setYear(playbackYear);
+  if (how !== "play") runFx();
+}
+
+/* while animations are playing and playback is not, redraw every frame until they end */
+let fxRaf = 0;
+function runFx() {
+  if (fxRaf || playing || !AEON.mapfx) return;
+  const step = function () {
+    fxRaf = 0;
+    if (playing) return;
+    drawMap();
+    if (AEON.mapfx.live()) fxRaf = requestAnimationFrame(step);
+  };
+  if (AEON.mapfx.live()) fxRaf = requestAnimationFrame(step);
 }
 
 /* the statistics sheet, laid over the map */
@@ -228,13 +252,13 @@ function toggleStats(force) {
 function togglePlay() {
   playing = !playing;
   dom.playBtn.textContent = playing ? "⏸" : "▶";
-  if (playing) loop(); else drawMap();
+  if (playing) loop(); else { drawMap(); runFx(); }
 }
 
 function loop() {
   if (!playing) return;
-  setPlaybackYear(playbackYear + world.timeStep * playSpeed);
-  if (playbackYear >= world.endYear) { playing = false; dom.playBtn.textContent = "▶"; drawMap(); return; }
+  setPlaybackYear(playbackYear + world.timeStep * playSpeed, "play");
+  if (playbackYear >= world.endYear) { playing = false; dom.playBtn.textContent = "▶"; drawMap(); runFx(); return; }
   rafId = requestAnimationFrame(loop);
 }
 
@@ -349,8 +373,12 @@ function buildApp() {
     playing = false; dom.playBtn.textContent = "▶";
     scrubbing = true;
     clearTimeout(scrubTimer);
-    scrubTimer = setTimeout(function () { scrubbing = false; drawMap(); }, 160);
-    setPlaybackYear(Number(dom.scrub.value));
+    scrubTimer = setTimeout(function () {
+      scrubbing = false;
+      if (AEON.mapfx && ambientOn()) AEON.mapfx.moment(world, playbackYear);
+      drawMap(); runFx();
+    }, 160);
+    setPlaybackYear(Number(dom.scrub.value), "scrub");
   });
 
   const speedSel = el("select", { class: "ae-select", onchange: function (e) { playSpeed = Number(e.target.value); } });

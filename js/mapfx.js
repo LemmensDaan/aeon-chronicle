@@ -6,7 +6,10 @@
    crowned, the crown arcs over when a capital moves, laurels with the age's numeral pop up over
    a capital (I when a realm is founded), wonders rise out of the ground and fall into their
    dust, and razed settlements burn down to a smoking ruin. Setting the year by scrubbing or by
-   a link plays that tick's changes once.
+   a link plays that tick's changes once. At sea, fleets sail from a port along open water: an
+   invasion fleet runs up on the beach before the land changes hands, a colony ship lands its
+   settlers before the new land flashes in, and a raid meets the defenders' ships in a battle
+   in which a ship burns and sinks before both sides turn for home.
 
    Everything is read from the world's logs (ownerLog, capitalLog, ageLog, settleLog and the
    wonders), so the animations change no history. Durations are wall-clock time, so they read
@@ -38,6 +41,8 @@ const LAURELS = NUMERAL.map(function (N) {
 
 /* how long each kind plays, in milliseconds */
 const DUR = { flash: 600, take: 1300, split: 1500, lost: 1100, crown: 1500, age: 2000, rise: 1900, fall: 2600, burn: 2800 };
+/* the sea events of both packs, by type */
+const SEA = { "overseas-invasion": "invade", "sea-crossing": "invade", "overseas-colony": "colony", "far-shore-settled": "colony", "naval-raid": "raid" };
 /* at most this many animations besides flashes at once, and new ones come at about RATE a
    second (a scrub or a jump may start up to MOMENT at once) */
 const MAX_LIVE = 8, RATE = 4, BURST = 5, MOMENT = 10;
@@ -72,6 +77,7 @@ function prevOwners(w) {
 /* every change in the years (y0, y1], as candidate animations with a priority */
 function changes(w, y0, y1) {
   const out = [], P = w.polities, born = function (p) { return p && p.founded > y0 && p.founded <= y1; };
+  const wait = sailings(w, y0, y1, out);
   /* land: grouped by who it passed from and to */
   const log = w.ownerLog, prev = prevOwners(w), groups = {};
   for (let k = after(log, y0, Y0); k < log.length && log[k][0] <= y1; k++) {
@@ -82,11 +88,13 @@ function changes(w, y0, y1) {
   }
   for (const key in groups) {
     const g = groups[key], fp = P[g.from], tp = P[g.to], n = g.cells.length;
-    const flash = { kind: "flash", cells: g.cells, color: tp && tp.color };
+    let delay = 0;
+    for (const rid of g.cells) if (wait[rid]) delay = Math.max(delay, wait[rid]);
+    const flash = { kind: "flash", cells: g.cells, color: tp && tp.color, delay: delay };
     if (g.to == null) out.push({ prio: 1 + Math.log2(1 + n), fx: { kind: "lost", cells: g.cells, color: fp && fp.color }, alt: null });
     else if (g.from == null) out.push({ prio: 0, fx: flash });
     else if (born(tp)) out.push({ prio: 4 + Math.log2(1 + n), fx: { kind: "split", cells: g.cells, color: fp && fp.color, capital: AEON.capitalAt(tp, y1) }, alt: flash });
-    else out.push({ prio: 2 + Math.log2(1 + n), fx: { kind: "take", cells: g.cells, color: fp && fp.color, at: g.cells[0] }, alt: flash });
+    else out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), fx: { kind: "take", cells: g.cells, color: fp && fp.color, at: g.cells[0], delay: delay }, alt: flash });
   }
   for (const id in P) {
     const p = P[id];
@@ -119,7 +127,7 @@ function changes(w, y0, y1) {
   return out;
 }
 
-function start(c, t) { c.fx.start = t; c.fx.dur = DUR[c.fx.kind]; live.push(c.fx); }
+function start(c, t) { c.fx.start = t + (c.fx.delay || 0); c.fx.dur = c.fx.dur || DUR[c.fx.kind]; live.push(c.fx); }
 function majors() { let n = 0; for (const f of live) if (f.kind !== "flash") n++; return n; }
 
 /* the changes playback has just passed: the most important animated, within the budget */
@@ -145,6 +153,151 @@ function place(list, t, isMoment) {
 }
 function clear() { live = []; }
 function prune(t) { live = live.filter(function (f) { return t < f.start + f.dur; }); }
+
+/* ------------------------------------------------------------ the sea */
+/* Sea lanes are found on a grid of 2x2 map-pixel blocks: a block is water when none of its
+   pixels is land, and its depth is how many blocks it lies from land. Lanes keep to depth 2 or
+   more; they leave from the port's own block and end on the target's, so ships run aground. */
+const B = 2, LANE_DEPTH = 2;
+const seas = new WeakMap();
+function seaOf(c) {
+  let S = seas.get(c);
+  if (S) return S;
+  const bw = Math.floor(c.VW / B), bh = Math.floor(c.VH / B), N = bw * bh, depth = new Int16Array(N).fill(-1), q = [];
+  for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++) {
+    let dry = false;
+    for (let j = 0; j < B && !dry; j++) for (let i = 0; i < B; i++) if (c.land[(by * B + j) * c.VW + bx * B + i]) { dry = true; break; }
+    if (dry) { depth[by * bw + bx] = 0; q.push(by * bw + bx); }
+  }
+  for (let h = 0; h < q.length; h++) {
+    const k = q[h], x = k % bw, y = (k - x) / bw;
+    const nb = [y * bw + (x + 1) % bw, y * bw + (x + bw - 1) % bw, y > 0 ? k - bw : -1, y < bh - 1 ? k + bw : -1];
+    for (const n of nb) if (n >= 0 && depth[n] < 0) { depth[n] = depth[k] + 1; q.push(n); }
+  }
+  S = { bw: bw, bh: bh, depth: depth };
+  seas.set(c, S);
+  return S;
+}
+function regionBlocks(c, S, rid) {
+  const seen = {}, out = [];
+  for (const i of regionPixels(c, rid)) {
+    const x = i % c.VW, y = (i - x) / c.VW, k = Math.floor(y / B) * S.bw + Math.floor(x / B);
+    if (!seen[k]) { seen[k] = true; out.push(k); }
+  }
+  return out;
+}
+/* from a region's own blocks out through the shallows to water of a depth: the chain of blocks */
+function toOpenSea(c, S, rid, minDepth) {
+  const from = regionBlocks(c, S, rid), prev = new Map(), q = [];
+  for (const k of from) { prev.set(k, -1); q.push(k); }
+  for (let h = 0; h < q.length && h < 4000; h++) {
+    const k = q[h];
+    if (S.depth[k] >= (minDepth || LANE_DEPTH + 1)) {
+      const chain = [];
+      for (let j = k; j >= 0; j = prev.get(j)) chain.unshift(j);
+      return chain;
+    }
+    const x = k % S.bw, y = (k - x) / S.bw;
+    const nb = [y * S.bw + (x + 1) % S.bw, y * S.bw + (x + S.bw - 1) % S.bw, y > 0 ? k - S.bw : -1, y < S.bh - 1 ? k + S.bw : -1];
+    for (const n of nb) if (n >= 0 && S.depth[n] > 0 && !prev.has(n)) { prev.set(n, k); q.push(n); }
+  }
+  return null;
+}
+/* the lane from one region to another, in map pixels (x unwrapped, so it may run off an edge);
+   with openEnd (a block) it ends out at sea there instead */
+function seaLane(c, fromRid, toRid, openEnd) {
+  const S = seaOf(c), a = toOpenSea(c, S, fromRid), b = openEnd != null ? [openEnd] : toOpenSea(c, S, toRid);
+  if (!a || !b) return null;
+  const s = a[a.length - 1], e = b[b.length - 1], prev = new Int32Array(S.bw * S.bh).fill(-1), q = [s];
+  prev[s] = s;
+  for (let h = 0; h < q.length && prev[e] < 0; h++) {
+    const k = q[h], x = k % S.bw, y = (k - x) / S.bw;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const ny = y + dy;
+      if ((!dx && !dy) || ny < 0 || ny >= S.bh) continue;
+      const n = ny * S.bw + (x + dx + S.bw) % S.bw;
+      if (prev[n] < 0 && S.depth[n] >= LANE_DEPTH) { prev[n] = k; q.push(n); }
+    }
+  }
+  if (prev[e] < 0) return null;
+  const mid = [];
+  for (let k = e; ; k = prev[k]) { mid.unshift(k); if (k === s) break; }
+  const blocks = a.concat(mid.slice(1), b.slice(0, -1).reverse());
+  if (blocks.length < 2) return null;
+  const pts = [];
+  for (const k of blocks) {
+    let x = (k % S.bw) * B + B / 2;
+    const y = Math.floor(k / S.bw) * B + B / 2;
+    if (pts.length) { const px = pts[pts.length - 1][0]; while (x - px > c.VW / 2) x -= c.VW; while (px - x > c.VW / 2) x += c.VW; }
+    pts.push([x, y]);
+  }
+  /* smoothed, ends kept */
+  return pts.map(function (p, k) {
+    if (k < 2 || k > pts.length - 3) return p;
+    let sx = 0, sy = 0, n = 0;
+    for (let d = -3; d <= 3; d++) { const r = pts[Math.max(0, Math.min(pts.length - 1, k + d))]; sx += r[0]; sy += r[1]; n++; }
+    return [sx / n, sy / n];
+  });
+}
+function sailTime(path) { return Math.max(1400, Math.min(3200, path.length * B * 14)); }
+/* a realm's coastal regions nearest to a target, at the year shown (skipping some regions) */
+function portsFor(w, view, pid, target, skip) {
+  const R = w.regions, tr = R[target], out = [];
+  for (let i = 0; i < R.length; i++) {
+    if (view.regions[i].owner !== pid || i === target || (skip && skip[i])) continue;
+    if (!R[i].neighbors.some(function (n) { return R[n].barren; })) continue;
+    let dx = Math.abs(R[i].x - tr.x); dx = Math.min(dx, w.width - dx);
+    out.push([dx * dx + (R[i].y - tr.y) ** 2, i]);
+  }
+  return out.sort(function (a, b) { return a[0] - b[0]; }).slice(0, 6).map(function (e) { return e[1]; });
+}
+/* the first of those ports with a lane to the target (one on a lake has none) */
+function laneFrom(c, ports, target, openEnd) {
+  for (const port of ports) { const lane = seaLane(c, port, target, openEnd); if (lane) return lane; }
+  return null;
+}
+/* the sea events in (y0, y1] as animations; returns, per region they change, how long the land
+   change should wait for the ships */
+function sailings(w, y0, y1, out) {
+  const wait = {}, c = AEON.render && AEON.render.cacheOf ? AEON.render.cacheOf(w) : null, ix = w._typeIndex;
+  if (!c || !ix || !AEON.viewAt) return wait;
+  const view = AEON.viewAt(w, y1), P = w.polities;
+  for (const type in SEA) {
+    const list = ix[type];
+    if (!list) continue;
+    for (let k = after(list, y0, YK); k < list.length && list[k].year <= y1; k++) {
+      const ev = list[k], kind = SEA[type], pol = ev.actors.filter(function (a) { return a.kind === "polity"; });
+      const p = pol[0] && P[pol[0].id], target = ev.regionId;
+      if (!p || target == null) continue;
+      /* not from land taken in this same crossing */
+      const skip = {};
+      if (kind === "invade") for (let j = after(w.ownerLog, y0, Y0); j < w.ownerLog.length && w.ownerLog[j][0] <= y1; j++) if (w.ownerLog[j][2] === p.id) skip[w.ownerLog[j][1]] = true;
+      const ports = portsFor(w, view, p.id, target, skip), lane = laneFrom(c, ports, target, null);
+      if (!lane) continue;
+      const sail = sailTime(lane);
+      if (kind !== "raid") {
+        wait[target] = sail;
+        out.push({ prio: 6, fx: { kind: kind, dur: sail + 1500, fleets: [{ path: lane, color: p.color, n: kind === "invade" ? 3 : 1, segs: [[0, sail, 0, 1]] }], sail: sail, at: target } });
+        continue;
+      }
+      /* a raid: the defenders sail out from their nearest port, and the fleets meet in open water
+         off the raided coast, each stopping a little short of the other */
+      const q = pol[1] && P[pol[1].id], homes = q ? portsFor(w, view, q.id, target, null) : [];
+      const deep = toOpenSea(c, seaOf(c), target, 6), spot = deep && deep[deep.length - 1];
+      const alane = spot != null && laneFrom(c, ports, null, spot), dlane = spot != null && homes.length && laneFrom(c, homes, null, spot);
+      const loser = hash(k, 5) < 0.5 ? 0 : 1;
+      if (alane && dlane && alane.length > 4 && dlane.length > 4) {
+        const sa = Math.max(0.3, (alane.length - 4) / (alane.length - 1)), sd = Math.max(0.3, (dlane.length - 4) / (dlane.length - 1));
+        out.push({ prio: 6, fx: { kind: "battle", dur: 6000, loser: loser, fleets: [
+          { path: alane, color: p.color, n: 3, segs: [[0, 2000, 0, sa], [3900, 5800, sa, loser === 0 ? 0 : sa]] },
+          { path: dlane, color: q.color, n: 2, segs: [[0, 2000, 0, sd], [3900, 5800, sd, loser === 1 ? 0 : sd]] }] } });
+      } else {
+        out.push({ prio: 5, fx: { kind: "raid", dur: 5800, at: target, fleets: [{ path: lane, color: p.color, n: 3, segs: [[0, 2400, 0, 1], [3900, 5800, 1, 0]] }] } });
+      }
+    }
+  }
+  return wait;
+}
 function isLive() { prune(now()); return live.length > 0; }
 /* a wonder that is rising is drawn here, not by the map */
 function hides(id) { for (const f of live) if (f.kind === "rise" && f.id === id) return true; return false; }
@@ -254,6 +407,47 @@ function drawUnder(g, env, f, a) {
   else if (f.kind === "lost" && f.color) paint(g, env, f.cells, rgba(f.color, (0.62 * (1 - a)).toFixed(3)), Math.floor((env.now - f.start) / 140) & 1);
 }
 
+const SHIP = sprite(["....k....", "...kfk...", "..kfffk..", "..kfffk..", "...kfk...", "....k....", "kbbbbbbbk", ".kbbbbbk."], { k: INK, f: "#888", b: "#7a4a22" });
+const SOLDIER = sprite(["....s", ".kk.s", ".kwks", "kffks", ".ffk.", ".kk..", ".k.k.", "k...k"], { k: INK, w: "#e8c9a0", f: "#888", s: "#c9ced6" });
+const FLAG = sprite(["kff", "kff", "k..", "k..", "k.."], { k: INK, f: "#888" });
+const FOAM = "#a6dbff";
+/* where a fleet is along its lane at a time: [fraction, moving, direction] */
+function fleetAt(fl, t) {
+  let s = fl.segs[0][2];
+  for (const g of fl.segs) {
+    if (t < g[0]) return [s, false, 1];
+    if (t <= g[1]) return [lerp(g[2], g[3], ease((t - g[0]) / (g[1] - g[0]))), g[2] !== g[3], g[3] >= g[2] ? 1 : -1];
+    s = g[3];
+  }
+  return [s, false, 1];
+}
+/* each ship of a fleet: its screen position and lane index (ships follow one another) */
+function shipsOf(env, fl, t) {
+  const at = fleetAt(fl, t), n = fl.path.length - 1, out = [];
+  for (let k = 0; k < fl.n; k++) {
+    const i = Math.max(0, Math.min(n, Math.round(at[0] * n - k * 5 * at[2])));
+    const p = fl.path[i], mx = ((p[0] % env.c.VW) + env.c.VW) % env.c.VW;
+    out.push({ i: i, x: env.X0 + mx * env.P, y: env.Y0 + p[1] * env.P, moving: at[1], dir: at[2], k: k });
+  }
+  return out;
+}
+function drawShip(g, env, fl, sh, t, sink) {
+  if (sink >= 9) return;
+  if (sh.moving) {                                         /* the wake, behind the ship */
+    g.fillStyle = FOAM;
+    for (let m = 2; m < 9; m += 2) if ((m / 2 + Math.floor(t / 150)) % 2) {
+      const q = fl.path[Math.max(0, Math.min(fl.path.length - 1, sh.i - m * sh.dir))], mx = ((q[0] % env.c.VW) + env.c.VW) % env.c.VW;
+      g.fillRect(Math.round(env.X0 + mx * env.P), Math.round(env.Y0 + q[1] * env.P + env.u), env.u, env.u);
+    }
+  }
+  const bob = Math.sin(t / 300 + sh.k * 1.7) > 0.4 ? 1 : 0;
+  frameAt(g, env, sh.x, sh.y, function () {
+    if (sink > 0) { g.save(); g.beginPath(); g.rect(-6, -10, 13, 12); g.clip(); }
+    env.blit(g, SHIP, -4, -7 + bob + Math.round(sink || 0), 1, { f: fl.color || "#888" });
+    if (sink > 0) g.restore();
+  });
+}
+
 /* the sprite-pixel frame around a point on the screen: (0, 0) there, one unit per sprite pixel */
 function frameAt(g, env, x, y, draw) {
   g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(env.u, env.u); draw(); g.restore();
@@ -306,6 +500,8 @@ function drawOver(g, env, f, a) {
         if (a > 0.5) { g.globalAlpha = Math.min(1, (1 - a) / 0.25); blit(g, RUBBLE, (W.w - RUBBLE.w) >> 1, -RUBBLE.h, 1); g.globalAlpha = 1; }
       }
     });
+  } else if (f.fleets) {
+    drawSea(g, env, f, a, t);
   } else if (f.kind === "burn") {
     const minTier = env.pc >= 4 ? 1 : env.pc >= 2 ? 2 : 3;
     if (f.tier < minTier) return;
@@ -327,6 +523,55 @@ function drawOver(g, env, f, a) {
   }
 }
 
+function drawSea(g, env, f, a, t) {
+  const R = env.world.regions, fade = Math.min(1, (f.dur - t) / 300);
+  g.globalAlpha = Math.max(0, fade);
+  const ships = f.fleets.map(function (fl) { return shipsOf(env, fl, t); });
+  f.fleets.forEach(function (fl, j) {
+    ships[j].forEach(function (sh) {
+      const sinking = f.kind === "battle" && j === f.loser && sh.k === 0 ? Math.max(0, (t - 3000) / 1400) * 9 : 0;
+      if (sinking > 0 && t < 4600) frameAt(g, env, sh.x, sh.y, function () { flames(g, -2, -4 + Math.round(sinking), 5, t); });
+      drawShip(g, env, fl, sh, t, sinking);
+      if (sinking >= 9 && t < 5600) frameAt(g, env, sh.x, sh.y, function () {
+        const r = ((t - 4400) % 900) / 900;
+        px(g, Math.round(-4 - r * 5), 1, FOAM); px(g, Math.round(4 + r * 5), 1, FOAM);
+        for (let d = 0; d < 4; d++) px(g, -4 + Math.round(hash(d, 8) * 8 + (t - 4400) / 500), d % 2, "#7a4a22");
+      });
+    });
+  });
+  if (f.kind === "battle" && t > 2000 && t < 3900) {         /* the exchange of shot */
+    const all = ships[0].concat(ships[1]), v = Math.floor(t / 260), pa = (t % 260) / 260;
+    const src = all[v % all.length], dst = (v % 2 ? ships[0] : ships[1])[v % (v % 2 ? ships[0].length : ships[1].length)];
+    if (src && dst && src !== dst) {
+      g.fillStyle = "rgba(235,230,220,.8)"; g.fillRect(Math.round(src.x), Math.round(src.y - 4 * env.u), 2 * env.u, 2 * env.u);
+      g.fillStyle = INK; g.fillRect(Math.round(lerp(src.x, dst.x, pa)), Math.round(lerp(src.y, dst.y, pa) - (3 + Math.sin(pa * Math.PI) * 4) * env.u), env.u, env.u);
+    }
+    const m = ships[0][0];
+    frameAt(g, env, m.x, m.y - 6 * env.u, function () { smoke(g, 0, 0, t, 8, 16, 1); });
+  }
+  if ((f.kind === "invade" || f.kind === "colony") && t > f.sail && t < f.sail + 900) {
+    /* the men step off the bow onto the beach */
+    const sh = ships[0][0], r = R[f.at], tx = env.sx(r.x + 0.5), ty = env.sy(r.y + 0.5), q = ease((t - f.sail) / 900);
+    const x = lerp(sh.x, tx, q), y = lerp(sh.y, ty, q);
+    frameAt(g, env, x, y, function () {
+      env.blit(g, SOLDIER, -2, -8, 1, { f: f.fleets[0].color || "#888" });
+      if (f.kind === "invade") env.blit(g, SOLDIER, -7, -7, 1, { f: f.fleets[0].color || "#888" });
+    });
+  }
+  if (f.kind === "colony" && t > f.sail + 600) {
+    const r = R[f.at];
+    frameAt(g, env, env.sx(r.x + 0.5), env.sy(r.y + 0.5), function () {
+      env.blit(g, FLAG, 0, -5 - Math.round(3 * ease((t - f.sail - 600) / 400)), 1, { f: f.fleets[0].color || "#888" });
+      twinkle(g, 1, -9, (t - f.sail - 900) / 800);
+    });
+  }
+  if (f.kind === "raid" && t > 2400 && t < 4600) {           /* the raided coast burns */
+    const r = R[f.at];
+    frameAt(g, env, env.sx(r.x + 0.5), env.sy(r.y + 0.5), function () { flames(g, -3, 0, 6, t); smoke(g, 0, -2, t, 6, 6, 1); });
+  }
+  g.globalAlpha = 1;
+}
+
 /* env (from pixelmap.js): world (the shown view), c (terrain cache), P, X0, Y0, u, pc, sx, sy,
    mode, sprites, blit */
 function draw(g, env, layer) {
@@ -334,6 +579,7 @@ function draw(g, env, layer) {
   prune(t);
   env.now = t;
   for (const f of live) {
+    if (t < f.start) continue;                               /* waiting for its ships */
     const a = Math.max(0, Math.min(1, (t - f.start) / f.dur));
     if (layer === "under") drawUnder(g, env, f, a); else drawOver(g, env, f, a);
   }

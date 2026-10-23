@@ -24,8 +24,15 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   at once, about 4 new a second, the rest of the new land just flashes. Playback calls
   `collect(world, from, to)` each frame; scrubbing (once it settles) and jumps call
   `moment(world, year)`, which plays that tick once; `ui.js runFx()` keeps redrawing while paused.
-  No animations for readers who ask for reduced motion. Not wired yet: the sea animations (ships
-  for invasions and colonies, naval battles), the samples' persistent ruins (needs the engine).
+  No animations for readers who ask for reduced motion. At sea (from the events overseas-invasion /
+  sea-crossing, overseas-colony / far-shore-settled, naval-raid): fleets sail from the realm's
+  nearest coastal region along a lane found on 2x2-pixel water blocks (depth 2+ from land), run up
+  on the target's beach, and the land change waits for them; a raid becomes a battle in open
+  water off the raided coast when the foe has a port (a ship burns and sinks, both sides turn
+  home), otherwise the coast burns. When no lane exists the land change plays as usual: the
+  historical pack's coastal() counts lake shores, so some of its "overseas" invasions and colonies
+  start from a lake (seed 7: 3 of 4 invasions, 8 of 19 colonies); the port-only engine change
+  would fix that. Not wired yet: the samples' persistent ruins (needs the engine).
   Note: playback is fast (1x = 5 years a frame, 300 years a second), so only a few changes get
   an animation; slower speeds would show more.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,

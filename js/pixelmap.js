@@ -628,7 +628,7 @@ function hitTest(canvas, world, px, py, opts) {
   return gy * W + gx;
 }
 
-AEON.render = { draw: draw, modes: MODES, hitTest: hitTest, pixelScale: pixelScale };
+AEON.render = { draw: draw, modes: MODES, hitTest: hitTest, pixelScale: pixelScale, cacheOf: getCache };
 AEON.pixelFont = { draw: text, width: textWidth, fold: fold };
 
 })();

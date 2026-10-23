@@ -55,7 +55,29 @@ const MAX_LIVE = 8, RATE = 4, BURST = 5, MOMENT = 10;
 
 let live = [], tokens = BURST, lastCollect = 0;
 
-function now() { return performance.now(); }
+/* The animations' own clock, in milliseconds: ui.js moves it on (advance) while history plays, and
+   while a moment it jumped to plays out; when playback is paused it stands still, and so does
+   every animation, mid-step. */
+let clock = 0;
+function now() { return clock; }
+function advance(ms) { clock += Math.max(0, Math.min(ms, 250)); }
+
+/* Time that slows for great moments: a major change (prio MAJOR and up), or any change of a
+   followed realm, can hold the year still until its animation has played (holding()). How
+   often: pace "off" never, "all" for every major change, "some" while a bank of held time
+   lasts (HOLD_RATE seconds earned per year of history, at most HOLD_MAX), so a whole history
+   keeps to a few minutes. A followed realm's changes hold whatever the bank says (but not when
+   the pace is "off"). */
+const MAJOR = 5, HOLD_RATE = 0.02, HOLD_MAX = 8;
+let pace = "some", followed = null, bank = HOLD_MAX;
+function setPace(p) { pace = p; }
+function follow(pid) { followed = pid || null; }
+function holding() {
+  const t = now();
+  prune(t);
+  for (const f of live) if (f.hold && t < f.start + f.dur) return true;
+  return false;
+}
 function hash(a, b) { let h = Math.imul(a + 1, 374761393) ^ Math.imul(b + 7, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 function ease(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
 function lerp(a, b, p) { return a + (b - a) * p; }
@@ -130,7 +152,7 @@ function changes(w, y0, y1) {
     /* capitals moving (the first entry is the founding) */
     const cl = p.capitalLog || [];
     for (let k = Math.max(1, after(cl, y0, YK)); k < cl.length && cl[k].year <= y1; k++)
-      out.push({ prio: 5, fx: { kind: "crown", from: cl[k - 1].capital, to: cl[k].capital } });
+      out.push({ prio: 5, fx: { kind: "crown", pid: id, from: cl[k - 1].capital, to: cl[k].capital } });
     /* ages: the one a realm is founded in, and each it reaches */
     const al = p.ageLog || [];
     if (!w.pack.ages || !al.length) continue;
@@ -145,13 +167,17 @@ function changes(w, y0, y1) {
     if (a.created > y0 && a.created <= y1) out.push({ prio: 4.5, fx: { kind: "rise", id: a.id, at: a.location } });
     if (a.destroyed != null && a.destroyed > y0 && a.destroyed <= y1) out.push({ prio: 4, fx: { kind: "fall", id: a.id, at: a.location } });
   }
-  /* settlements razed: the size they had before */
-  const sl = w.settleLog || [];
+  /* settlements razed: the size they had before; a city burning is a great moment */
+  const sl = w.settleLog || [], SK = w.sackLog || [];
   for (let k = after(sl, y0, Y0); k < sl.length && sl[k][0] <= y1; k++) {
     if (sl[k][2] !== 0) continue;
     const before = AEON.tierAt(w, sl[k][1], sl[k][0] - 1);
-    if (before > 0) out.push({ prio: 2 + before * 0.5, fx: { kind: "burn", at: sl[k][1], tier: Math.min(3, before) } });
+    if (before <= 0) continue;
+    const who = [];
+    for (let j = after(SK, y0, Y0); j < SK.length && SK[j][0] <= y1; j++) if (SK[j][1] === sl[k][1]) who.push(SK[j][2], SK[j][3]);
+    out.push({ prio: before >= 3 ? 5 : 2 + before * 0.5, who: who, fx: { kind: "burn", at: sl[k][1], tier: Math.min(3, before) } });
   }
+  for (const c of out) if (!c.who) c.who = [c.fx.from, c.fx.to, c.fx.pid];
   return out;
 }
 
@@ -168,6 +194,7 @@ function collect(w, y0, y1) {
   const t = now();
   tokens = Math.min(BURST, tokens + (lastCollect ? (t - lastCollect) / 1000 * RATE : BURST));
   lastCollect = t;
+  bank = Math.min(HOLD_MAX, bank + Math.max(0, y1 - y0) * HOLD_RATE);
   place(changes(w, y0, y1), t, false);
 }
 /* one moment, played once: after a scrub or a jump */
@@ -175,12 +202,21 @@ function moment(w, y) {
   live = [];
   place(changes(w, y - w.timeStep, y), now(), true);
 }
+function mine(c) { return followed != null && (c.who || []).indexOf(followed) >= 0; }
 function place(list, t, isMoment) {
-  list.sort(function (a, b) { return b.prio - a.prio; });
+  /* a followed realm's changes first, then by priority */
+  list.sort(function (a, b) { return (mine(b) ? 1 : 0) - (mine(a) ? 1 : 0) || b.prio - a.prio; });
   let room = isMoment ? MOMENT : Math.min(Math.floor(tokens), MAX_LIVE - majors());
   for (const c of list) {
     if (c.fx.kind === "flash") { start(c, t); continue; }
-    if (room > 0) { start(c, t); room--; if (!isMoment) tokens--; }
+    if (room > 0 || mine(c)) {
+      start(c, t); room--; if (!isMoment) tokens--;
+      if (!isMoment && pace !== "off" && (c.prio >= MAJOR || mine(c))) {
+        const secs = (c.fx.dur + (c.fx.delay || 0)) / 1000;
+        if (mine(c) || pace === "all") c.fx.hold = true;
+        else if (bank >= secs) { c.fx.hold = true; bank -= secs; }
+      }
+    }
     else if (c.alt) start({ fx: c.alt }, t);
   }
 }
@@ -312,7 +348,7 @@ function sailings(w, y0, y1, out) {
       const sail = sailTime(lane);
       if (kind === "colony") {
         wait[target] = sail;
-        out.push({ prio: 6, fx: { kind: kind, dur: sail + 1500, fleets: [{ path: lane, color: p.color, n: 1, segs: [[0, sail, 0, 1]] }], sail: sail, at: target } });
+        out.push({ prio: 6, who: [p.id], fx: { kind: kind, dur: sail + 1500, fleets: [{ path: lane, color: p.color, n: 1, segs: [[0, sail, 0, 1]] }], sail: sail, at: target } });
         continue;
       }
       if (kind === "invade") {
@@ -320,7 +356,7 @@ function sailings(w, y0, y1, out) {
            inland and the land change (the scuffle, the flicker) follows */
         const second = sail * 0.6, landed2 = second + sail, inland = landed2 + 200;
         wait[target] = inland + INLAND;
-        out.push({ prio: 6, fx: { kind: kind, dur: inland + INLAND + 600, sail: sail, landed2: landed2, inland: inland, at: target, fleets: [
+        out.push({ prio: 6, who: [p.id, pol[1] && pol[1].id], fx: { kind: kind, dur: inland + INLAND + 600, sail: sail, landed2: landed2, inland: inland, at: target, fleets: [
           { path: lane, color: p.color, n: 3, segs: [[0, sail, 0, 1]] },
           { path: lane, color: p.color, n: 2, off: 14, segs: [[second, landed2, 0, 1]] }] } });
         continue;
@@ -333,11 +369,11 @@ function sailings(w, y0, y1, out) {
       const loser = rep ? 0 : hash(k, 5) < 0.5 ? 0 : 1;
       if (alane && dlane && alane.length > 4 && dlane.length > 4) {
         const sa = Math.max(0.3, (alane.length - 4) / (alane.length - 1)), sd = Math.max(0.3, (dlane.length - 4) / (dlane.length - 1));
-        out.push({ prio: 6, fx: { kind: "battle", dur: 6000, loser: loser, fleets: [
+        out.push({ prio: 6, who: [p.id, q.id], fx: { kind: "battle", dur: 6000, loser: loser, fleets: [
           { path: alane, color: p.color, n: 3, segs: [[0, 2000, 0, sa], [3900, 5800, sa, loser === 0 ? 0 : sa]] },
           { path: dlane, color: q.color, n: 2, segs: [[0, 2000, 0, sd], [3900, 5800, sd, loser === 1 ? 0 : sd]] }] } });
       } else {
-        out.push({ prio: 5, fx: { kind: "raid", dur: 5800, at: target, fleets: [{ path: lane, color: p.color, n: 3, segs: [[0, 2400, 0, 1], [3900, 5800, 1, 0]] }] } });
+        out.push({ prio: 5, who: [p.id, q && q.id], fx: { kind: "raid", dur: 5800, at: target, fleets: [{ path: lane, color: p.color, n: 3, segs: [[0, 2400, 0, 1], [3900, 5800, 1, 0]] }] } });
       }
     }
   }
@@ -722,6 +758,6 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
+AEON.mapfx = { collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
 
 })();

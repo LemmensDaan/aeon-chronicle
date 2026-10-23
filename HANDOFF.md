@@ -139,6 +139,24 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   treaty in force with its last three memories (fixed the old broken links there). Results: wars
   still long (historical median 90-95 years; fantasy 380-440, as before: fantasy wars only end by
   a peace event) — step 2 is what shortens them. Fantasy ends with 10-20 realms (seeds 3, 42, 7).
+- **Night of 2026-10-23 (Daan asleep):** he asked for: animations on the history clock, then the
+  rest of diplomacy, then economy and technology, choosing defaults himself where needed and
+  writing the questions down in `QUESTIONS.md` for him to answer. Wars should last at most about
+  10 years, skirmishes far shorter, the long timescale kept: 5-year ticks with dated events
+  inside them; only major events and a followed realm slow playback.
+- **Animations on the history clock (2026-10-23, view only, histories unchanged):** mapfx.js keeps
+  its own clock (`advance(ms)`), moved on by ui.js `loop()` while playing and by `runFx()` while a
+  jumped-to moment plays; pausing freezes every animation mid-step (`fxFrozen`). Great moments
+  hold the year still while they play (`holding()`): changes with prio >= 5 (MAJOR: big takes,
+  splits, capital moves, sea events, a city burning) or of the followed realm; pace setting
+  "Never slow" / "Slow sometimes" (bank: 0.02 s per year, max 8 s) / "Slow for all major". Follow:
+  "Follow it on the map" on a realm's page (shell.js), a chip in the transport bar,
+  `AEON.follow(pid)`; its changes always get an animation and always hold. ‹ › jump to the
+  previous / next year with a chronicle entry of importance 4+ (or 2+ of the followed realm).
+  Simulated at 50 yr/s (historical 7): never 90 s, sometimes 147 s, all 202 s; fantasy 64 / 103 /
+  104 s. Headless Edge does not run requestAnimationFrame under virtual time, so playback was
+  checked by simulating the ui.js loop in node (scratch pace.js), not in a browser; the built-in
+  browser pane refused localhost and file:// while Daan was away.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

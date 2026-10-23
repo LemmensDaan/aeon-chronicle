@@ -55,6 +55,13 @@ function render() {
     gb.type = "button";
     gb.addEventListener("click", function () { go({ v: "graph", focus: { kind: en.kind, id: en.id } }); });
     gt.appendChild(gb);
+    /* a realm can be followed on the map: its changes always play and slow history down (ui.js) */
+    if (en.kind === "polity" && AEON.follow) {
+      var on = AEON.following && AEON.following() === en.id, fb = h("button", "ch-btn", on ? "Stop following it on the map" : "Follow it on the map");
+      fb.type = "button";
+      fb.addEventListener("click", function () { AEON.follow(on ? null : en.id); render(); });
+      gt.appendChild(fb);
+    }
     pg.insertBefore(gt, pg.firstChild.nextSibling);
   }
   S.pane.appendChild(pg);

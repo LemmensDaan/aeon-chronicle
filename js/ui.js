@@ -34,6 +34,10 @@ let playing = false;
 let playSpeed = 50;
 const SPEEDS = [10, 25, 50, 100, 300, 1200];
 let playLast = 0, playOwed = 0;
+/* the map animations stand still while playback is paused (mapfx.js keeps their clock) */
+let fxFrozen = false;
+/* how often great moments slow history down (mapfx.js setPace), and the realm being followed */
+let pace = "some", followed = null;
 let rafId = 0;
 let mapMode = "political";
 let view = { zoom: 1, panX: 0, panY: 0 };
@@ -222,18 +226,61 @@ function setPlaybackYear(y, how) {
   if (how !== "play") runFx();
 }
 
-/* while animations are playing and playback is not, redraw every frame until they end */
+/* a moment jumped to while playback is not running plays out: its animations move on and are
+   redrawn every frame until they end, unless playback is paused again */
 let fxRaf = 0;
 function runFx() {
   if (fxRaf || playing || !AEON.mapfx) return;
-  const step = function () {
+  fxFrozen = false;
+  let last = 0;
+  const step = function (t) {
     fxRaf = 0;
-    if (playing) return;
+    if (playing || fxFrozen) return;
+    AEON.mapfx.advance(last ? t - last : 16);
+    last = t;
     drawMap();
     if (AEON.mapfx.live()) fxRaf = requestAnimationFrame(step);
   };
   if (AEON.mapfx.live()) fxRaf = requestAnimationFrame(step);
 }
+
+/* Great moments: the years of the chronicle's major events (importance 4 and up), and every
+   event of a followed realm, for the previous / next buttons */
+function momentYears() {
+  const ys = {};
+  for (const e of world.chronicle) {
+    if (e.importance >= 4) ys[e.year] = true;
+    else if (followed && e.importance >= 2 && e.actors.some(function (a) { return a.kind === "polity" && a.id === followed; })) ys[e.year] = true;
+  }
+  return Object.keys(ys).map(Number).sort(function (a, b) { return a - b; });
+}
+function jumpMoment(dir) {
+  const ys = momentYears();
+  let y = null;
+  if (dir > 0) { for (const v of ys) if (v > playbackYear) { y = v; break; } }
+  else for (let i = ys.length - 1; i >= 0; i--) if (ys[i] < playbackYear) { y = ys[i]; break; }
+  if (y == null) return;
+  playing = false; dom.playBtn.textContent = "▶";
+  setPlaybackYear(y);
+}
+/* follow a realm (null: none): its changes always get their animation and slow history down */
+function followRealm(pid) {
+  followed = pid && world.polities[pid] ? pid : null;
+  if (AEON.mapfx) AEON.mapfx.follow(followed);
+  if (dom.follow) {
+    dom.follow.replaceChildren();
+    dom.follow.classList.toggle("hidden", !followed);
+    if (followed) {
+      const p = world.polities[followed], sw = el("i", { class: "ae-tip-swatch" });
+      sw.style.background = p.color;
+      dom.follow.appendChild(sw);
+      dom.follow.appendChild(el("span", { text: "Following " + p.name }));
+      dom.follow.appendChild(el("button", { class: "ae-follow-x", text: "✕", title: "Stop following", onclick: function () { followRealm(null); } }));
+    }
+  }
+}
+AEON.follow = followRealm;
+AEON.following = function () { return followed; };
 
 /* the statistics sheet, laid over the map */
 function toggleStats(force) {
@@ -256,15 +303,19 @@ function toggleStats(force) {
 function togglePlay() {
   playing = !playing;
   dom.playBtn.textContent = playing ? "⏸" : "▶";
-  if (playing) { playLast = 0; playOwed = 0; loop(); } else { drawMap(); runFx(); }
+  fxFrozen = !playing;
+  if (playing) { playLast = 0; playOwed = 0; loop(); } else drawMap();
 }
 
 function loop(now) {
   if (!playing) return;
   now = now || performance.now();
-  /* years owed since the last frame, at most a quarter second's worth after a stall */
-  playOwed += Math.min(0.25, playLast ? (now - playLast) / 1000 : 0) * playSpeed;
+  const dt = playLast ? now - playLast : 0;
   playLast = now;
+  /* the animations move on with the frame; the years owed since the last frame (at most a
+     quarter second's worth after a stall) only while no great moment holds the year still */
+  if (AEON.mapfx) AEON.mapfx.advance(dt);
+  if (!(AEON.mapfx && AEON.mapfx.holding())) playOwed += Math.min(0.25, dt / 1000) * playSpeed;
   const ticks = Math.floor(playOwed / world.timeStep);
   if (ticks > 0) {
     playOwed -= ticks * world.timeStep;
@@ -388,11 +439,23 @@ function buildApp() {
     if (v === playSpeed) o.selected = true;
     speedSel.appendChild(o);
   });
+  /* how often history slows down so a great moment can play out */
+  const paceSel = el("select", { class: "ae-select", title: "Slow down for great moments",
+    onchange: function (e) { pace = e.target.value; if (AEON.mapfx) AEON.mapfx.setPace(pace); } });
+  [["off", "Never slow"], ["some", "Slow sometimes"], ["all", "Slow for all major"]].forEach(function (v) {
+    const o = el("option", { value: v[0], text: v[1] });
+    if (v[0] === pace) o.selected = true;
+    paceSel.appendChild(o);
+  });
+  if (AEON.mapfx) AEON.mapfx.setPace(pace);
+  dom.follow = el("div", { class: "ae-follow hidden" });
 
   dom.status = el("div", { class: "ae-status" });
 
   const transport = el("div", { class: "ae-transport" },
-    dom.playBtn, dom.scrub, speedSel,
+    dom.playBtn, dom.scrub, dom.follow, speedSel, paceSel,
+    el("button", { class: "ae-btn", text: "‹", title: "Previous great moment", onclick: function () { jumpMoment(-1); } }),
+    el("button", { class: "ae-btn", text: "›", title: "Next great moment", onclick: function () { jumpMoment(1); } }),
     el("button", { class: "ae-btn", text: "⏮", title: "Back to the beginning",
       onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(world.startYear); } }),
     el("button", { class: "ae-btn", text: "⏭", title: "Jump to the end",

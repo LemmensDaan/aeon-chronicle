@@ -166,6 +166,8 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
   border-top: 1px solid var(--ae-border); background: var(--ae-panel);
 }
 .ae-scrub { flex: 1; accent-color: var(--ae-accent); }
+.ae-follow { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.ae-follow-x { border: 0; background: none; cursor: pointer; font-size: 12px; padding: 2px 4px; color: inherit; }
 .ae-select {
   padding: 7px 9px; background: var(--ae-panel2); border: 1px solid var(--ae-border);
   border-radius: 7px; cursor: pointer; font-size: 12px;

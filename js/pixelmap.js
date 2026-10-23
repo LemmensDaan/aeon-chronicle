@@ -558,12 +558,14 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
      on top of another marker, so where capitals crowd together only the greater ones show */
   sites.sort(function (a, b) { return b.rank - a.rank || a.r.id - b.r.id; });
   for (const st of sites) {
-    const sp = st.cap ? PALACE : st.tier >= 3 ? CITY : st.tier === 2 ? TOWN : VILLAGE;
+    /* a breakaway's new seat stays the town it was until mapfx.js has crowned it */
+    const town = st.cap && AEON.mapfx && AEON.mapfx.asTown(st.r.id), tier = town ? (st.r.settlement ? st.r.settlement.tier : 2) : st.tier;
+    const sp = st.cap && !town ? PALACE : tier >= 3 ? CITY : tier === 2 ? TOWN : VILLAGE;
     const x = Math.round(sx(st.r.x + 0.5) - sp.w * u / 2), y = Math.round(sy(st.r.y + 0.5) - sp.h * u / 2);
     const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
     if (!free(b)) continue;
     boxes.push(b);
-    const banner = st.cap ? { f: st.cap.color, F: darker(st.cap.color) } : null;
+    const banner = st.cap && !town ? { f: st.cap.color, F: darker(st.cap.color) } : null;
     drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, banner); });
   }
 

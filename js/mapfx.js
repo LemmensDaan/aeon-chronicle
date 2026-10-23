@@ -41,11 +41,13 @@ const LAURELS = NUMERAL.map(function (N) {
 });
 
 /* how long each kind plays, in milliseconds */
-const DUR = { flash: 600, take: 1300, split: 1500, lost: 1100, crown: 1500, age: 2000, rise: 1900, fall: 2600, burn: 2800 };
+const DUR = { flash: 600, take: 1300, split: 2600, lost: 1100, crown: 1500, age: 2000, rise: 1900, fall: 2600, burn: 2800 };
 /* a take by force: the war band marches for MARCH ms, the scuffle lasts a second, then the land
    flickers and settles (ms from the start, set per animation in changes()) */
 const MARCH = 900;
 /* the sea events of both packs, by type */
+/* how long the invaders march inland from their beachhead, in ms */
+const INLAND = 900;
 const SEA = { "overseas-invasion": "invade", "sea-crossing": "invade", "overseas-colony": "colony", "far-shore-settled": "colony", "naval-raid": "raid" };
 /* at most this many animations besides flashes at once, and new ones come at about RATE a
    second (a scrub or a jump may start up to MOMENT at once) */
@@ -106,7 +108,7 @@ function changes(w, y0, y1) {
       }
       const m = origin != null ? MARCH : 0;
       out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), alt: flash, fx: { kind: "take", cells: g.cells, from: g.from, to: g.to, at: at, origin: origin, delay: delay,
-        march: m, dur: m + 2700, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color } });
+        march: m, dur: m + 3300, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color } });
     }
   }
   for (const id in P) {
@@ -293,9 +295,19 @@ function sailings(w, y0, y1, out) {
       const ports = portsFor(w, view, p.id, target, skip), lane = laneFrom(c, ports, target, null);
       if (!lane) continue;
       const sail = sailTime(lane);
-      if (kind !== "raid") {
+      if (kind === "colony") {
         wait[target] = sail;
-        out.push({ prio: 6, fx: { kind: kind, dur: sail + 1500, fleets: [{ path: lane, color: p.color, n: kind === "invade" ? 3 : 1, segs: [[0, sail, 0, 1]] }], sail: sail, at: target } });
+        out.push({ prio: 6, fx: { kind: kind, dur: sail + 1500, fleets: [{ path: lane, color: p.color, n: 1, segs: [[0, sail, 0, 1]] }], sail: sail, at: target } });
+        continue;
+      }
+      if (kind === "invade") {
+        /* the first wave lands and pitches a camp; the second lands behind it; then the men march
+           inland and the land change (the scuffle, the flicker) follows */
+        const second = sail * 0.6, landed2 = second + sail, inland = landed2 + 200;
+        wait[target] = inland + INLAND;
+        out.push({ prio: 6, fx: { kind: kind, dur: inland + INLAND + 600, sail: sail, landed2: landed2, inland: inland, at: target, fleets: [
+          { path: lane, color: p.color, n: 3, segs: [[0, sail, 0, 1]] },
+          { path: lane, color: p.color, n: 2, off: 14, segs: [[second, landed2, 0, 1]] }] } });
         continue;
       }
       /* a raid: the defenders sail out from their nearest port, and the fleets meet in open water
@@ -330,6 +342,13 @@ function contested() {
     for (const rid of f.cells) (out || (out = {}))[rid] = { from: f.from, to: f.to, phase: phase };
   }
   return out;
+}
+/* a breakaway realm's new seat is drawn as the town it was until the crown comes down on it */
+const CROWNED = 0.6;
+function asTown(rid) {
+  const t = now();
+  for (const f of live) if (f.kind === "split" && f.capital === rid && t >= f.start && t < f.start + f.dur * CROWNED) return true;
+  return false;
 }
 /* a wonder that is rising is drawn here, not by the map */
 function hides(id) { for (const f of live) if (f.kind === "rise" && f.id === id) return true; return false; }
@@ -428,10 +447,35 @@ function settle(g, env, f) {
   paint(g, env, f.cells, "rgba(" + LIGHT + "," + (0.42 * (1 - b)).toFixed(3) + ")", null);
 }
 
+/* the ink tear along a breakaway's border with the realm it leaves, jumping about a pixel */
+function tear(g, env, f) {
+  const c = env.c, VW = c.VW, P = env.P, view = env.world.regions;
+  if (!f.tearPx) {
+    const mine = {};
+    for (const rid of f.cells) mine[rid] = true;
+    f.tearPx = [];
+    for (const rid of f.cells) for (const i of regionPixels(c, rid)) {
+      const x = i % VW, y = (i - x) / VW;
+      if (y & 1) continue;
+      for (const j of [y * VW + (x + 1) % VW, y * VW + (x + VW - 1) % VW, i - VW, i + VW]) {
+        if (j < 0 || j >= c.cellOf.length || !c.land[j]) continue;
+        const n = c.cellOf[j];
+        if (!mine[n] && view[n].owner === f.from) { f.tearPx.push(i); break; }
+      }
+    }
+  }
+  const k = Math.floor((env.now - f.start) / 120);
+  g.fillStyle = INK;
+  for (const i of f.tearPx) {
+    const x = i % VW, y = (i - x) / VW;
+    g.fillRect(env.X0 + (x + (hash(y, k) > 0.5 ? 1 : 0)) * P, env.Y0 + y * P, P, 2 * P);
+  }
+}
 function drawUnder(g, env, f, a) {
   if (env.mode !== "political") return;
   if (f.kind === "flash") paint(g, env, f.cells, "rgba(" + LIGHT + "," + (0.45 * (1 - a)).toFixed(3) + ")", null);
   else if (f.kind === "take" || f.kind === "split") settle(g, env, f);
+  if (f.kind === "split" && env.now - f.start < f.flick[1]) tear(g, env, f);
 }
 
 const SHIP = sprite(["....k....", "...kfk...", "..kfffk..", "..kfffk..", "...kfk...", "....k....", "kbbbbbbbk", ".kbbbbbk."], { k: INK, f: "#888", b: "#7a4a22" });
@@ -448,6 +492,8 @@ function band(g, env, x, y, n, color, dir, t, walking, banner) {
   g.restore();
 }
 const FLAG = sprite(["kff", "kff", "k..", "k..", "k.."], { k: INK, f: "#888" });
+/* the camp a landing party pitches at the water's edge: a standard and two tents */
+const CAMP = sprite(["kff.......", "kf....k...", "k....kck..", "k...kccdk.", "k..kcccddk", "kkkkkkkkkk"], { k: INK, f: "#888", c: "#ddd0aa", d: "#9a8a64" });
 const FOAM = "#a6dbff";
 /* where a fleet is along its lane at a time: [fraction, moving, direction] */
 function fleetAt(fl, t) {
@@ -463,7 +509,7 @@ function fleetAt(fl, t) {
 function shipsOf(env, fl, t) {
   const at = fleetAt(fl, t), n = fl.path.length - 1, out = [];
   for (let k = 0; k < fl.n; k++) {
-    const i = Math.max(0, Math.min(n, Math.round(at[0] * n - k * 5 * at[2])));
+    const i = Math.max(0, Math.min(n, Math.round(at[0] * n - (k * 5 + (fl.off || 0)) * at[2])));
     const p = fl.path[i], mx = ((p[0] % env.c.VW) + env.c.VW) % env.c.VW;
     out.push({ i: i, x: env.X0 + mx * env.P, y: env.Y0 + p[1] * env.P, moving: at[1], dir: at[2], k: k });
   }
@@ -507,12 +553,21 @@ function drawOver(g, env, f, a) {
     } else if (t < f.march + 1000) {
       frameAt(g, env, meet[0], meet[1] - 3 * u, function () { brawl(g, t, 6); });
     }
+    /* once it settles, the victor's flag goes up on the land */
+    if (t >= f.flick[1]) frameAt(g, env, B[0], B[1], function () {
+      blit(g, FLAG, 0, -5 - Math.round(3 * ease((t - f.flick[1]) / 300)), 1, { f: f.colTo || "#888" });
+      twinkle(g, 1, -9, (t - f.flick[1] - 200) / 700);
+    });
   } else if (f.kind === "split" && f.capital != null) {
-    /* the crown comes down on the new realm's seat */
-    const p = centre(f.capital), top = -Math.ceil(S.PALACE.h / 2) - CROWN.h;
+    /* the crown comes down on the new realm's seat (drawn as a town until it lands, see asTown),
+       which then shows its flag in a bubble */
+    const p = centre(f.capital), top = -Math.ceil(S.PALACE.h / 2) - CROWN.h, nc = env.world.polities[f.to];
     frameAt(g, env, p[0], p[1], function () {
-      if (a > 0.35 && a < 0.75) blit(g, CROWN, -2, Math.round(lerp(top - 14, top, ease((a - 0.35) / 0.4))), 1);
-      twinkle(g, 0, top, (a - 0.75) / 0.25);
+      if (a > 0.35 && a < CROWNED) blit(g, CROWN, -2, Math.round(lerp(top - 14, top, ease((a - 0.35) / (CROWNED - 0.35)))), 1);
+      twinkle(g, 0, top, (a - CROWNED) / 0.2);
+      if (a > CROWNED + 0.05) bubble(g, 0, -Math.ceil(S.PALACE.h / 2) - 1, INK, t - (CROWNED + 0.05) * f.dur, 9, 9, function (l, tp) {
+        blit(g, FLAG, l + 3, tp + 2, 1, { f: (nc && nc.color) || "#888" });
+      });
     });
   } else if (f.kind === "crown") {
     const A = centre(f.from), B = centre(f.to), p = ease(a / 0.85);
@@ -607,6 +662,23 @@ function drawSea(g, env, f, a, t) {
       if (f.kind === "invade") env.blit(g, SOLDIER, -7, -7, 1, { f: f.fleets[0].color || "#888" });
     });
   }
+  if (f.kind === "invade") {
+    const L = f.fleets[0].path, E = L[L.length - 1], S0 = L[Math.max(0, L.length - 7)], col = f.fleets[0].color || "#888";
+    const ex = env.X0 + (((E[0] % env.c.VW) + env.c.VW) % env.c.VW) * env.P, ey = env.Y0 + E[1] * env.P;
+    /* the camp on the beachhead, from the first landing to the end */
+    if (t > f.sail + 400) frameAt(g, env, ex, ey, function () { env.blit(g, CAMP, -5, -6, 1, { f: col }); twinkle(g, -4, -8, (t - f.sail - 400) / 700); });
+    /* the second wave steps off, then the band marches inland */
+    if (t > f.landed2 && t < f.inland) {
+      const sh = shipsOf(env, f.fleets[1], t)[0];
+      frameAt(g, env, lerp(sh.x, ex, ease((t - f.landed2) / 200)), lerp(sh.y, ey, ease((t - f.landed2) / 200)), function () { env.blit(g, SOLDIER, -2, -8, 1, { f: col }); });
+    }
+    if (t >= f.inland && t < f.inland + INLAND) {
+      let dx = E[0] - S0[0], dy = E[1] - S0[1];
+      const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+      const q = ease((t - f.inland) / INLAND), d = (4 + 20 * q) * env.u;
+      band(g, env, ex + dx * d, ey + dy * d, 3, col, dx >= 0 ? 1 : -1, t, true, true);
+    }
+  }
   if (f.kind === "colony" && t > f.sail + 600) {
     const r = R[f.at];
     frameAt(g, env, env.sx(r.x + 0.5), env.sy(r.y + 0.5), function () {
@@ -634,6 +706,6 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, contested: contested, draw: draw };
+AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, asTown: asTown, contested: contested, draw: draw };
 
 })();

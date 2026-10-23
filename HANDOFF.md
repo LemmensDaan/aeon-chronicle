@@ -47,12 +47,24 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   scuffle on the border, then the flicker and the flash (mapfx.js `band()`, take timings MARCH +
   1000 + 700 ms). Most takes are a single region (fantasy: every border battle; historical: 58 of
   99), which is the engine, not the animation; Daan does not want bigger conquests yet.
-- **Next to think through with Daan (not started, engine, changes histories):** a military and a
-  naval strength per realm, from its kind, size, population, tech or age and perhaps its biomes;
-  battles and who ends up holding a region decided by strength plus chance; the band sizes in the
-  animation could then follow the two sides' strengths (fewer, equal or more defenders). A long
-  list of realm types through the ages, after historical kinds of states and empires. Conquerors
-  that plunder, ravage or raze instead of only taking control, and keeping a record of it.
+- **Military plan (agreed 2026-10-23), one step at a time:** (1) army and fleet per realm, logged
+  and shown — **done**; (2) battles by strength plus chance, the margin sets how much land changes
+  hands, both sides lose men, war-band sizes follow the strengths, same model at sea; (3) realm
+  types that change through the ages (by age + size + events: kingdom -> empire, collapse ->
+  successor/warlord states, coastal city-state with a fleet -> thalassocracy), one shared mechanic
+  with each pack's own names; (4) war aims conquer / plunder / raze, a sack record per region,
+  razing can empty land completely and leave ownerless ruins that can be resettled. Daan's picks:
+  real soldier and ship counts, evolving types, shared mechanics, razing can empty land. After
+  military: diplomacy, then technology and economy.
+- **Step 1, army and fleet (2026-10-23, histories unchanged, checked 4 seeds):** core.js
+  `musterForces()` sets `p.army` (men), `p.navy` (ships), `p.ports` at the end of each tick and logs
+  army/navy in `sizeHistory`; `AEON.forcesAt(p, year)`. Army = 1.2% of the people x archetype
+  `army` x temper (aggression) x readiness (stability, a ruler, pack `warWeariness`). Navy = hulls
+  of sea ports (tier, capital +2; 0.25 per open shore region) x 5 x wealth x tech x archetype `navy`.
+  Factors are in each pack's archetypes (steppe army 2 navy 0.1, maritime 0.6 / 3, etc.). Shown in
+  the statistics sheet (Armies, Fleets tabs), the realm page (Army, Fleet replace the 0-1
+  Military) and the map tooltip. Nothing in the history reads them yet; `p.military` still drives
+  the packs' wars.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

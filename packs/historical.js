@@ -2203,15 +2203,18 @@ AEON.registerPack({
     { id: "powder",    name: "The Age of Powder", short: "Powder",    at: 3400 },
   ],
 
+  /* 0..1: how worn down a realm is by its wars, for core.js musterForces */
+  warWeariness: function (w, p) { return w._hist ? (w._hist.fatigue[p.id] || 0) / 0.35 : 0; },
+
   archetypes: [
-    { id: "citystate",    name: "City-State League",   traitBias: { curiosity: 0.12, cunning: 0.1, stability: -0.05 }, blurb: "A cluster of walled towns, each jealous of the others and of the league that binds them." },
-    { id: "riverkingdom", name: "River Kingdom",       traitBias: { stability: 0.2, piety: 0.15, aggression: -0.1 }, blurb: "A flood-plain state ruled by whoever can predict the river and keep the granaries." },
-    { id: "steppe",       name: "Steppe Confederacy",  traitBias: { aggression: 0.25, stability: -0.15, curiosity: -0.1 }, blurb: "Herding clans who are very good at war and very bad at agreeing about the next one." },
-    { id: "maritime",     name: "Maritime Republic",   traitBias: { cunning: 0.2, curiosity: 0.1, aggression: -0.1 }, blurb: "Merchant houses, a magistrate elected for a year, and ships." },
-    { id: "theocracy",    name: "Theocracy",           traitBias: { piety: 0.3, curiosity: -0.05 }, blurb: "A realm governed by the keepers of the shrine, the calendar and the granary." },
-    { id: "hillclans",    name: "Hill Clans",          traitBias: { aggression: 0.1, stability: -0.1, cunning: 0.05 }, blurb: "Highland lineages held together by feud, hospitality and a common dislike of taxes." },
-    { id: "empire",       name: "Bureaucratic Empire", traitBias: { stability: 0.25, curiosity: 0.05, aggression: 0.1 }, blurb: "A realm of registers, roads and examinations, held together by paper and a standing army." },
-    { id: "successor",    name: "Successor State",     traitBias: { cunning: 0.15, stability: -0.05, aggression: 0.1 }, blurb: "The heirs, or claimed heirs, of an older order that no longer exists." },
+    { id: "citystate",    name: "City-State League",   army: 0.9, navy: 1.6, traitBias: { curiosity: 0.12, cunning: 0.1, stability: -0.05 }, blurb: "A cluster of walled towns, each jealous of the others and of the league that binds them." },
+    { id: "riverkingdom", name: "River Kingdom",       army: 1,   navy: 0.6, traitBias: { stability: 0.2, piety: 0.15, aggression: -0.1 }, blurb: "A flood-plain state ruled by whoever can predict the river and keep the granaries." },
+    { id: "steppe",       name: "Steppe Confederacy",  army: 2,   navy: 0.1, traitBias: { aggression: 0.25, stability: -0.15, curiosity: -0.1 }, blurb: "Herding clans who are very good at war and very bad at agreeing about the next one." },
+    { id: "maritime",     name: "Maritime Republic",   army: 0.6, navy: 3,   traitBias: { cunning: 0.2, curiosity: 0.1, aggression: -0.1 }, blurb: "Merchant houses, a magistrate elected for a year, and ships." },
+    { id: "theocracy",    name: "Theocracy",           army: 1,   navy: 0.8, traitBias: { piety: 0.3, curiosity: -0.05 }, blurb: "A realm governed by the keepers of the shrine, the calendar and the granary." },
+    { id: "hillclans",    name: "Hill Clans",          army: 1.4, navy: 0.3, traitBias: { aggression: 0.1, stability: -0.1, cunning: 0.05 }, blurb: "Highland lineages held together by feud, hospitality and a common dislike of taxes." },
+    { id: "empire",       name: "Bureaucratic Empire", army: 1.2, navy: 1,   traitBias: { stability: 0.25, curiosity: 0.05, aggression: 0.1 }, blurb: "A realm of registers, roads and examinations, held together by paper and a standing army." },
+    { id: "successor",    name: "Successor State",     army: 1.1, navy: 0.9, traitBias: { cunning: 0.15, stability: -0.05, aggression: 0.1 }, blurb: "The heirs, or claimed heirs, of an older order that no longer exists." },
   ],
 
   names: NAMES,

@@ -108,12 +108,14 @@ function pagePolity(id) {
   if (arch && arch.blurb) pg.appendChild(h("p", "ch-sub", arch.blurb));
   if (p.fate) pg.appendChild(h("blockquote", "ch-fate", p.fate));
   else if (p.ended == null) pg.appendChild(h("p", "ch-fate", "Its story is not yet finished."));
-  var st = h("div", "ch-stats");
+  var st = h("div", "ch-stats"), forces = AEON.forcesAt(p, w.year) || { army: p.army || 0, navy: p.navy || 0 };
   add(st, stat("Capital", p.capital != null && w.regions[p.capital] ? link("region", p.capital) : "none"),
     stat("Regions held", plural((p.regions || []).length, "region")), stat("Peak size", plural(peakSize(id), "region")),
     stat("Population", (p.population || 0).toLocaleString()), stat("Technology", pct(p.tech) + "%"),
     stat("Cities", (function () { var n = 0; (p.regions || []).forEach(function (rid) { var st = w.regions[rid].settlement; if (st && st.tier >= 3) n++; }); return n; })()),
-    stat("Wealth", Math.round(p.wealth || 0).toLocaleString()), stat("Military", Math.round((p.military || 0) * 100) / 100),
+    stat("Wealth", Math.round(p.wealth || 0).toLocaleString()),
+    stat("Army", forces.army.toLocaleString() + (forces.army === 1 ? " soldier" : " soldiers")),
+    stat("Fleet", forces.navy.toLocaleString() + (forces.navy === 1 ? " ship" : " ships")),
     stat("Prestige", Math.round((p.prestige || 0) * 100) / 100));
   var ages = (S.world.pack && S.world.pack.ages) || null;
   if (ages && p.ageLog && p.ageLog.length) st.appendChild(stat("Age", ages[p.age] ? ages[p.age].name : "unknown"));

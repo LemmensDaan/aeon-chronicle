@@ -1,7 +1,7 @@
 /* Aeon - the statistics sheet: how the world's people and land were shared out over time.
 
    A parchment sheet laid over the map. One 100%-stacked chart per measure (population,
-   territory): the eight greatest realms of the record as named bands, every other realm
+   territory, cities, wonders, armies, fleets): the eight greatest realms of the record as named bands, every other realm
    folded into one "Other realms" band at the bottom. Great battles are marked on the band
    of the realm that fought them. The chart follows the map's year (a red line) and setting
    the year is a click on the chart.
@@ -32,6 +32,8 @@ const MEASURES = [
   { id: "size", tab: "Territory", title: "Share of the world's land", unit: "provinces", key: "size" },
   { id: "cities", tab: "Cities", title: "Share of the world's cities", unit: "cities", one: "city", key: "cities" },
   { id: "wonders", tab: "Wonders", title: "Share of the world's wonders", unit: "wonders", one: "wonder", key: "wonders" },
+  { id: "army", tab: "Armies", title: "Share of the world's soldiers", unit: "soldiers", one: "soldier", key: "army" },
+  { id: "navy", tab: "Fleets", title: "Share of the world's ships", unit: "ships", one: "ship", key: "navy" },
 ];
 function units(m, n) { return fmt(n) + " " + (Math.round(n) === 1 && m.one ? m.one : m.unit); }
 
@@ -122,13 +124,14 @@ function buildData(world) {
   const per = {}, cities = cityCounts(world, y0, step, T), wonders = wonderReplay(world, y0, step, T);
   for (const p of pols) {
     const v = { pop: new Float64Array(T), size: new Float64Array(T), cities: cities[p.id] || new Float64Array(T),
-                wonders: wonders.counts[p.id] || new Float64Array(T) };
+                wonders: wonders.counts[p.id] || new Float64Array(T), army: new Float64Array(T), navy: new Float64Array(T) };
     for (let t = 0; t < T; t++) { series.cities.total[t] += v.cities[t]; series.wonders.total[t] += v.wonders[t]; }
     let popYears = 0;
     for (const s of p.sizeHistory) {
       const t = Math.round((s.year - y0) / step);
-      v.pop[t] = s.pop; v.size[t] = s.size;
+      v.pop[t] = s.pop; v.size[t] = s.size; v.army[t] = s.army || 0; v.navy[t] = s.navy || 0;
       series.pop.total[t] += s.pop; series.size.total[t] += s.size;
+      series.army.total[t] += v.army[t]; series.navy.total[t] += v.navy[t];
       popYears += s.pop;
     }
     per[p.id] = { p: p, v: v, weight: popYears };

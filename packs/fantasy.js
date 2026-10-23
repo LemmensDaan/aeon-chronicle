@@ -548,25 +548,25 @@ const ERAS = [
 ];
 
 const ARCHETYPES = [
-  { id: "theocracy", name: "God-Touched Theocracy", traitBias: { piety: 0.3, stability: 0.1, curiosity: -0.1 },
+  { id: "theocracy", name: "God-Touched Theocracy", army: 1, navy: 0.7, traitBias: { piety: 0.3, stability: 0.1, curiosity: -0.1 },
     blurb: "A realm ruled in the name of a god that sometimes answers." },
-  { id: "elven-remnant", name: "Elvish Remnant", traitBias: { curiosity: 0.2, stability: 0.15, aggression: -0.15, piety: 0.05 },
+  { id: "elven-remnant", name: "Elvish Remnant", army: 0.8, navy: 1.3, traitBias: { curiosity: 0.2, stability: 0.15, aggression: -0.15, piety: 0.05 },
     blurb: "The long-lived remains of a people who remember when the world was younger." },
-  { id: "dwarf-hold", name: "Dwarf-Hold", traitBias: { stability: 0.25, cunning: 0.05, curiosity: 0.1, aggression: -0.05 },
+  { id: "dwarf-hold", name: "Dwarf-Hold", army: 1.2, navy: 0.2, traitBias: { stability: 0.25, cunning: 0.05, curiosity: 0.1, aggression: -0.05 },
     blurb: "A kingdom under a mountain, run like a ledger and defended like a vow." },
-  { id: "mortal-kingdom", name: "Mortal Kingdom", traitBias: { aggression: 0.1, stability: 0.0 },
+  { id: "mortal-kingdom", name: "Mortal Kingdom", army: 1.1, navy: 1, traitBias: { aggression: 0.1, stability: 0.0 },
     blurb: "A hereditary crown, a standing levy, and a long memory for slights." },
-  { id: "necrocracy", name: "Necrocracy", traitBias: { cunning: 0.2, piety: -0.25, stability: 0.2, aggression: 0.05 },
+  { id: "necrocracy", name: "Necrocracy", army: 1.8, navy: 0.4, traitBias: { cunning: 0.2, piety: -0.25, stability: 0.2, aggression: 0.05 },
     blurb: "A court of the dead, governed by a ruler who declined to stop." },
-  { id: "druidic-circle", name: "Druidic Circle", traitBias: { piety: 0.2, curiosity: 0.05, aggression: -0.2, stability: 0.15 },
+  { id: "druidic-circle", name: "Druidic Circle", army: 0.7, navy: 0.3, traitBias: { piety: 0.2, curiosity: 0.05, aggression: -0.2, stability: 0.15 },
     blurb: "A moot of groves and stone circles, answering to seasons rather than kings." },
-  { id: "dragon-fief", name: "Dragon-Fief", traitBias: { aggression: 0.35, cunning: 0.2, curiosity: -0.2, stability: 0.1 },
+  { id: "dragon-fief", name: "Dragon-Fief", army: 1.3, navy: 0.3, traitBias: { aggression: 0.35, cunning: 0.2, curiosity: -0.2, stability: 0.1 },
     blurb: "A province held in fee by a wyrm, who collects the rent in kind." },
-  { id: "wizard-tyranny", name: "Wizard-Tyranny", traitBias: { curiosity: 0.35, cunning: 0.2, piety: -0.15, stability: -0.05 },
+  { id: "wizard-tyranny", name: "Wizard-Tyranny", army: 0.8, navy: 0.8, traitBias: { curiosity: 0.35, cunning: 0.2, piety: -0.15, stability: -0.05 },
     blurb: "A state of towers and licensed spellcraft, governed by the best-read." },
-  { id: "free-cities", name: "League of Free Cities", traitBias: { cunning: 0.15, curiosity: 0.1, aggression: -0.1, stability: 0.05 },
+  { id: "free-cities", name: "League of Free Cities", army: 0.8, navy: 1.8, traitBias: { cunning: 0.15, curiosity: 0.1, aggression: -0.1, stability: 0.05 },
     blurb: "Merchant-lords who vote on everything except the price of grain." },
-  { id: "hill-clans", name: "Hill-Clans", traitBias: { aggression: 0.25, stability: -0.1, cunning: 0.05 },
+  { id: "hill-clans", name: "Hill-Clans", army: 1.4, navy: 0.3, traitBias: { aggression: 0.25, stability: -0.1, cunning: 0.05 },
     blurb: "Kin-bands under a thane, bound by oath and the cattle-feud." }
 ];
 

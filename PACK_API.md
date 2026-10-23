@@ -224,14 +224,19 @@ eras: [
 
 ### 3.3 `archetypes`
 
-Starting flavours for polities. `traitBias` is added to a random base and clamped.
+Starting flavours for polities. `traitBias` is added to a random base and clamped. Optional
+`army` and `navy` (default 1) scale the realm's army (share of its people under arms) and fleet
+(hulls per sea port); see `p.army`, `p.navy` and `AEON.forcesAt(p, year)`.
 
 ```js
 archetypes: [
-  { id: "kingdom",  name: "Kingdom",  traitBias: { aggression: .1, stability: .2 },
+  { id: "kingdom",  name: "Kingdom",  army: 1.1, navy: 1, traitBias: { aggression: .1, stability: .2 },
     blurb: "A hereditary crown and a long memory." },
 ]
 ```
+
+Optional `warWeariness(world, p)` returns 0..1, how worn down a realm is by its wars; it lowers
+the army's readiness by up to 40%.
 
 ### 3.4 `names`
 

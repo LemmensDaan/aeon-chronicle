@@ -606,6 +606,8 @@ function fillTip(view, r) {
     if (live && owner.population) bits.unshift(owner.population.toLocaleString() + " people");
     bits.push((owner.archetypeName ? owner.archetypeName + ", " : "") + "since " + pack.yearLabel(owner.founded));
     tipEl.appendChild(el("div", { class: "dim", text: bits.join(" · ") }));
+    const forces = AEON.forcesAt(owner, year);
+    if (forces) tipEl.appendChild(el("div", { class: "dim", text: forces.army.toLocaleString() + " soldiers · " + forces.navy.toLocaleString() + (forces.navy === 1 ? " ship" : " ships") }));
     const age = AEON.ageAt ? AEON.ageAt(world, owner.id, year) : null;
     if (age && age.age) tipEl.appendChild(el("div", { class: "dim", text: age.age.name }));
     tipEl.appendChild(el("div", { class: "ae-tip-rule" }));

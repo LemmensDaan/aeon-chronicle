@@ -783,6 +783,47 @@ AEON.populationAt = function (p, year) {
   return h[lo].pop;
 };
 
+/* Armed strength in men and ships, mustered at the end of every tick and logged with the size
+   history. Army: a share of the people under arms (the realm's kind and temper set how many),
+   times readiness (stability, a ruler on the throne, war-weariness from the pack). Navy: the
+   realm's sea ports, the bigger the town the more hulls (a few boats along open shore too), times wealth, learning and its kind.
+   Kinds carry `army` and `navy` factors in the pack's archetypes (default 1). Nothing in the
+   history reads these yet. */
+function archetypeOf(world, p) {
+  const list = world.pack.archetypes || [];
+  for (const a of list) if (a.id === p.archetypeId) return a;
+  return null;
+}
+function onSea(world, r) {
+  for (const n of r.neighbors || []) { const q = world.regions[n]; if (q && q.barren && !q.lake) return true; }
+  return false;
+}
+function roundForce(n) { return n >= 1000 ? Math.round(n / 100) * 100 : n >= 100 ? Math.round(n / 10) * 10 : Math.round(n); }
+function musterForces(world, p) {
+  const a = archetypeOf(world, p) || {}, t = p.traits;
+  const weary = world.pack.warWeariness ? clamp(world.pack.warWeariness(world, p) || 0, 0, 1) : 0;
+  const readiness = (0.6 + t.stability * 0.5) * (p.ruler ? 1 : 0.85) * (1 - weary * 0.4);
+  const share = 0.012 * (a.army == null ? 1 : a.army) * (0.7 + t.aggression * 0.6);
+  p.army = roundForce(p.population * share * readiness);
+  let hulls = 0, ports = 0;
+  for (const id of p.regions) {
+    const r = world.regions[id];
+    if (!r || !onSea(world, r)) continue;
+    if (r.settlement) { ports++; hulls += Math.min(4, r.settlement.tier) + (id === p.capital ? 2 : 0); }
+    else hulls += 0.25;                                  /* fishing boats along an open shore */
+  }
+  p.ports = ports;
+  p.navy = Math.round(hulls * 5 * (0.4 + p.wealth) * (0.5 + p.tech) * (a.navy == null ? 1 : a.navy));
+}
+/* a polity's army and fleet in a year, from its size history (null before it was founded) */
+AEON.forcesAt = function (p, year) {
+  const h = p.sizeHistory;
+  if (!h || !h.length || year < h[0].year) return null;
+  let lo = 0, hi = h.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (h[mid].year <= year) lo = mid; else hi = mid - 1; }
+  return { army: h[lo].army || 0, navy: h[lo].navy || 0 };
+};
+
 function baselineTick(world) {
   const rng = world.rng;
   const alive = living(world);
@@ -855,7 +896,9 @@ function baselineTick(world) {
   /* record territory size occasionally for sparklines */
   if (world.chronicle.length % 1 === 0) {
     for (const p of alive) {
-      if (!p.ended) p.sizeHistory.push({ year: world.year, size: p.regions.length, pop: p.population });
+      if (p.ended) continue;
+      musterForces(world, p);
+      p.sizeHistory.push({ year: world.year, size: p.regions.length, pop: p.population, army: p.army, navy: p.navy });
     }
   }
 }

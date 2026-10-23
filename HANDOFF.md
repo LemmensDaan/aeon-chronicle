@@ -172,6 +172,21 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   border province ceded or a 30-year tithe; the throttle never drops an engine-ended war. Results:
   wars last 0.3-10 years (median 6-7); historical ends with 10-11 realms, fantasy 10-18.
   Generation got slower: historical seed 7 about 9.5 s headless (was about 6).
+- **Diplomacy step 3, alliances and coalitions (2026-10-24, changes every history):** core.js
+  `callToArms()` (from AEON.treaty when a war that is not itself `joined` begins): each ally of the
+  attacked joins (`joinWar`, through pack.joinWar so the pack keeps its own war records; a war
+  `joined` with `leader` that ends when the leader's war does) if keen (likes the attacked
+  better than the attacker by 0.2, aggression helps, a truce with the attacker -0.3) or sworn
+  against the attacker (coalition / against); else it refuses (remembered, the alliance breaks
+  half the time). `allianceTick()` each tick: estranged alliances lapse (relation < -0.2); a
+  threatened realm (stronger hostile neighbour) may ally with a friendly neighbour (8% a tick,
+  40-80 years, `against`); a coalition against a realm 4x the median and 2x the next (25% a tick,
+  once a century per giant, up to 5 neighbours, pacts of 30 years, the strongest leads the war,
+  the rest join it). Coalition wars give their attackers an extra consolidate turn each tick (up
+  to 5). A war between allies betrays the alliance (remembered -0.5, event). ctx.rivals() leaves
+  out allies and truce partners. Events: call-to-arms, call-refused, alliance, coalition,
+  alliance-betrayed. Results: historical 4-8 calls answered, 7-18 coalitions a history, but a
+  2,000-3,000-region empire still forms in most historical seeds (QUESTIONS.md 8).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

@@ -279,9 +279,9 @@ function makeCtx(world, subject) {
       const hostile = living(world).filter(function (o) {
         return o !== p && (p.relations[o.id] || 0) < -0.2;
       });
-      /* a realm under truce is no rival until it lapses */
+      /* a realm under truce or in alliance is no rival while that holds */
       const all = n.concat(hostile.filter(function (h) { return n.indexOf(h) < 0; }));
-      return all.filter(function (o) { return !AEON.treatyBetween(world, p, o, "truce"); });
+      return all.filter(function (o) { return !AEON.treatyBetween(world, p, o, "truce") && !AEON.treatyBetween(world, p, o, "alliance"); });
     },
 
     actor: function (obj) {
@@ -957,16 +957,19 @@ const DRIFT_HALF = 60;
 function pairKey(a, b) { return a < b ? a + "|" + b : b + "|" + a; }
 AEON.treaty = function (world, kind, a, b, extra) {
   world._ids.treaty = (world._ids.treaty || 0) + 1;
-  /* a war declared during a truce breaks it */
+  /* a war declared during a truce breaks it; one between allies betrays the alliance */
   if (kind === "war") {
     const truce = AEON.treatyBetween(world, a, b, "truce");
     if (truce) { AEON.endTreaty(world, truce, "broken"); AEON.remember(world, b, a, -0.3, "broke the truce of " + truce.start); }
+    const pact = AEON.treatyBetween(world, a, b, "alliance");
+    if (pact) { AEON.endTreaty(world, pact, "betrayed"); AEON.remember(world, b, a, -0.5, "betrayed their alliance"); betrayalNote(world, a, b); }
   }
   const t = { id: "t" + world._ids.treaty, kind: kind, a: a.id, b: b.id, start: world.year, end: null, ended: null, ev: world.chronicle.length };
   if (extra) for (const k in extra) t[k] = extra[k];
   (world.treaties || (world.treaties = [])).push(t);
   const ix = openIndex(world), k = pairKey(t.a, t.b);
   ix[k + "|" + kind] = t; ix[k + "|*"] = t;
+  if (kind === "war" && !t.joined) callToArms(world, t, a, b);
   return t;
 };
 AEON.endTreaty = function (world, t, how) {
@@ -1054,7 +1057,8 @@ function warClock(world) {
     const a = world.polities[t.a], b = world.polities[t.b];
     if (!a || !b || a.ended || b.ended) { AEON.endTreaty(world, t, "fall"); continue; }
     const years = world.year - (t.startDate != null ? t.startDate : t.start), sc = AEON.warScore(world, t);
-    const chance = years >= 8 ? 1 : 0.3 + 0.6 * Math.abs(sc) + (years >= 4 ? 0.35 : 0);
+    const lead = t.leader && (world.treaties || []).filter(function (x) { return x.id === t.leader; })[0];
+    const chance = years >= 8 || (lead && lead.end != null) ? 1 : 0.3 + 0.6 * Math.abs(sc) + (years >= 4 ? 0.35 : 0);
     if (!rng.chance(chance)) continue;
     concludePeace(world, t, sc);
   }
@@ -1105,6 +1109,115 @@ function dateTick(world, from) {
       if (t.kind === "war" && t.years == null) t.years = Math.min(10, Math.round((t.endDate - t.startDate) * 10) / 10);
     }
   }
+}
+
+/* ---- alliances, calls to arms, coalitions ----
+   Allies are bound to defend each other: when a realm is attacked, each of its allies is called to
+   arms and joins (a war of its own against the attacker, `joined` and led by the first, ending
+   when that one does) if it likes the attacked better than the attacker and is not bound to the
+   attacker too; refusing is remembered and may break the alliance. A threatened realm (a stronger,
+   hostile neighbour) seeks an ally among friendly neighbours. A realm grown far beyond all others
+   (four times the median realm and twice the next) draws a coalition of its uneasy neighbours,
+   who ally and go to war against it together, at most once a century. An alliance whose two sides
+   have come to dislike each other lapses. A pack joins a realm to a war with
+   pack.joinWar(ctx, ally, enemy, extra), so its own war records are kept (default: a war treaty). */
+function alliesOf(world, p) {
+  const out = [];
+  for (const t of world.treaties || []) {
+    if (t.end != null || t.kind !== "alliance" || (t.a !== p.id && t.b !== p.id)) continue;
+    const o = world.polities[t.a === p.id ? t.b : t.a];
+    if (o && !o.ended && out.indexOf(o) < 0) out.push(o);
+  }
+  return out;
+}
+AEON.alliesOf = alliesOf;
+function joinWar(world, ally, enemy, extra) {
+  if (AEON.treatyBetween(world, ally, enemy, "war")) return;
+  extra = Object.assign({ joined: true }, extra);
+  if (world.pack.joinWar) world.pack.joinWar(makeCtx(world, { kind: "polity", obj: ally }), ally, enemy, extra);
+  else AEON.treaty(world, "war", ally, enemy, extra);
+  if (!AEON.treatyBetween(world, ally, enemy, "war")) AEON.treaty(world, "war", ally, enemy, extra);
+}
+function nameOf(p) { return p.name.replace(/^The /, "the "); }
+function callToArms(world, t, att, def) {
+  for (const ally of alliesOf(world, def)) {
+    if (ally === att) continue;
+    /* bound to the attacker by an alliance it will not march; a truce with it only makes it slower to */
+    const bound = AEON.treatyBetween(world, ally, att, "alliance");
+    const keen = (ally.relations[def.id] || 0) - (ally.relations[att.id] || 0) + (ally.traits.aggression - 0.5) * 0.4 - (AEON.treatyBetween(world, ally, att, "truce") ? 0.3 : 0);
+    /* a coalition's members stand together against the realm they allied against */
+    const sworn = AEON.treatyBetween(world, ally, def, "alliance");
+    if (!bound && (keen > 0.2 || (sworn && (sworn.coalition === att.id || sworn.against === att.id)))) {
+      joinWar(world, ally, att, { leader: t.id, cause: "the call of " + nameOf(def) });
+      AEON.remember(world, def, ally, 0.2, "answered its call to arms");
+      recordEvent(world, "call-to-arms", { importance: 3, tags: ["war", "alliance", "diplomacy"],
+        actors: [{ kind: "polity", id: ally.id }, { kind: "polity", id: def.id }, { kind: "polity", id: att.id }], regionId: ally.capital,
+        text: ally.name + " answered the call of its ally " + nameOf(def) + " and went to war against " + nameOf(att) + "." });
+    } else {
+      AEON.remember(world, def, ally, -0.3, "refused its call to arms");
+      const pact = AEON.treatyBetween(world, ally, def, "alliance");
+      const broke = pact && world.rng.chance(0.5);
+      if (broke) AEON.endTreaty(world, pact, "refused");
+      recordEvent(world, "call-refused", { importance: 2, tags: ["alliance", "diplomacy"],
+        actors: [{ kind: "polity", id: ally.id }, { kind: "polity", id: def.id }], regionId: ally.capital,
+        text: ally.name + " was called to arms by its ally " + nameOf(def) + " against " + nameOf(att) + " and did not come" +
+          (bound ? ", being bound to " + nameOf(att) + " as well." : ".") + (broke ? " The alliance did not survive the refusal." : "") });
+    }
+  }
+}
+function betrayalNote(world, a, b) {
+  recordEvent(world, "alliance-betrayed", { importance: 3, tags: ["war", "alliance", "betrayal", "diplomacy"],
+    actors: [{ kind: "polity", id: a.id }, { kind: "polity", id: b.id }], regionId: b.capital,
+    text: a.name + " turned on its ally " + nameOf(b) + "; the alliance between them was not spoken of again except as a warning." });
+}
+function strengthOf(world, p) { return Math.max(1, AEON.fieldArmy(world, p)) * (0.5 + p.tech); }
+function allianceTick(world, alive) {
+  const rng = world.rng;
+  /* alliances lapse when the two have come to dislike each other */
+  for (const t of world.treaties || []) {
+    if (t.end != null || t.kind !== "alliance") continue;
+    const a = world.polities[t.a];
+    if (a && (a.relations[t.b] || 0) < -0.2) AEON.endTreaty(world, t, "estranged");
+  }
+  /* the threatened seek allies */
+  for (const p of alive) {
+    if (p.ended || !rng.chance(0.08)) continue;
+    const near = neighborPolities(world, p), me = strengthOf(world, p);
+    const threat = near.filter(function (q) { return (p.relations[q.id] || 0) < -0.3 && strengthOf(world, q) > me * 1.2; })
+      .sort(function (x, y) { return strengthOf(world, y) - strengthOf(world, x); })[0];
+    if (!threat) continue;
+    const friend = near.concat(neighborPolities(world, threat)).filter(function (q) {
+      return q !== p && q !== threat && !q.ended && (p.relations[q.id] || 0) >= 0.05 && !AEON.treatyBetween(world, p, q, "alliance") && !AEON.treatyBetween(world, p, q, "war") && !AEON.treatyBetween(world, q, threat, "alliance");
+    }).sort(function (x, y) { return (p.relations[y.id] || 0) - (p.relations[x.id] || 0); })[0];
+    if (!friend) continue;
+    AEON.treaty(world, "alliance", p, friend, { against: threat.id, until: world.year + 40 + 10 * rng.int(0, 4) });
+    AEON.remember(world, p, friend, 0.2, "swore a defensive alliance with it");
+    recordEvent(world, "alliance", { importance: 3, tags: ["alliance", "diplomacy"],
+      actors: [{ kind: "polity", id: p.id }, { kind: "polity", id: friend.id }, { kind: "polity", id: threat.id }], regionId: p.capital,
+      text: "Fearing " + nameOf(threat) + ", " + nameOf(p) + " and " + nameOf(friend) + " swore to defend each other, each promising to march if the other were attacked." });
+  }
+  /* a coalition against a realm grown far beyond all others */
+  const big = alive.filter(function (p) { return !p.ended; }).sort(function (x, y) { return y.regions.length - x.regions.length; });
+  if (big.length < 3) return;
+  const H = big[0], sizes = big.map(function (p) { return p.regions.length; }), med = sizes[sizes.length >> 1];
+  if (H.regions.length < 4 * med || H.regions.length < 2 * big[1].regions.length) return;
+  if (H.coalitionYear != null && world.year - H.coalitionYear < 100) return;
+  if (!rng.chance(0.25)) return;
+  const members = neighborPolities(world, H).filter(function (q) {
+    return (q.relations[H.id] || 0) < 0.2 && !AEON.treatyBetween(world, q, H, "alliance") && !AEON.treatyBetween(world, q, H, "truce") && !AEON.treatyBetween(world, q, H, "tribute");
+  }).sort(function (x, y) { return strengthOf(world, y) - strengthOf(world, x); }).slice(0, 5);
+  if (members.length < 2) return;
+  H.coalitionYear = world.year;
+  const lead = members[0];
+  for (let i = 0; i < members.length; i++) for (let j = i + 1; j < members.length; j++)
+    if (!AEON.treatyBetween(world, members[i], members[j], "alliance")) AEON.treaty(world, "alliance", members[i], members[j], { coalition: H.id, until: world.year + 30 });
+  recordEvent(world, "coalition", { importance: 4, tags: ["war", "alliance", "coalition", "diplomacy"],
+    actors: [{ kind: "polity", id: H.id }].concat(members.map(function (q) { return { kind: "polity", id: q.id }; })), regionId: lead.capital,
+    text: "Alarmed at the size of " + nameOf(H) + ", which now held " + H.regions.length + " provinces, " + members.map(nameOf).join(", ").replace(/, ([^,]*)$/, " and $1") +
+      " made common cause against it, and " + nameOf(lead) + " led them to war." });
+  joinWar(world, lead, H, { joined: false, coalition: true, cause: "the coalition against " + nameOf(H) });
+  const lt = AEON.treatyBetween(world, lead, H, "war");
+  for (const q of members.slice(1)) joinWar(world, q, H, { leader: lt && lt.id, coalition: true, cause: "the coalition against " + nameOf(H) });
 }
 
 function endTreatiesOf(world, p) {
@@ -1439,6 +1552,14 @@ AEON.tick = function (world) {
     if (p) fireOne(world, "polity", { kind: "polity", obj: p }, true);
   }
 
+  /* a coalition's members press their war: an extra turn each, spent on war (consolidate events) */
+  let pressed = 0;
+  for (const t of world.treaties || []) {
+    if (pressed >= 5 || t.end != null || t.kind !== "war" || !t.coalition) continue;
+    const m = world.polities[t.a];
+    if (m && !m.ended) { fireOne(world, "polity", { kind: "polity", obj: m }, true); pressed++; }
+  }
+
   let figs = 0;
   for (const p of rng.shuffle(alive)) {
     if (figs >= 1) break;
@@ -1453,6 +1574,7 @@ AEON.tick = function (world) {
   }
 
   warClock(world);
+  allianceTick(world, living(world));
   logSettlements(world);
 
   /* if everyone is gone, let a new polity rise from the ashes */

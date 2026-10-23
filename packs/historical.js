@@ -575,7 +575,7 @@ function startWar(ctx, a, b, cause, extra) {
   const wr = { a: a.id, b: b.id, start: ctx.year, over: false, winsA: 0, winsB: 0, cause: cause, holy: false, name: warName(ctx, a, b) };
   if (extra) for (const k in extra) wr[k] = extra[k];
   H(ctx.world).wars[warKey(a, b)] = wr;
-  AEON.treaty(ctx.world, "war", a, b, { name: wr.name, cause: cause });
+  AEON.treaty(ctx.world, "war", a, b, { name: wr.name, cause: cause, joined: !!(extra && extra.joined), leader: extra && extra.leader, coalition: extra && extra.coalition });
   AEON.remember(ctx.world, b, a, 0, "declared war on it, citing " + cause);
   AEON.endTreaty(ctx.world, AEON.treatyBetween(ctx.world, a, b, "trade"), "war");
   relate(a, b, -1);
@@ -2385,6 +2385,9 @@ AEON.registerPack({
     { id: "medieval",  name: "The Medieval Age",  short: "Medieval",  at: 2800 },
     { id: "powder",    name: "The Age of Powder", short: "Powder",    at: 3400 },
   ],
+
+  /* core.js joins a realm to a war (an ally's call to arms, a coalition): a war of the pack's own */
+  joinWar: function (ctx, ally, enemy, extra) { startWar(ctx, ally, enemy, extra.cause || "an alliance", extra); },
 
   /* the resting level of two realms' relation, beyond core.js's own reasons: one faith warms them,
      rival faiths cool them */

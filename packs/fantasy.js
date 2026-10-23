@@ -409,10 +409,10 @@ function rn(c, r, p) {
 function sn(c, r, p) { return r.settlement ? r.settlement.name : rn(c, r, p); }
 function setRel(a, b, v) { if (!a || !b) return; a.relations[b.id] = v; b.relations[a.id] = v; }
 /* war and peace as treaties (core.js diplomacy): a war is open from its declaration to its peace */
-function war(c, a, b, cause) {
+function war(c, a, b, cause, extra) {
   setRel(a, b, -1);
   if (AEON.treatyBetween(c.world, a, b, "war")) return;
-  AEON.treaty(c.world, "war", a, b, cause ? { cause: cause } : null);
+  AEON.treaty(c.world, "war", a, b, Object.assign({ cause: cause || null }, extra));
   AEON.remember(c.world, b, a, 0, "declared war on it");
 }
 function peace(c, a, b) {
@@ -2701,6 +2701,8 @@ AEON.registerPack({
   ],
   archetypes: ARCHETYPES,
   realmTypes: REALM_TYPES,
+  /* core.js joins a realm to a war (an ally's call to arms, a coalition) */
+  joinWar: function (c, ally, enemy, extra) { war(c, ally, enemy, extra.cause, extra); c.world.stats.wars++; },
   names: NAMES,
 
   events: [].concat(SPINE, GODS, PROPHECY, MAGIC, MONSTERS, RELICS, MEMORY, WONDER_EVENTS, ACTION_EVENTS, ARISINGS).map(throttled),

@@ -1,10 +1,41 @@
 # Aeon — handoff
 
-Read this first when resuming. State as of 2026-10-18.
+Read this first when resuming. Started 2026-10-18; current state in the next section.
 
 > **2026-10-22: see `../PLAN.md` first.** Chronicle (website) and the game (standalone) will share
 > one terrain generator. The current focus is fine-tuning the world generator here in chronicle; it
 > gets extracted into a shared package afterwards.
+
+## Where we are (2026-10-23) — start here
+
+- **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
+  commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a
+  repo; that is out of date.)
+- **Packs:** only `historical` and `fantasy`. The sci-fi pack moved to `../../galaxy-generator`, the
+  alternate history to `../../alt-history-generator` (both plain copies, not repos). Daan's direction:
+  Aeon becomes one world generator with setup options (number of starting empires; magic none / low /
+  medium / high). Not started.
+- **Waiting on Daan:** feedback on `samples/animations.html` (eight looping draft animations: expansion,
+  split, invasion by land and by sea, colony, new age bubble, capital move, wonder rising; `?t=ms`
+  freezes a frame). Once he has picked, wire them into the map: play events as playback passes them,
+  at a sensible rate, and play the moment's events once when the year is set by scrubbing.
+- **Recent rounds, newest first** (each has its own section below): beaches back and two road styles
+  (cobbles between cities and capitals, solid tracks elsewhere); more action and consolidation
+  (~50 realms early, 10-20 at the end, annexation, overseas invasions and colonies, moving capitals,
+  half the events); a sparser world (site suitability decides settlements); torn-parchment floating
+  plaques over a full-bleed map; Rooftops settlement sprites; map modes; ambient sea animation;
+  statistics sheet (population, territory, cities, wonders; ages and battles marked).
+- **Things Daan rejected, don't bring back:** polar ice caps along the map edges; straight inked-rule
+  plaques (he wants torn parchment); names drawn on the map (names live in the hover tooltip); dotted
+  roads; the old red-square selector; AoE look-alikes (shields etc.) — own style only.
+- **Every change to the engine or packs changes every seed's history**; say so when it happens.
+  Changes that only read the world (logs, views, map, statistics) must keep histories identical:
+  check with a same-seed run before and after.
+- **Tooling notes:** Python is not installed (use node for scripts). Several files use CRLF; edit via
+  node with the line ending preserved, or the Edit tool. Bash heredocs and `node -e '...'` break on
+  apostrophes and eat backslashes: write longer scripts to a scratch file with the Write tool. Browser
+  checks: a temporary `_t.html` copy of `index.html` with a hook script, run headless in Edge (see
+  Verification); delete the temp files afterwards.
 
 ## What it is
 

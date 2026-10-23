@@ -35,6 +35,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   would fix that. Not wired yet: the samples' persistent ruins (needs the engine).
   Note: playback is fast (1x = 5 years a frame, 300 years a second), so only a few changes get
   an animation; slower speeds would show more.
+- **Map fixes (2026-10-23):** political is the first mode and the default; the roads toggle is
+  gone (roads always on); sea glints fewer and briefer; elevation shades by rank among the land
+  (`elevRank`), so lowlands differ, not just the ranges; realm borders only in the political
+  mode. Land changing hands is drawn by `compose()` itself (`AEON.mapfx.contested()`): it keeps the
+  old owner's borders while its 4-pixel blocks flicker between the colours, then settles with a
+  flash, as in the samples; land waiting for its ships keeps the old owner.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;
@@ -288,8 +294,7 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
   plus the capital's roads to its three nearest settlements; never across water, at most 14 cells.
   Drawn into the map at map resolution, so they zoom like rivers and follow the year. Style by the
   smaller end: dotted where a village is involved, solid between towns and cities, paved between
-  cities and capitals. Only shown with the **roads** toggle on the mode strip (off by default:
-  Daan found them busy).
+  cities and capitals. Always shown (2026-10-23: Daan dropped the roads toggle; roads are on).
 - **Sprites:** the Rooftops set from `samples/settlements.html` (Daan's pick), with the city made
   smaller than the capital. Keep the sample page: Daan also likes the Walls and towers set, and it
   holds eight road styles.

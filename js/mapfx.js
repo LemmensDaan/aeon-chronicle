@@ -53,7 +53,6 @@ function now() { return performance.now(); }
 function hash(a, b) { let h = Math.imul(a + 1, 374761393) ^ Math.imul(b + 7, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 function ease(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
 function lerp(a, b, p) { return a + (b - a) * p; }
-function rgba(hex, a) { const n = parseInt(String(hex || "#888888").slice(1), 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; }
 
 /* ------------------------------------------------------------ reading the logs */
 /* the first index in a year-sorted list whose year is after y */
@@ -91,10 +90,10 @@ function changes(w, y0, y1) {
     let delay = 0;
     for (const rid of g.cells) if (wait[rid]) delay = Math.max(delay, wait[rid]);
     const flash = { kind: "flash", cells: g.cells, color: tp && tp.color, delay: delay };
-    if (g.to == null) out.push({ prio: 1 + Math.log2(1 + n), fx: { kind: "lost", cells: g.cells, color: fp && fp.color }, alt: null });
+    if (g.to == null) out.push({ prio: 1 + Math.log2(1 + n), fx: { kind: "lost", cells: g.cells, from: g.from, to: null }, alt: null });
     else if (g.from == null) out.push({ prio: 0, fx: flash });
-    else if (born(tp)) out.push({ prio: 4 + Math.log2(1 + n), fx: { kind: "split", cells: g.cells, color: fp && fp.color, capital: AEON.capitalAt(tp, y1) }, alt: flash });
-    else out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), fx: { kind: "take", cells: g.cells, color: fp && fp.color, at: g.cells[0], delay: delay }, alt: flash });
+    else if (born(tp)) out.push({ prio: 4 + Math.log2(1 + n), fx: { kind: "split", cells: g.cells, from: g.from, to: g.to, capital: AEON.capitalAt(tp, y1) }, alt: flash });
+    else out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), fx: { kind: "take", cells: g.cells, from: g.from, to: g.to, at: g.cells[0], delay: delay }, alt: flash });
   }
   for (const id in P) {
     const p = P[id];
@@ -299,6 +298,21 @@ function sailings(w, y0, y1, out) {
   return wait;
 }
 function isLive() { prune(now()); return live.length > 0; }
+/* regions in the flickering part of a change of hands, for the map to draw (pixelmap compose):
+   { rid: { from, to, phase } }, or null. Land still waiting for its ships keeps the old owner
+   (phase -1). */
+const FLICKER = { take: 0.55, split: 0.5, lost: 0.7 };
+function contested() {
+  const t = now();
+  let out = null;
+  for (const f of live) {
+    const until = FLICKER[f.kind];
+    if (until == null || t >= f.start + f.dur * until) continue;
+    const phase = t < f.start ? -1 : Math.floor((t - f.start) / 140) & 1;
+    for (const rid of f.cells) (out || (out = {}))[rid] = { from: f.from, to: f.to, phase: phase };
+  }
+  return out;
+}
 /* a wonder that is rising is drawn here, not by the map */
 function hides(id) { for (const f of live) if (f.kind === "rise" && f.id === id) return true; return false; }
 
@@ -387,24 +401,19 @@ function paint(g, env, cells, style, phase) {
     g.fillRect(env.X0 + x * P, env.Y0 + y * P, P, P);
   }
 }
-/* contested land: blocks flicker between the old colour and the new (Daan's pick from the
-   split), then a flash of light as it settles */
-function contested(g, env, f, a, flickerUntil) {
-  const t = env.now - f.start;
-  if (a < flickerUntil) {
-    if (f.color) paint(g, env, f.cells, rgba(f.color, 0.62), Math.floor(t / 140) & 1);
-  } else {
-    const b = (a - flickerUntil) / (1 - flickerUntil);
-    paint(g, env, f.cells, "rgba(" + LIGHT + "," + (0.42 * (1 - b)).toFixed(3) + ")", null);
-  }
+/* contested land: while its blocks flicker (drawn by the map, see contested()), nothing here;
+   then a flash of light as it settles */
+function settle(g, env, f, a) {
+  const until = FLICKER[f.kind];
+  if (a < until) return;
+  const b = (a - until) / (1 - until);
+  paint(g, env, f.cells, "rgba(" + LIGHT + "," + (0.42 * (1 - b)).toFixed(3) + ")", null);
 }
 
 function drawUnder(g, env, f, a) {
   if (env.mode !== "political") return;
   if (f.kind === "flash") paint(g, env, f.cells, "rgba(" + LIGHT + "," + (0.45 * (1 - a)).toFixed(3) + ")", null);
-  else if (f.kind === "take") contested(g, env, f, a, 0.55);
-  else if (f.kind === "split") contested(g, env, f, a, 0.5);
-  else if (f.kind === "lost" && f.color) paint(g, env, f.cells, rgba(f.color, (0.62 * (1 - a)).toFixed(3)), Math.floor((env.now - f.start) / 140) & 1);
+  else if (f.kind === "take" || f.kind === "split") settle(g, env, f, a);
 }
 
 const SHIP = sprite(["....k....", "...kfk...", "..kfffk..", "..kfffk..", "...kfk...", "....k....", "kbbbbbbbk", ".kbbbbbk."], { k: INK, f: "#888", b: "#7a4a22" });
@@ -585,6 +594,6 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, draw: draw };
+AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, contested: contested, draw: draw };
 
 })();

@@ -15,7 +15,7 @@
 
 const AEON = window.AEON = window.AEON || {};
 const PPC = 4;
-const MODES = ["biome", "political", "population", "elevation", "habitability"];
+const MODES = ["political", "biome", "population", "elevation", "habitability"];
 
 /* ------------------------------------------------------------ palette */
 const P = {
@@ -251,7 +251,7 @@ function buildTerrain(world) {
       if (ny >= 0 && ny < VH && land[ny * VW + (x + dx + VW) % VW]) { coast = true; break; }
     }
     if (coast) foam.push(i);
-    else if (E[i] < 0.47 && cellRand(i, 21) < 0.006) glints.push([i, cellRand(i, 22) * 6.28, 1.5 + cellRand(i, 23) * 2]);
+    else if (E[i] < 0.47 && cellRand(i, 21) < 0.0025) glints.push([i, cellRand(i, 22) * 6.28, 1.5 + cellRand(i, 23) * 2]);
   }
   const clouds = [];
   for (let k = 0; k < Math.round(VW / 70); k++) clouds.push({ x: cellRand(k, 31) * VW, y: 10 + cellRand(k, 32) * (VH - 40), w: 26 + Math.floor(cellRand(k, 33) * 30), s: 3 + cellRand(k, 34) * 5 });
@@ -266,11 +266,27 @@ function buildTerrain(world) {
   };
 }
 
+/* each land region's elevation as its rank among all land (0 lowest, 1 highest): the raw heights
+   bunch up just above sea level, so a straight ramp showed little but the mountain ranges */
+function elevRank(c, R) {
+  if (c.elevRank) return c.elevRank;
+  const land = R.filter(function (r) { return !r.barren; }).map(function (r) { return r.elevation; }).sort(function (a, b) { return a - b; });
+  const rank = new Float32Array(R.length);
+  for (const r of R) {
+    let lo = 0, hi = land.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (land[m] < r.elevation) lo = m + 1; else hi = m; }
+    rank[r.id] = land.length > 1 ? lo / (land.length - 1) : 0;
+  }
+  return (c.elevRank = rank);
+}
+
 /* ------------------------------------------------------------ the frame for a year and mode */
-function compose(c, w, mode, roads) {
+/* contest (from mapfx.js), when given: regions changing hands, { rid: { from, to, phase } }. They
+   keep the old owner's borders while their 4-pixel blocks flicker between the two colours. */
+function compose(c, w, mode, roads, contest) {
   const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0);
-  if (c.key === key) return c.frame;
-  c.key = key;
+  if (c.key === key && !contest) return c.frame;
+  c.key = contest ? null : key;
   const VW = c.VW, VH = c.VH, R = w.regions, land = c.land, cellOf = c.cellOf;
   const d = c.fimg.data;
   d.set(c.terrainPx);
@@ -302,7 +318,7 @@ function compose(c, w, mode, roads) {
       if (!land[i]) continue;
       const r = R[cellOf[i]];
       const t = mode === "population" ? (popOf[r.id] > 0 ? 0.08 + 0.92 * (Math.log(popOf[r.id]) - lo) / (hi - lo) : 0)
-              : mode === "elevation" ? (r.elevation - 0.5) / 0.5 : (r.habitability || 0);
+              : mode === "elevation" ? elevRank(c, R)[r.id] : (r.habitability || 0);
       const k = Math.max(0, Math.min(n - 1, Math.floor(Math.max(0, Math.min(1, t)) * (n - 1) + bayer(x, y))));
       /* keep a whisper of the terrain shading underneath */
       const col = ramp[k], a = 0.82;
@@ -310,12 +326,12 @@ function compose(c, w, mode, roads) {
     }
   }
 
-  /* realms: a dithered wash of the realm colour and a two-pixel border where owners meet.
-     Water never counts as a different owner, so coasts stay clean. */
-  const tint = mode === "political", borders = mode === "political" || mode === "population" || mode === "habitability";
-  if (tint || borders) {
+  /* realms, in the political mode only: a dithered wash of the realm colour and a two-pixel
+     border where owners meet. Water never counts as a different owner, so coasts stay clean. */
+  const tint = mode === "political", borders = tint;
+  if (tint) {
     const own = new Array(R.length);
-    for (let k = 0; k < R.length; k++) own[k] = R[k].owner;
+    for (let k = 0; k < R.length; k++) own[k] = contest && contest[k] ? contest[k].from : R[k].owner;
     const cols = {};
     const colorOf = function (id) { const p = w.polities[id]; return cols[id] || (cols[id] = rgb((p && p.color) || "#888888")); };
     const at = function (x, y, o) {
@@ -326,11 +342,13 @@ function compose(c, w, mode, roads) {
     for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
       const i = y * VW + x;
       if (!land[i]) continue;
-      const o = own[cellOf[i]];
-      if (o == null) continue;
-      const edge = at(x + 1, y, o) !== o || at(x - 1, y, o) !== o || at(x, y + 1, o) !== o || at(x, y - 1, o) !== o;
-      const edge2 = !edge && (at(x + 2, y, o) !== o || at(x - 2, y, o) !== o || at(x, y + 2, o) !== o || at(x, y - 2, o) !== o);
-      const cl = colorOf(o);
+      const o = own[cellOf[i]], ct = contest && contest[cellOf[i]];
+      if (o == null && !ct) continue;
+      const edge = o != null && (at(x + 1, y, o) !== o || at(x - 1, y, o) !== o || at(x, y + 1, o) !== o || at(x, y - 1, o) !== o);
+      const edge2 = o != null && !edge && (at(x + 2, y, o) !== o || at(x - 2, y, o) !== o || at(x, y + 2, o) !== o || at(x, y - 2, o) !== o);
+      const show = ct && ct.phase >= 0 && !edge && (((x >> 2) + (y >> 2) + ct.phase) & 1) ? ct.to : o;
+      if (show == null) continue;
+      const cl = colorOf(show);
       if (edge) {
         const k = tint ? 0.5 : 0.62;
         d[i * 4] = cl[0] * k; d[i * 4 + 1] = cl[1] * k; d[i * 4 + 2] = cl[2] * k;
@@ -440,7 +458,7 @@ function drawAmbient(ctx, c, v, X0, now) {
     if ((i * 7 + tick) % 3 === 0) ctx.fillRect(X0 + (i % VW) * P, Y0 + ((i / VW) | 0) * P, P, P);
   }
   ctx.fillStyle = GLINT;
-  for (const g of c.glints) if (Math.sin(t * g[2] + g[1]) > 0.93) ctx.fillRect(X0 + (g[0] % VW) * P, Y0 + ((g[0] / VW) | 0) * P, P, P);
+  for (const g of c.glints) if (Math.sin(t * g[2] + g[1]) > 0.97) ctx.fillRect(X0 + (g[0] % VW) * P, Y0 + ((g[0] / VW) | 0) * P, P, P);
   ctx.fillStyle = "rgba(10, 14, 40, .2)";
   for (const cl of c.clouds) {
     const cx = ((cl.x + t * cl.s) % (VW + 80)) - 40;
@@ -597,7 +615,8 @@ function draw(canvas, world, opts) {
   ctx.imageSmoothingEnabled = false;
   canvas._aeonView = v;
 
-  const c = getCache(world), frame = compose(c, world, opts.mode || "political", !!opts.showRoads);
+  const fxOn = AEON.mapfx && AEON.mapfx.live(), mode = opts.mode || "political";
+  const c = getCache(world), frame = compose(c, world, mode, !!opts.showRoads, fxOn && mode === "political" ? AEON.mapfx.contested() : null);
   ctx.fillStyle = DESK; ctx.fillRect(0, 0, pw, ph);
   const mw = c.VW * v.P, mh = c.VH * v.P;
   const X0 = Math.round(v.ox * v.dpr);

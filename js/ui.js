@@ -33,7 +33,7 @@ let playSpeed = 4;          // ticks per animation frame
 let rafId = 0;
 let mapMode = "political";
 let view = { zoom: 1, panX: 0, panY: 0 };
-let hoverRegion = null, selectedRegion = null, showRoads = false;
+let hoverRegion = null, selectedRegion = null;
 
 const dom = {};
 
@@ -116,7 +116,7 @@ function start(packId, seed) {
 
   view = { zoom: 1, panX: 0, panY: 0 };
   selectedRegion = null;
-  mapMode = "biome";
+  mapMode = "political";
   const mm = /mode=([a-z]+)/.exec(location.hash);
   if (mm && AEON.render && AEON.render.modes.indexOf(mm[1]) >= 0) mapMode = mm[1];
   buildApp();
@@ -312,7 +312,7 @@ function drawMap() {
       hoverRegion: hoverRegion,
       selectedRegion: selectedRegion,
       showRivers: true,
-      showRoads: showRoads,
+      showRoads: true,
       time: ambientOn() ? performance.now() : null,
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
@@ -336,7 +336,7 @@ function buildApp() {
     el("div", { class: "ae-progress-track" }, dom.progressBar));
   mapWrap.appendChild(dom.progress);
 
-  const modes = ["biome", "political", "population", "elevation", "habitability"];
+  const modes = ["political", "biome", "population", "elevation", "habitability"];
   const modeBar = el("div", { class: "ae-modes" });
   modes.forEach(function (m) {
     modeBar.appendChild(el("button", {
@@ -350,17 +350,6 @@ function buildApp() {
       },
     }));
   });
-
-  /* overlays the map can show on top of any mode */
-  const roadsBtn = el("button", { class: "ae-overlay" + (showRoads ? " on" : ""), text: "roads", title: "Show the roads between settlements",
-    "aria-pressed": showRoads ? "true" : "false",
-    onclick: function () {
-      showRoads = !showRoads;
-      roadsBtn.classList.toggle("on", showRoads);
-      roadsBtn.setAttribute("aria-pressed", showRoads ? "true" : "false");
-      drawMap();
-    } });
-  modeBar.appendChild(roadsBtn);
 
   dom.legend = el("div", { class: "ae-legend hidden" });
   mapWrap.appendChild(dom.legend);

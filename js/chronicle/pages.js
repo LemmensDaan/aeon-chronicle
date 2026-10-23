@@ -342,6 +342,22 @@ function pageRegion(id) {
   pg.appendChild(st);
   if (r.resources) { var rs = section(pg, "Resources"); rs.appendChild(bars(r.resources, ["food", "metal", "exotic"])); }
 
+  /* sacks and ruins: who plundered or razed the place, and what stands there now */
+  var sacks = AEON.sacksAt ? AEON.sacksAt(w, id, w.year) : [], ruin = AEON.ruinAt ? AEON.ruinAt(w, id, w.year) : null;
+  if (sacks.length || ruin || (r.settlement && r.settlement.onRuins)) {
+    var ss = section(pg, sacks.length > 1 ? "Sacked " + sacks.length + " times" : sacks.length ? "Sacked" : "Ruins");
+    var su = h("ul", "ch-ul");
+    sacks.forEach(function (e) {
+      var li = h("li");
+      add(li, h("b", null, e.kind === "razed" ? "Razed" : "Plundered"), " in " + yr(e.year));
+      if (e.by != null && w.polities[e.by]) { li.appendChild(document.createTextNode(" by ")); li.appendChild(link("polity", e.by)); }
+      su.appendChild(li);
+    });
+    if (ruin) su.appendChild(h("li", "ch-lead", "Its ruins" + (ruin.name ? ", once " + ruin.name + "," : "") + " have stood empty since " + yr(ruin.since) + "."));
+    else if (r.settlement && r.settlement.onRuins && r.settlement.onRuins !== r.settlement.name) su.appendChild(h("li", "ch-lead", r.settlement.name + " was built on the ruins of " + r.settlement.onRuins + "."));
+    ss.appendChild(su);
+  }
+
   var s = section(pg, "Who held it");
   var segs = d.own[id] || [], sp = timeSpan(), x0 = sp[0], x1 = Math.max(sp[1], w.year);
   if (!segs.length) s.appendChild(empty("No polity is recorded as ever holding this region."));

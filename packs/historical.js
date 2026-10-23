@@ -597,7 +597,7 @@ function frontier(ctx, p, q) {
 function conquestToll(ctx, region, to, wasCapital) {
   const s = region.settlement;
   if (s && ctx.chance(wasCapital ? 0.12 : 0.2)) {
-    if (s.tier <= 1) { region.settlement = null; if (region.features.indexOf("ruins") < 0) region.features.push("ruins"); }
+    if (s.tier <= 1) makeRuin(region);
     else s.tier--;
   }
   if (wasCapital && region.settlement && to && !to.ended) {
@@ -615,6 +615,7 @@ function annex(ctx, region, to, fate) {
   conquestToll(ctx, region, to, wasCapital);
 }
 function makeRuin(region) {
+  if (region.settlement) region.ruinName = region.settlement.name;
   if (region.features.indexOf("ruins") < 0) region.features.push("ruins");
   region.settlement = null;
 }
@@ -764,6 +765,32 @@ function repelled(ctx, wr, At, D, site, o, lead, extraTags) {
   return res(back ? 4 : 3, tags, A(ctx, D, At), (back || site || ctx.world.regions[D.capital]).id,
     lead + " " + battleLine(ctx, D, At, site) + " " + bodies(o) + " were left on the field." +
     (back ? " " + D.name + " followed the beaten army home and took " + provName(back) + "." : " " + At.name + " withdrew, and the frontier stayed where it was."));
+}
+/* a victor that came for loot or vengeance, not land (core.js AEON.warAim): plunder carries off
+   wealth and people and leaves the land with its owner; razing destroys the settlements, drives
+   the people off and leaves the land to no one */
+const LOOT = ["grain", "cattle", "temple plate", "bullion", "horses", "the treasury", "bronze and timber"];
+function pillage(ctx, wr, W, L, regs, aim, lead) {
+  const w = ctx.world, h = H(w), raze = aim === "raze";
+  const names = regs.map(locName), list = names.length > 2 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names.join(" and ");
+  let ruins = 0;
+  for (const r of regs) {
+    if (r.owner !== L.id) continue;
+    const had = !!r.settlement;
+    if (raze) AEON.raze(w, r, W); else AEON.plunder(w, r, W);
+    if (had && !r.settlement) ruins++;
+  }
+  const n = loseFolk(L, raze ? ctx.range(0.02, 0.05) : ctx.range(0.01, 0.03));
+  if (L.ended) L.fate = "Razed from the earth by " + W.name + " in " + yl(ctx.year) + "; its people were scattered and its land left empty.";
+  else { tire(w, L, 0.08); adjustT(L, "stability", -0.04); }
+  if (wr) { addWin(wr, W); addWin(wr, W); }
+  W.prestige = clamp(W.prestige + 0.03, 0, 1);
+  if (h.defeats[L.id] == null) h.defeats[L.id] = ctx.year;
+  const tags = ["war", "defeat", "sacked", raze ? "razed" : "plunder"].concat(ruins ? ["ruin-made"] : [], raze ? ["territory"] : [], L.ended ? ["fall"] : []);
+  return res(raze || L.ended ? 4 : 3, tags, A(ctx, W, L), regs[0].id, lead + " " +
+    (raze ? W.name + " had not come for the land. Its army burned " + list + " to the ground and drove off the people, and the land was left empty, claimed by no one."
+          : W.name + " did not stay to hold what it had won: its army plundered " + list + ", carried off " + ctx.choice(LOOT) + " and about " + approx(n) + " captives, and went home.") +
+    (L.ended ? " " + L.name + " did not survive it." : ""));
 }
 
 /* ====================================================================== *
@@ -1497,6 +1524,8 @@ const EVENTS = [
     const taken = [site].concat(ctx.shuffle(fr.filter(function (z) { return z !== site; }))).slice(0, o.take);
     const last = L.regions.length === taken.length;
     const names = taken.map(provName);
+    const aim = AEON.warAim(w, W, L);
+    if (aim !== "conquer") return pillage(ctx, wf.war, W, L, taken, aim, "The decisive battle of " + (wf.war.name || "the war") + " was fought at " + names[0] + ". " + battleLine(ctx, W, L, site) + " " + bodies(o) + " were left on the field.");
     for (const t of taken) { if (t.owner === L.id) annex(ctx, t, W); }
     loseFolk(L, ctx.range(0.01, 0.03)); tire(w, L, 0.1); tire(w, W, 0.03); addWin(wf.war, W); addWin(wf.war, W);
     adjustT(L, "stability", -0.03); W.prestige = clamp(W.prestige + 0.04, 0, 1);
@@ -1523,20 +1552,23 @@ const EVENTS = [
         "The siege of " + locName(r) + " by " + W.name + " was raised after " + ctx.int(3, 20) + " months " + why + ". About " + approx(o.lost.L) + " of the besiegers did not go home. " + L.name + " held the city, and the besiegers, who had expected otherwise, went home by a different road.");
     }
     const name = locName(r), isCap = L.capital === r.id, last = L.regions.length === 1;
-    const razed = ctx.chance(0.22 + (r.settlement.tier >= 3 ? 0.1 : 0));
     const method = ctx.pick(SIEGE_METHODS[Math.min(eIdx(ctx), 5)]), yrs = ctx.int(1, 3);
+    /* a city taken by storm is more often razed than a field won */
+    const aim = AEON.warAim(w, W, L, { raze: 4 });
+    if (aim !== "conquer") {
+      if (isCap) h.capLost[L.id] = ctx.year;
+      return pillage(ctx, wf.war, W, L, [r], aim, "After a siege of " + (yrs === 1 ? "one year" : yrs + " years") + ", " + W.name + " " + method + " and broke into " + name + (isCap ? ", the capital of " + L.name : "") + ".");
+    }
     annex(ctx, r, W);
-    if (razed) makeRuin(r);
     loseFolk(L, ctx.range(0.01, 0.04)); tire(w, L, 0.07); addWin(wf.war, W); addWin(wf.war, W);
     if (h.defeats[L.id] == null) h.defeats[L.id] = ctx.year;
     if (isCap) h.capLost[L.id] = ctx.year;
     const tags = ["war", "siege", "defeat", "territory"];
     if (isCap) tags.push("capital-lost");
-    if (razed) tags.push("ruin-made");
     if (last) tags.push("fall");
     return res(isCap ? 5 : 3, tags, A(ctx, W, L), r.id,
       "After a siege of " + (yrs === 1 ? "one year" : yrs + " years") + ", " + W.name + " " + method + " and took " + name + (isCap ? ", the capital of " + L.name : "") + "." +
-      (razed ? " The city was then razed, and the plough was driven over the site according to custom; the walls are still visible in dry summers." : " The garrison was spared, which surprised the garrison.") + (last ? " With it, " + L.name + " ceased to exist." : ""));
+" The garrison was spared, which surprised the garrison." + (last ? " With it, " + L.name + " ceased to exist." : ""));
   } },
 
 
@@ -1580,6 +1612,9 @@ const EVENTS = [
     const taken = [site].concat(ctx.shuffle(fr.filter(function (z) { return z !== site; }))).slice(0, o.take);
     const last = q.regions.length === taken.length;
     const names = taken.map(provName);
+    /* riders come for loot more often than for land */
+    const aim = AEON.warAim(w, p, q, { conquer: 0.6 });
+    if (aim !== "conquer") return pillage(ctx, warBetween(ctx, p, q), p, q, taken, aim, "The horsemen of " + p.name + " came out of the grassland in the spring, moving faster than any message could, and broke the levies of " + q.name + " at " + names[0] + "; " + bodies(o) + " died.");
     let ruin = false;
     for (const t of taken) {
       const big = t.settlement && t.settlement.tier >= 2;
@@ -1879,6 +1914,7 @@ const EVENTS = [
     const r = w.regions[p.capital];
     const name = locName(r), tier = r.settlement.tier;
     const razed = tier <= 2 && p.regions.length > 1 && ctx.chance(0.35);
+    AEON.logSack(w, r, att, razed ? "razed" : "plundered");
     let tags = ["sack", "capital-sacked", "war"], tail;
     const n = loseFolk(p, ctx.range(0.06, 0.14));
     p.tech = clamp(p.tech - 0.03, 0, 1); adjustT(p, "stability", -0.1); p.prestige *= 0.7;

@@ -458,7 +458,32 @@ function fight(c, a, b, r, frontierLen, extra) {
   if (extra) for (const k in extra) o[k] = extra[k];
   return AEON.battle(w, a, b, o);
 }
-function fallen(o) { return o.lost.L.toLocaleString() + " of the " + o.L.adjective + " and " + o.lost.W.toLocaleString() + " of the " + o.W.adjective; }
+/* a victor that came for loot or vengeance, not land (core.js AEON.warAim): plunder carries off
+   what can be carried and leaves the land with its owner; razing burns the settlements, drives the
+   people off and leaves the land to no one */
+const SPOIL = ["the harvest", "the herds", "the shrine-silver", "the young men", "everything that could be carried", "the bells"];
+function pillage(c, a, b, regs, aim, lead) {
+  const w = c.world, raze = aim === "raze";
+  const names = regs.map(function (r) { return sn(c, r, b); });
+  const list = names.length > 2 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names.join(" and ");
+  let ruins = 0;
+  for (const r of regs) {
+    if (r.owner !== b.id) continue;
+    const had = !!r.settlement;
+    if (raze) AEON.raze(w, r, a); else AEON.plunder(w, r, a);
+    if (had && !r.settlement) ruins++;
+  }
+  stock(b, "population", raze ? 0.94 : 0.96);
+  if (b.ended) b.fate = "Burned from the earth by " + pn(a) + " in " + yl(c.year) + "; its people were scattered and its land left empty.";
+  else stab(b, -0.04);
+  a.prestige = clamp(a.prestige + 0.03, 0, 1);
+  const tags = ["war", "sacked", raze ? "razed" : "plunder"].concat(ruins ? ["ruin-made"] : [], b.ended ? ["fall"] : []);
+  return mk(raze || b.ended ? 4 : 3, tags, [c.actor(a), c.actor(b), c.actor(regs[0])], regs[0].id, lead + " " +
+    (raze ? "Then it burned " + list + " to the ground. Nothing was left standing that could be lived in, and no one came back to it."
+          : "Then it went through " + list + " like a fire through stubble and took " + c.choice(SPOIL) + " home, leaving the rest.") +
+    (b.ended ? " Thereafter no one was left to call themselves " + b.adjective + "." : ""));
+}
+function fallen(o) { return o.lost.L.toLocaleString("en") + " of the " + o.L.adjective + " and " + o.lost.W.toLocaleString("en") + " of the " + o.W.adjective; }
 function give(w, art, p, how) {
   art.holder = p ? p.id : null;
   if (p) art.location = p.capital;
@@ -856,6 +881,8 @@ const SPINE = [
           (back ? " The " + b.adjective + " followed the beaten host home and took " + sn(c, back, a) + "." : " " + pn(a) + " went home with its wounded."));
       }
       const taken = [site].concat(c.shuffle(fr.filter(function (x) { return x !== site; }))).slice(0, o.take);
+      const aim = AEON.warAim(w, a, b);
+      if (aim !== "conquer") return pillage(c, a, b, taken, aim, "At " + name + " the host of " + pn(a) + " broke the " + b.adjective + " levy; " + fallen(o) + " were left on the field.");
       let loot = [], n = 0, sole = false;
       for (const r of taken) {
         if (b.ended || r.owner !== b.id) continue;
@@ -887,16 +914,20 @@ const SPINE = [
       if (!o.won) {
         stock(a, "population", 0.97); lose.prestige = clamp(lose.prestige + 0.03, 0, 1);
         return mk(3, ["war", "siege", "repelled"], [c.actor(lose), c.actor(a), c.actor(r)], r.id,
-          "The army of " + pn(a) + " sat down before " + name + " and rose again " + c.int(2, 14) + " months later with less than it came with: " + o.lost.L.toLocaleString() + " dead under the walls, which held. " +
+          "The army of " + pn(a) + " sat down before " + name + " and rose again " + c.int(2, 14) + " months later with less than it came with: " + o.lost.L.toLocaleString("en") + " dead under the walls, which held. " +
           "The " + lose.adjective + " rang the bells for a week.");
       }
       const held2 = r.id === lose.capital ? held(w, lose) : [];
-      ruinify(r);
-      stock(lose, "population", 0.88); stab(lose, -0.05);
+      /* a sack, not a conquest: the city is plundered, or burned and left empty */
+      const raze = AEON.warAim(w, a, lose, { conquer: 0, raze: 4 }) === "raze";
       held2.forEach(function (art) { give(w, art, a, "plundered at the sack of " + name); });
-      return mk(4, ["war", "sacked"], [c.actor(a), c.actor(lose), c.actor(r)].concat(held2.map(function (x) { return c.actor(x); })), r.id,
+      if (raze) { r.ruinName = name; AEON.raze(w, r, a); } else AEON.plunder(w, r, a);
+      if (lose.ended) lose.fate = "Its last city, " + name + ", was burned by " + pn(a) + " in " + yl(c.year) + ".";
+      stock(lose, "population", 0.88); stab(lose, -0.05);
+      return mk(4, ["war", "sacked", raze ? "razed" : "plunder"].concat(r.settlement ? [] : ["ruin-made"]), [c.actor(a), c.actor(lose), c.actor(r)].concat(held2.map(function (x) { return c.actor(x); })), r.id,
         name + " was stormed by the army of " + pn(a) + " after a siege of " + c.int(2, 14) + " months. The walls held until the wells failed. " +
-        "The city was burned by the third day and is described by the survivors in terms the scribe declines to repeat." +
+        (raze ? "The city was burned by the third day and is described by the survivors in terms the scribe declines to repeat; no one lives there now."
+              : "The city was given over to the soldiers for three days, and what they could not carry they broke; then the army went home.") +
         (held2.length ? " " + held2[0].name + " was among the things carried out." : ""));
     }
   },

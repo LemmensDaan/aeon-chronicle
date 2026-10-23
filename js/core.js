@@ -62,6 +62,7 @@ AEON.createWorld = function (opts) {
     ownerLog: [],             // [year, regionId, ownerId|null] — lets any year be reconstructed
     settleLog: [],            // [year, regionId, tier] whenever a settlement appears, changes size or goes (0)
     battleLog: [],            // [year, attackerId, defenderId, attackerMen, defenderMen, regionId|null, attackerWon, atSea]
+    sackLog: [],              // [year, regionId, attackerId, victimId|null, "plundered"|"razed"]
     rng: rng,
     _ids: { polity: 1, figure: 1, artifact: 1, event: 1 },
     _cooldowns: {},
@@ -535,6 +536,89 @@ AEON.tierAt = function (world, rid, year) {
   return t;
 };
 AEON.settlementHistory = function (world, rid) { return (settleIndex(world).by[rid] || []).slice(); };
+/* The ruin standing in a region during a year: { tier, name, since } of the last settlement there
+   if it has gone (every settlement that goes is destroyed: razed, burned, sacked or blighted) and
+   none has been built since, else null. Ruins stay until the place is settled again. */
+AEON.ruinAt = function (world, rid, year) {
+  const list = settleIndex(world).by[rid];
+  if (!list) return null;
+  let t = 0, last = 0, since = null;
+  for (const e of list) {
+    if (e[0] > year) break;
+    if (e[2] > 0) last = e[2];
+    else if (t > 0) since = e[0];
+    t = e[2];
+  }
+  if (t > 0 || !last || since == null) return null;
+  const was = settlementAt(world, rid, since - 1);
+  return { tier: last, name: was ? was.name : null, since: since };
+};
+
+/* every ruin standing in a year: [{ rid, tier, name, since }], cached for the year (the map asks
+   every frame) */
+AEON.ruinsAt = function (world, year) {
+  const ix = settleIndex(world);
+  let c = world._ruins;
+  if (c && c.year === year && c.n === ix.n) return c.list;
+  const list = [];
+  for (const rid in ix.by) { const r = AEON.ruinAt(world, +rid, year); if (r) { r.rid = +rid; list.push(r); } }
+  c = { year: year, n: ix.n, list: list };
+  Object.defineProperty(world, "_ruins", { value: c, enumerable: false, configurable: true, writable: true });
+  return list;
+};
+
+/* ------------------------------------------------- war aims and sacks --
+   What an attacker wants from a war it is winning (AEON.warAim): to conquer (take the land and
+   hold it), to plunder (carry off wealth and people, burn a little, keep no land) or to raze
+   (destroy the settlements and leave the land empty, owned by no one). Realm types carry a
+   `plunder` factor; temper and the age weigh in (raiding for loot is commoner in early ages).
+   Packs can scale the weights (opts.conquer, opts.plunder, opts.raze). Every sack is logged in
+   world.sackLog; AEON.sacksAt lists a region's. */
+AEON.warAim = function (world, att, def, opts) {
+  opts = opts || {};
+  const k = typeOf(world, att) || {}, pl = k.plunder == null ? 1 : k.plunder, t = att.traits;
+  const early = Math.max(0.6, 1.4 - 0.2 * (att.age || 0));
+  const w = {
+    conquer: opts.conquer == null ? 1 : opts.conquer,
+    plunder: 0.35 * pl * (0.4 + t.aggression) * early * (opts.plunder == null ? 1 : opts.plunder),
+    raze: 0.08 * pl * pl * (0.3 + t.aggression) * (opts.raze == null ? 1 : opts.raze),
+  };
+  return world.rng.weighted(["conquer", "plunder", "raze"], function (x) { return w[x]; });
+};
+AEON.logSack = logSack;
+function logSack(world, region, att, kind) {
+  (world.sackLog || (world.sackLog = [])).push([world.year, region.id, att ? att.id : null, region.owner || null, kind]);
+}
+/* a place plundered: its settlement shrinks a size (a village is burned out and left a ruin),
+   and a share of its people are killed or carried off; returns how many */
+AEON.plunder = function (world, region, att) {
+  logSack(world, region, att, "plundered");
+  const s = region.settlement, lost = Math.round((region.population || 0) * 0.4);
+  if (s) { if (s.tier <= 1) ruinOf(region); else s.tier--; }
+  return lost;
+};
+/* a place razed: the settlement destroyed and left a ruin, its people gone, and the land left
+   to no one */
+AEON.raze = function (world, region, att) {
+  logSack(world, region, att, "razed");
+  const lost = region.population || 0;
+  ruinOf(region);
+  region.population = 0;
+  if (region.owner) transferRegion(world, region, null);
+  return lost;
+};
+function ruinOf(region) {
+  if (!region.settlement) return;
+  region.ruinName = region.settlement.name;
+  region.settlement = null;
+  if (region.features.indexOf("ruins") < 0) region.features.push("ruins");
+}
+/* a region's sacks up to a year: [{ year, by, victim, kind }], oldest first */
+AEON.sacksAt = function (world, rid, year) {
+  const out = [];
+  for (const e of world.sackLog || []) if (e[1] === rid && e[0] <= year) out.push({ year: e[0], by: e[2], victim: e[3], kind: e[4] });
+  return out;
+};
 
 /* Wonders: great buildings that stay where they were raised. They are artifacts (so they get
    chronicle pages, atlas entries and graph nodes) marked either with `wonder: true` or by a kind
@@ -568,6 +652,9 @@ function foundSettlement(world, region, tier) {
     tier: clamp(tier || 1, 1, AEON.maxTier(region, world)),
     founded: world.year,
   };
+  /* built on the ruins of an older place, which it remembers (the "ruins" feature stays for the
+     packs: it marks a site for digging) */
+  if (region.ruinName) region.settlement.onRuins = region.ruinName;
   return region.settlement;
 }
 

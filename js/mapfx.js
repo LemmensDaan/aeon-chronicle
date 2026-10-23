@@ -367,6 +367,8 @@ function asTown(rid) {
 }
 /* a wonder that is rising is drawn here, not by the map */
 function hides(id) { for (const f of live) if (f.kind === "rise" && f.id === id) return true; return false; }
+/* a place still burning: the map leaves its ruin to the animation until the fire is out */
+function burning(rid) { for (const f of live) if (f.kind === "burn" && f.at === rid) return true; return false; }
 
 /* ------------------------------------------------------------ drawing helpers (sprite pixels) */
 function px(g, x, y, col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
@@ -632,9 +634,8 @@ function drawOver(g, env, f, a) {
         flames(g, 1, 3 + (a < 0.15 ? 1 : 0), a < 0.15 ? Math.ceil(sp.w / 3) : sp.w - 2, t + f.at);
         if (a > 0.35) dust(g, -1, sp.h - 1, sp.w + 2, t);
       } else {
-        g.globalAlpha = Math.min(1, (1 - a) / 0.3);
+        /* the ruin stays: once the fire is out pixelmap.js draws it on (AEON.ruinAt) */
         blit(g, ruin, (sp.w - ruin.w) >> 1, sp.h - ruin.h, 1);
-        g.globalAlpha = 1;
         if (a < 0.55) dust(g, -2, sp.h - 1, sp.w + 4, t);
       }
       smoke(g, sp.w >> 1, 2, t + f.at * 37, a < 0.45 ? 8 : 4, sp.w - 2, Math.min(1, (1 - a) / 0.3));
@@ -721,6 +722,6 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
+AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
 
 })();

@@ -249,6 +249,14 @@ the attack and may take land back. Losses are owed by both sides and rebuilt ove
 `AEON.armyOf`, `AEON.navyOf` (now, after losses) and `AEON.fieldArmy` (what reaches one front)
 are for weighing realms; every battle is logged in `world.battleLog` for the map.
 
+War aims: `AEON.warAim(world, attacker, defender, { conquer, plunder, raze })` returns "conquer",
+"plunder" or "raze" (the options scale the weights; realm types' `plunder` factor and temper set
+them). `AEON.plunder(world, region, attacker)` sacks a place and leaves it with its owner;
+`AEON.raze(world, region, attacker)` destroys it and leaves the land to no one. Both log to
+`world.sackLog` (`AEON.logSack` for a pack's own sacks, `AEON.sacksAt(world, rid, year)` to read).
+Ruins: `AEON.ruinAt(world, rid, year)` / `AEON.ruinsAt(world, year)`; a settlement founded on one
+records `onRuins` (the old name, from `region.ruinName`).
+
 ### 3.3b `realmTypes` (optional)
 
 The forms of state a realm grows into and out of through the ages; the archetype stays its kind.

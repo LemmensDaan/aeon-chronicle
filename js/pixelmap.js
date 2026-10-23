@@ -569,6 +569,23 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
     drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, banner); });
   }
 
+  /* ruins: where a settlement was destroyed and nothing has been built since, its ruin stays on
+     the map (AEON.ruinsAt), standing where the settlement stood and shown at the zoom its size
+     would be; drawn after the living settlements, so they never cover one */
+  if (AEON.ruinsAt && AEON.mapfx && AEON.mapfx.ruinSprite) {
+    const SP = [null, VILLAGE, TOWN, CITY];
+    for (const ru of AEON.ruinsAt(baseOf(w), w.year)) {
+      const k = ru.rid;
+      if (R[k].settlement || Math.min(3, ru.tier) < minTier || AEON.mapfx.burning(k)) continue;
+      const t = Math.min(3, ru.tier), sp = SP[t], ruin = AEON.mapfx.ruinSprite(t);
+      const x = Math.round(sx(R[k].x + 0.5) - sp.w * u / 2) + ((sp.w - ruin.w) >> 1) * u, y = Math.round(sy(R[k].y + 0.5) - sp.h * u / 2) + (sp.h - ruin.h) * u;
+      const b = [x - u, y - u, x + (ruin.w + 1) * u, y + (ruin.h + 1) * u];
+      if (!free(b)) continue;
+      boxes.push(b);
+      drawn.push(function (dx) { blit(ctx, ruin, x + dx, y, u, null); });
+    }
+  }
+
   /* wonders standing in the shown year: a small monument beside the cell, from 2x zoom on */
   if (pc >= 2 && AEON.wonders) {
     const base = baseOf(w), year = w.year, seen = {};

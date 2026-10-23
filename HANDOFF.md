@@ -32,7 +32,7 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   home), otherwise the coast burns. When no lane exists the land change plays as usual: the
   historical pack's coastal() counts lake shores, so some of its "overseas" invasions and colonies
   start from a lake (seed 7: 3 of 4 invasions, 8 of 19 colonies); the port-only engine change
-  would fix that. Not wired yet: the samples' persistent ruins (needs the engine).
+  would fix that. Ruins now stay on the map (step 4 below).
   Playback speed is in years per second (ui.js SPEEDS: 10, 25, 50, 100, 300, 1200; default 50,
   so the 4500 years take 90 s); the old 1x and 4x were 300 and 1200 years a second, too fast to
   follow the animations.
@@ -52,7 +52,7 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   hands, both sides lose men, war-band sizes follow the strengths, same model at sea; (3) realm
   types that change through the ages — **done** (by age + size + events: kingdom -> empire, collapse ->
   successor/warlord states, coastal city-state with a fleet -> thalassocracy), one shared mechanic
-  with each pack's own names; (4) war aims conquer / plunder / raze, a sack record per region,
+  with each pack's own names; (4) — **done** — war aims conquer / plunder / raze, a sack record per region,
   razing can empty land completely and leave ownerless ruins that can be resettled. Daan's picks:
   real soldier and ship counts, evolving types, shared mechanics, razing can empty land. After
   military: diplomacy, then technology and economy.
@@ -99,6 +99,22 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   Sundered Crown / Reaver-Hold only for kingdoms, wizard realms and hill clans. Changes are events
   (importance 2, empires 4): about 50-100 a history. Shown in the map tooltip, the realm page
   (subtitle, "Forms of state") and the atlas. Six seeds end with 10-11 realms (one fantasy seed 20).
+- **Step 4, plunder and razing (2026-10-23, changes every history):** core.js `AEON.warAim()`
+  picks conquer / plunder / raze by weight (conquer 1; plunder 0.35 x type plunder x (0.4 +
+  aggression) x early-age factor 1.4..0.6; raze 0.08 x plunder^2 x (0.3 + aggression); packs scale
+  them). `AEON.plunder()`: settlement one size smaller (a village becomes a ruin), land kept by its
+  owner. `AEON.raze()`: settlement a ruin, people gone, land to no one. Both log to
+  world.sackLog ([year, rid, attacker, victim, kind]; `AEON.sacksAt`, `AEON.logSack`). Aims
+  are asked on a won decisive battle, siege (raze x4) and steppe invasion (conquer x0.6) in
+  historical (`pillage()`; capital-sacked logs its sack too) and a won border battle and every
+  siege-and-sack (conquer 0, raze x4) in fantasy. About 20-30 sacks a history. Ruins:
+  `AEON.ruinAt` / `AEON.ruinsAt` read them from the settleLog (any settlement that went and was
+  not rebuilt), with the old name; pixelmap.js draws them where the settlement stood, after the
+  living settlements and at the zoom of their size; the burn animation now leaves its ruin and
+  the map carries it on (mapfx `burning()`, `ruinSprite()`). A settlement founded on a ruin
+  remembers it (`settlement.onRuins`). Tooltip: "Ruins of X, destroyed ...", "built on the ruins
+  of X", "sacked N times, last ..."; region page: a Sacked / Ruins section. Pack text numbers in
+  fantasy now format in English ("1,210", not the browser's "1.210").
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

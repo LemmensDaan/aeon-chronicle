@@ -625,6 +625,15 @@ function fillTip(view, r) {
   /* the wonders standing here in the shown year */
   const ws = AEON.wondersAt ? AEON.wondersAt(world, r.id, year) : [];
   for (const a of ws) tipEl.appendChild(el("div", { class: "ae-tip-wonder", text: a.name + ", raised " + pack.yearLabel(a.created) }));
+  /* a ruin standing here, a town built on one, and the sacks this place has suffered */
+  const ruin = !s && AEON.ruinAt ? AEON.ruinAt(world, r.id, year) : null;
+  if (ruin) tipEl.appendChild(el("div", { text: "Ruins" + (ruin.name ? " of " + ruin.name : "") + ", destroyed " + pack.yearLabel(ruin.since) }));
+  if (s && s.onRuins && s.onRuins !== s.name) more.push("built on the ruins of " + s.onRuins);
+  const sacks = AEON.sacksAt ? AEON.sacksAt(world, r.id, year) : [];
+  if (sacks.length) {
+    const last = sacks[sacks.length - 1], by = last.by != null && world.polities[last.by];
+    more.push((sacks.length === 1 ? "sacked once" : "sacked " + sacks.length + " times") + ", last " + (last.kind === "razed" ? "razed" : "plundered") + (by ? " by " + by.name : "") + " in " + pack.yearLabel(last.year));
+  }
   if (more.length) tipEl.appendChild(el("div", { class: "dim", text: more.join(" · ") }));
 }
 function hideTip() { if (tipEl) tipEl.style.display = "none"; }

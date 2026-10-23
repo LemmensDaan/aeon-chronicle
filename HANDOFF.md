@@ -33,8 +33,9 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   historical pack's coastal() counts lake shores, so some of its "overseas" invasions and colonies
   start from a lake (seed 7: 3 of 4 invasions, 8 of 19 colonies); the port-only engine change
   would fix that. Not wired yet: the samples' persistent ruins (needs the engine).
-  Note: playback is fast (1x = 5 years a frame, 300 years a second), so only a few changes get
-  an animation; slower speeds would show more.
+  Playback speed is in years per second (ui.js SPEEDS: 10, 25, 50, 100, 300, 1200; default 50,
+  so the 4500 years take 90 s); the old 1x and 4x were 300 and 1200 years a second, too fast to
+  follow the animations.
 - **Map fixes (2026-10-23):** political is the first mode and the default; the roads toggle is
   gone (roads always on); sea glints fewer and briefer; elevation shades by rank among the land
   (`elevRank`), so lowlands differ, not just the ranges; realm borders only in the political

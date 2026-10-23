@@ -29,7 +29,11 @@ AEON.el = el;
 
 let world = null;
 let playing = false;
-let playSpeed = 4;          // ticks per animation frame
+/* playback speed in years per second (whole ticks are taken as the time adds up), so it is the
+   same on any screen; the slow speeds leave time for the event animations (mapfx.js) */
+let playSpeed = 50;
+const SPEEDS = [10, 25, 50, 100, 300, 1200];
+let playLast = 0, playOwed = 0;
 let rafId = 0;
 let mapMode = "political";
 let view = { zoom: 1, panX: 0, panY: 0 };
@@ -252,12 +256,20 @@ function toggleStats(force) {
 function togglePlay() {
   playing = !playing;
   dom.playBtn.textContent = playing ? "⏸" : "▶";
-  if (playing) loop(); else { drawMap(); runFx(); }
+  if (playing) { playLast = 0; playOwed = 0; loop(); } else { drawMap(); runFx(); }
 }
 
-function loop() {
+function loop(now) {
   if (!playing) return;
-  setPlaybackYear(playbackYear + world.timeStep * playSpeed, "play");
+  now = now || performance.now();
+  /* years owed since the last frame, at most a quarter second's worth after a stall */
+  playOwed += Math.min(0.25, playLast ? (now - playLast) / 1000 : 0) * playSpeed;
+  playLast = now;
+  const ticks = Math.floor(playOwed / world.timeStep);
+  if (ticks > 0) {
+    playOwed -= ticks * world.timeStep;
+    setPlaybackYear(playbackYear + ticks * world.timeStep, "play");
+  } else drawMap();                                        /* the animations still move */
   if (playbackYear >= world.endYear) { playing = false; dom.playBtn.textContent = "▶"; drawMap(); runFx(); return; }
   rafId = requestAnimationFrame(loop);
 }
@@ -370,10 +382,10 @@ function buildApp() {
     setPlaybackYear(Number(dom.scrub.value), "scrub");
   });
 
-  const speedSel = el("select", { class: "ae-select", onchange: function (e) { playSpeed = Number(e.target.value); } });
-  [[1, "1×"], [4, "4×"], [10, "10×"], [25, "25×"]].forEach(function (s) {
-    const o = el("option", { value: String(s[0]), text: s[1] });
-    if (s[0] === playSpeed) o.selected = true;
+  const speedSel = el("select", { class: "ae-select", title: "Years per second", onchange: function (e) { playSpeed = Number(e.target.value); } });
+  SPEEDS.forEach(function (v) {
+    const o = el("option", { value: String(v), text: v + " yr/s" });
+    if (v === playSpeed) o.selected = true;
     speedSel.appendChild(o);
   });
 

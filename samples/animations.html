@@ -265,18 +265,26 @@ function paintTerrain(g, land) {
 }
 /* realms the way js/pixelmap.js draws them in the political mode: a dithered wash, a dark edge
    pixel and a softer second pixel where owners meet; water never counts as another owner. flash
-   (0-1) lightens freshly taken cells. */
+   (0-1) lightens freshly taken cells. An owner of [old, new] marks a contested cell: its border
+   stays the old owner's while 4-pixel blocks flicker between the two colours (Daan's pick, from
+   round one's split). */
 function paintRealms(g, P, owner, flash) {
-  const own = P.cells.map(function (c) { return owner(c); });
+  const raw = P.cells.map(function (c) { return owner(c); });
+  const own = raw.map(function (r) { return Array.isArray(r) ? r[0] : r; });
   const fl = flash ? P.cells.map(function (c) { return own[c.i] ? flash(c, own[c.i]) : 0; }) : null;
   const img = g.getImageData(0, 0, W, H), d = img.data, land = P.land, cellOf = P.cellOf;
+  const op = new Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    const r = raw[cellOf[i]], x = i % W, y = (i - x) / W;
+    op[i] = Array.isArray(r) ? r[(Math.floor(P.t / 140) + (x >> 2) + (y >> 2)) % 2] : r;
+  }
   const at = function (x, y, o) { return x < 0 || y < 0 || x >= W || y >= H || !land[y * W + x] ? o : own[cellOf[y * W + x]]; };
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
     if (!land[i]) continue;
     const o = own[cellOf[i]];
     if (!o) continue;
-    const cl = rgbOf(REALM[o]), p = i * 4;
+    const cl = rgbOf(REALM[op[i]]), p = i * 4;
     const edge = at(x + 1, y, o) !== o || at(x - 1, y, o) !== o || at(x, y + 1, o) !== o || at(x, y - 1, o) !== o;
     const edge2 = !edge && (at(x + 2, y, o) !== o || at(x - 2, y, o) !== o || at(x, y + 2, o) !== o || at(x, y - 2, o) !== o);
     if (edge) { d[p] = cl[0] * 0.5; d[p + 1] = cl[1] * 0.5; d[p + 2] = cl[2] * 0.5; }
@@ -289,8 +297,8 @@ function paintRealms(g, P, owner, flash) {
   }
   g.putImageData(img, 0, 0);
 }
-/* the contested look before a border changes: cells flicker between the two owners */
-function flicker(c, t, a, b) { return (Math.floor(t / 140) + c.gx + c.gy) % 2 ? a : b; }
+/* the contested look before a border changes (see paintRealms) */
+function contest(from, to) { return [from, to]; }
 function fade(t, at, len) { return t >= at ? Math.max(0, 1 - (t - at) / (len || 900)) : 0; }
 
 /* ships: at a point along a sea lane (index s), bobbing, with a wake while under way */
@@ -331,21 +339,25 @@ const SCENES = [
       blit(g, KEEP, 88, 28, tab("b"));
     } },
 
-  { title: "Collapse and split", note: "The far provinces flicker, break away, and their largest town becomes the new realm's capital: the crown comes down on it.", period: 6400,
+  { title: "Collapse and split", note: "The round-one transition: the far provinces flicker between old and new colours and tear away under their own border. Then their largest town becomes the new capital: the crown comes down on it.", period: 5200,
     land: [[60, 35, 52, 28]],
     draw: function (g, P, t) {
-      const k = t / 6400, out = function (c) { return c.u >= 64; };
-      paintRealms(g, P, function (c) {
-        if (!out(c) || k < 0.25) return "d";
-        if (k < 0.55) return flicker(c, t, "d", "a");
-        return "a";
-      }, function (c) { return out(c) ? fade(t, 0.55 * 6400, 900) : 0; });
+      const k = t / 5200, out = function (c) { return c.u >= 64; };
+      paintRealms(g, P, function (c) { return !out(c) || k < 0.3 ? "d" : k < 0.6 ? contest("d", "c") : "c"; },
+        function (c) { return out(c) && k > 0.6 && k < 0.75 ? 1 - (k - 0.6) / 0.15 : 0; });
+      if (k > 0.25 && k < 0.6) {                         /* the tear along the coming border */
+        g.fillStyle = INK;
+        for (let y = 1; y < H - 1; y += 2) for (let x = 1; x < W - 1; x++) {
+          const i = y * W + x;
+          if (P.land[i] && P.land[i - 1] && !out(P.cells[P.cellOf[i - 1]]) && out(P.cells[P.cellOf[i]])) g.fillRect(x - (hash(y, Math.floor(t / 120)) > 0.5 ? 1 : 0), y, 1, 2);
+        }
+      }
       blit(g, KEEP, 30, 26, tab("d"));
       const tx = 84, ty = 26;
       if (k < 0.62) blit(g, TOWN, tx, ty + 4);
       if (k > 0.5 && k < 0.62) blit(g, CROWN, tx + 3, lerp(4, ty - 2, ease((k - 0.5) / 0.12)));
-      if (k >= 0.62) { blit(g, KEEP, tx - 1, ty, tab("a")); twinkle(g, tx + 7, ty - 2, (t - 0.62 * 6400) / 800); }
-      if (k > 0.68) bubble(g, tx + 6, ty - 1, INK, t - 0.68 * 6400, function (l, tp) { blit(g, FLAG, l + 3, tp + 2, { f: REALM.a }); }, 9, 9);
+      if (k >= 0.62) { blit(g, KEEP, tx - 1, ty, tab("c")); twinkle(g, tx + 7, ty - 2, (t - 0.62 * 5200) / 800); }
+      if (k > 0.66) bubble(g, tx + 6, ty - 1, INK, t - 0.66 * 5200, function (l, tp) { blit(g, FLAG, l + 3, tp + 2, { f: REALM.c }); }, 9, 9);
     } },
 
   { title: "Invasion over land", note: "The war band marches to the border and a scuffle boils up there; then the contested cells flicker before they change hands.", period: 7600,
@@ -356,7 +368,7 @@ const SCENES = [
         if (c.u < 58) return "a";
         if (!zone(c)) return "b";
         if (t < 3900) return "b";
-        if (t < 5100) return flicker(c, t, "a", "b");
+        if (t < 5100) return contest("b", "a");
         return "a";
       }, function (c) { return zone(c) ? fade(t, 5100, 900) : 0; });
       blit(g, KEEP, 18, 26, tab("a"));
@@ -386,8 +398,8 @@ const SCENES = [
       paintRealms(g, P, function (c) {
         if (c.x < 50) return "a";
         if (c.x < 66) return null;
-        if (P.beach(c)) return t < 3900 ? "b" : t < 4700 ? flicker(c, t, "a", "b") : "a";
-        if (P.taken(c)) return t < 10200 ? "b" : t < 11000 ? flicker(c, t, "a", "b") : "a";
+        if (P.beach(c)) return t < 3900 ? "b" : t < 4700 ? contest("b", "a") : "a";
+        if (P.taken(c)) return t < 10200 ? "b" : t < 11000 ? contest("b", "a") : "a";
         return "b";
       }, function (c) { return P.beach(c) ? fade(t, 4700) : P.taken(c) ? fade(t, 11000) : 0; });
       blit(g, PORT, P.px - 8, P.py - 7, tab("a"));
@@ -577,6 +589,7 @@ const FIXED = /[?&]t=([0-9]+)/.exec(location.search);
 function frame(now) {
   for (const p of panels) {
     const t = FIXED ? +FIXED[1] % p.sc.period : now % p.sc.period;
+    p.P.t = t;
     p.g.drawImage(p.base, 0, 0);
     p.sc.draw(p.g, p.P, t);
   }

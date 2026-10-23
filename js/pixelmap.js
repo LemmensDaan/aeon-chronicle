@@ -101,14 +101,15 @@ const TREE = sprite([".kkk.", "kgglk", "kgggk", ".kbk."], { k: "#13361b", g: "#3
 const PALM = sprite(["kg.gk", ".ggg.", "..b..", "..b.."], { k: "#14451f", g: "#2fa055", b: "#7a5a2e" });
 /* the four settlement types, exactly the "Rooftops" set chosen from samples/settlements.html: a
    cottage, two cottages and a spire, a walled city (the sample's, one column trimmed off each side
-   and one row lower, so it stays smaller than the capital), and the capital's castle, which flies
-   its realm's colours (f, F are replaced when drawn) */
-const ROOF = { k: INK, w: "#efe6d6", r: "#b5452e", g: "#b7b1a4", b: "#7a4a22", f: "#3a6ea5", F: "#244a73" };
+   and one row lower, so it stays smaller than the capital), and the capital: the domed palace of
+   samples/animations.html (Daan's pick), its dome and side roofs in its realm's colours (f, F
+   are replaced when drawn) */
+const ROOF = { k: INK, w: "#efe6d6", r: "#b5452e", g: "#b7b1a4", b: "#7a4a22", f: "#3a6ea5", F: "#244a73", y: "#e0b84f" };
 const VILLAGE = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."], ROOF);
 const TOWN = sprite(["......k....", ".....kgk...", "..k..kgk...", ".krk.kwk.k.", "krrrkkwkkrk", "kwwwkkwkkwk", "kwkwkkwkkwk", "kkkkkkkkkkk"], ROOF);
 const CITY = sprite(["k.k.....k.k", "kgk.k.k.kgk", "kgkkgkgkkgk", "kgggggggggk", "kgrrkgkrrgk", "kgwwkgkwwgk", "kgggkkkgggk", "kggkbbbkggk", "kkkkkkkkkkk"], ROOF);
-const KEEP = sprite(["......kff....", "......kfff...", "......kff....", "......k......", "..k.k.k.k.k..", "..kgkgkgkgk..",
-                     "..kgggggggk..", "k.kgggggggk.k", "kgkgwwgwwgkgk", "kgkgggkgggkgk", "kgkggkbkggkgk", "kkkkkkkkkkkkk"], ROOF);
+const PALACE = sprite([".......k.......", "......kyk......", ".....kfffk.....", "....kfffFFk....", "..k.kkkkkkk.k..", ".kfkkgwgwgkkfk.",
+                       ".kgkkgggggkkgk.", ".kgkkgwgwgkkgk.", "kkgkkgggggkkgkk", "kgggggkbkgggggk", "kkkkkkkkkkkkkkk"], ROOF);
 /* a realm colour, darkened for the shaded side of its banner */
 function darker(hex) { const c = rgb(hex || "#888888"); return "rgb(" + Math.round(c[0] * 0.62) + "," + Math.round(c[1] * 0.62) + "," + Math.round(c[2] * 0.62) + ")"; }
 /* a wonder: a gilded obelisk */
@@ -533,7 +534,7 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
      on top of another marker, so where capitals crowd together only the greater ones show */
   sites.sort(function (a, b) { return b.rank - a.rank || a.r.id - b.r.id; });
   for (const st of sites) {
-    const sp = st.cap ? KEEP : st.tier >= 3 ? CITY : st.tier === 2 ? TOWN : VILLAGE;
+    const sp = st.cap ? PALACE : st.tier >= 3 ? CITY : st.tier === 2 ? TOWN : VILLAGE;
     const x = Math.round(sx(st.r.x + 0.5) - sp.w * u / 2), y = Math.round(sy(st.r.y + 0.5) - sp.h * u / 2);
     const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
     if (!free(b)) continue;

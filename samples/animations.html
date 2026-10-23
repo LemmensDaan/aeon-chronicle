@@ -31,7 +31,7 @@ ports and keep to open water; a landing takes a small beachhead first. Each pane
 /* ------------------------------------------------------------ palette and sprites */
 const INK = "#2a1a0e", HALO = "#efe2bf", GOLD = "#e0b84f";
 const SEA = ["#16295f", "#1f4294", "#3570c4"], FOAM = "#a6dbff", SAND = "#e6cd88", GRASS = ["#7da84a", "#6c9640"], TREE = "#2f6e45";
-const REALM = { a: "#c0504d", b: "#4f81bd", c: "#9bbb59", d: "#8064a2" };
+const REALM = { a: "#c0504d", b: "#4f81bd", c: "#9bbb59", d: "#8064a2", e: "#d9853b" };
 const W = 120, H = 70;                                    /* map pixels per panel */
 
 function sprite(rows, pal) {
@@ -105,11 +105,21 @@ const CAPITALS = [
   { name: "great hall", sp: sprite([".......kff.....", ".......kf......", ".......k.......", "....kkkfkkk....", "...kfffffffk...", "..kfffffffffk..", ".kkkkkkkkkkkkk.", "krrkkwkwkwkkrrk", "kwwkkwwwwwkkwwk", "kwbkkwwbwwkkwbk", "kkkkkkkkkkkkkkk"], PAL) },
   { name: "crowned city", sp: CITY, crown: true },
 ];
+/* Daan's pick: the domed palace is every capital */
+const PALACE = CAPITALS[0].sp;
+/* the age a realm has reached, I to V, inside laurels (Daan's pick of the new-age symbols) */
+const NUMERAL = { 1: ["..k..", "..k..", "..k.."], 2: [".k.k.", ".k.k.", ".k.k."], 3: ["k.k.k", "k.k.k", "k.k.k"],
+                  4: ["k.k.k", "k.k.k", "k..k."], 5: [".k.k.", ".k.k.", "..k.."] };
+function laurels(n) {
+  const N = NUMERAL[n];
+  return sprite(["..GG...GG..", ".GG.....GG.", "GG." + N[0] + ".GG", "G.." + N[1] + "..G", "GG." + N[2] + ".GG", ".GG.....GG.", "..GG.r.GG..", "....rrr...."], PAL);
+}
 /* ruins, one per kind of settlement */
 const RUINS = {
   village: sprite(["..k....", ".kb.k..", "kbbkbk.", "kkkkkkk"], PAL),
   town: sprite(["......k....", ".....kg....", "..k..kg..k.", ".kbk.kgk.kb", "kbbkkkgkkbk", "kkkkkkkkkkk"], PAL),
   city: RUIN,
+  palace: sprite([".....kk.k......", "....kgk.kgk....", "..k.kgkkkgk.k..", ".kgk.kg.gk.kgk.", ".kgkkgg.ggkkg..", "kkgkkgggggkkgkk", "kgggggk.kgggggk", "kkkkkkkkkkkkkkk"], PAL),
   capital: sprite(["......k......", "....k.kg.....", "....kgkg.k...", "k...kggg.kg.k", "kg.kkgggkkg.k", "kgkgggkgggkgk", "kgkggk.kggkgk", "kkkkkkkkkkkkk"], PAL),
   port: sprite(["......k......", ".....kg......", "..k..kg......", ".kbk.kgk.....", "kbbkkkgkk....", "kkkkkkkkkb.b.", ".........b..b"], PAL),
 };
@@ -380,8 +390,8 @@ const SCENES = [
       paintRealms(g, P, function (c) { return P.rival(c) ? "b" : P.home(c) || P.when[c.i] <= t ? "a" : null; },
         function (c, o) { return o === "a" && P.when[c.i] != null ? fade(t, P.when[c.i], 500) : 0; });
       for (const k in P.when) { const c = P.cells[k], a = (t - P.when[k]) / 600; if (a >= 0 && a < 1) twinkle(g, Math.round(c.x), Math.round(c.y), a); }
-      blit(g, KEEP, 34, 26, tab("a"));
-      blit(g, KEEP, 88, 28, tab("b"));
+      blit(g, PALACE, 34, 26, tab("a"));
+      blit(g, PALACE, 88, 28, tab("b"));
     } },
 
   { title: "Collapse and split", note: "The round-one transition: the far provinces flicker between old and new colours and tear away under their own border. Then their largest town becomes the new capital: the crown comes down on it.", period: 5200,
@@ -397,11 +407,11 @@ const SCENES = [
           if (P.land[i] && P.land[i - 1] && !out(P.cells[P.cellOf[i - 1]]) && out(P.cells[P.cellOf[i]])) g.fillRect(x - (hash(y, Math.floor(t / 120)) > 0.5 ? 1 : 0), y, 1, 2);
         }
       }
-      blit(g, KEEP, 30, 26, tab("d"));
+      blit(g, PALACE, 30, 26, tab("d"));
       const tx = 84, ty = 26;
       if (k < 0.62) blit(g, TOWN, tx, ty + 4);
       if (k > 0.5 && k < 0.62) blit(g, CROWN, tx + 3, lerp(4, ty - 2, ease((k - 0.5) / 0.12)));
-      if (k >= 0.62) { blit(g, KEEP, tx - 1, ty, tab("c")); twinkle(g, tx + 7, ty - 2, (t - 0.62 * 5200) / 800); }
+      if (k >= 0.62) { blit(g, PALACE, tx - 1, ty, tab("c")); twinkle(g, tx + 7, ty - 2, (t - 0.62 * 5200) / 800); }
       if (k > 0.66) bubble(g, tx + 6, ty - 1, INK, t - 0.66 * 5200, function (l, tp) { blit(g, FLAG, l + 3, tp + 2, { f: REALM.c }); }, 9, 9);
     } },
 
@@ -416,8 +426,8 @@ const SCENES = [
         if (t < 5100) return contest("b", "a");
         return "a";
       }, function (c) { return zone(c) ? fade(t, 5100, 900) : 0; });
-      blit(g, KEEP, 18, 26, tab("a"));
-      blit(g, KEEP, 96, 26, tab("b"));
+      blit(g, PALACE, 18, 26, tab("a"));
+      blit(g, PALACE, 96, 26, tab("b"));
       blit(g, VILLAGE, 72, 32);
       if (t > 5100) blit(g, FLAG, 76, 27, { f: REALM.a });
       if (t < 2700) {
@@ -450,8 +460,8 @@ const SCENES = [
         return "b";
       }, function (c) { return P.beach(c) ? fade(t, 5000) : P.taken(c) ? fade(t, 11600) : 0; });
       blit(g, PORT, P.px - 8, P.py - 7, tab("a"));
-      blit(g, KEEP, 6, 22, tab("a"));
-      blit(g, KEEP, 102, 26, tab("b"));
+      blit(g, PALACE, 6, 22, tab("a"));
+      blit(g, PALACE, 102, 26, tab("b"));
       blit(g, VILLAGE, P.vx - 3, P.vy - 4);
       if (t > 11600) blit(g, FLAG, P.vx + 2, P.vy - 9, { f: REALM.a });
       const sail = function (L, s, start) { const R = L.route, p = ease((t - start) / 3000); shipOn(g, R, p * (R.length - 1), REALM.a, t, s, p > 0 && p < 1); };
@@ -481,7 +491,7 @@ const SCENES = [
         return null;
       }, function (c) { return P.near(c, 7) ? fade(t, 4200) : P.near(c, 13) ? fade(t, 6200) : 0; });
       blit(g, PORT, P.px - 8, P.py - 7, tab("d"));
-      blit(g, KEEP, 6, 22, tab("d"));
+      blit(g, PALACE, 6, 22, tab("d"));
       const L = P.ship, R = L.route, p = ease(t / 3600);
       shipOn(g, R, p * (R.length - 1), REALM.d, t, 0, p < 1);
       const cx = P.lx + 1, cy = P.ly - 5;
@@ -529,26 +539,25 @@ const SCENES = [
       }
     } },
 
-  { title: "Entering a new age", note: "Four symbols to choose from, left to right: a rising sun, an hourglass, laurels with the age's numeral, an open book.", period: 5000,
+  { title: "Entering a new age", note: "Laurels with the age's numeral, I to V. Age I shows when a realm is founded with its capital; each later age pops up over the capital as the realm reaches it.", period: 5000,
     land: [[60, 35, 56, 28]],
     draw: function (g, P, t) {
-      const K = ["a", "b", "c", "d"];
-      paintRealms(g, P, function (c) { return K[Math.max(0, Math.min(3, Math.floor((c.u - 4) / 28)))]; });
-      AGE.forEach(function (a, k) {
-        const x = 12 + k * 28;
-        blit(g, KEEP, x - 6, 32, tab(K[k]));
-        const st = 400 + k * 250;
-        if (t > st && t < 4200) bubble(g, x, 31, GOLD, t - st, function (l, tp) { blit(g, a.sp, l + 3, tp + 3); }, a.sp.w + 6, a.sp.h + 6);
+      const K = ["a", "b", "c", "d", "e"];
+      paintRealms(g, P, function (c) { return K[Math.max(0, Math.min(4, Math.floor(c.u / 24)))]; });
+      K.forEach(function (key, k) {
+        const x = 12 + k * 24, sp = laurels(k + 1), st = 400 + k * 250;
+        blit(g, PALACE, x - 7, 33, tab(key));
+        if (t > st && t < 4200) bubble(g, x, 32, GOLD, t - st, function (l, tp) { blit(g, sp, l + 3, tp + 3); }, sp.w + 6, sp.h + 6);
       });
     } },
 
-  { title: "The capital moves", note: "Unchanged: the crown arcs from the old seat to the new one, which is then flown the realm's colours.", period: 4500,
+  { title: "The capital moves", note: "The crown arcs from the old seat to the new one, which is then flown the realm's colours.", period: 4500,
     land: [[60, 35, 54, 28]],
     draw: function (g, P, t) {
       paintRealms(g, P, function () { return "d"; });
       const moved = t > 2600, banner = tab("d");
-      blit(g, moved ? SEAT : KEEP, moved ? 26 : 24, moved ? 30 : 26, banner);
-      blit(g, moved ? KEEP : SEAT, moved ? 84 : 86, moved ? 26 : 30, banner);
+      blit(g, moved ? SEAT : PALACE, moved ? 26 : 24, moved ? 30 : 26, banner);
+      blit(g, moved ? PALACE : SEAT, moved ? 84 : 86, moved ? 26 : 30, banner);
       if (t > 600 && t < 2700) {
         const p = ease((t - 600) / 2000), x = 30 + (90 - 30) * p, y = 24 - Math.sin(p * Math.PI) * 11;
         blit(g, CROWN, x - 2, y - 2);
@@ -557,7 +566,7 @@ const SCENES = [
       if (moved && t < 3400) twinkle(g, 90, 22, (t - 2600) / 800);
     } },
 
-  { title: "Capital designs (shelved)", note: "Kept for later; for now every capital is the keep. Left to right: a domed palace, a citadel tower, a great hall under the realm's colours, the largest city with a crown.", period: 4000,
+  { title: "Capital designs", note: "Picked: the domed palace (left) is every capital; the others are kept for later. Left to right: a domed palace, a citadel tower, a great hall under the realm's colours, the largest city with a crown.", period: 4000,
     land: [[60, 35, 56, 28]],
     draw: function (g, P, t) {
       const K = ["a", "b", "c", "d"];
@@ -598,14 +607,14 @@ const SCENES = [
       });
     } },
 
-  { title: "Settlements destroyed", note: "Each kind burns and leaves its own ruin, which stays on the map: a village, a town, a city, the capital (the keep), a port with its broken jetty.", period: 7000,
+  { title: "Settlements destroyed", note: "Each kind burns and leaves its own ruin, which stays on the map: a village, a town, a city, the capital (the domed palace), a port with its broken jetty.", period: 7000,
     land: [[54, 36, 50, 26]],
     setup: function (P) { P.base = 41; P.px = shore(P, P.base - 2, W - 1, -1); },
     draw: function (g, P, t) {
       paintRealms(g, P, function () { return "a"; });
       const B = P.base, L = [
         [VILLAGE, RUINS.village, 10, null], [TOWN, RUINS.town, 23, null], [CITY, RUINS.city, 39, null],
-        [KEEP, RUINS.capital, 56, tab("a")], [PORT, RUINS.port, P.px - 8, tab("a")]];
+        [PALACE, RUINS.palace, 55, tab("a")], [PORT, RUINS.port, P.px - 8, tab("a")]];
       L.forEach(function (e, k) { razed(g, e[0], e[1], e[2], B, t - 600 - k * 350, e[3]); });
     } },
 
@@ -613,7 +622,7 @@ const SCENES = [
     land: [[60, 35, 54, 28]],
     draw: function (g, P, t) {
       paintRealms(g, P, function () { return "b"; });
-      blit(g, KEEP, 30, 26, tab("b"));
+      blit(g, PALACE, 30, 26, tab("b"));
       const sp = WONDERS[2].sp, x = 56, base = 38;
       if (t < 2200) {
         const shake = t > 1000 ? (Math.floor(t / 60) % 2 ? 1 : 0) : 0;

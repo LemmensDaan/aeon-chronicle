@@ -31,6 +31,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   burn and ruin; ruins should stay on the map. His idea for the engine (changes histories): a
   collapse leaves empty land with no new capital, some settlements in it are destroyed and stay as
   ruins (named in the tooltip), and new settlements may be founded on ruins.
+  Round 4 picks: the domed palace is every capital, on the map too (js/pixelmap.js PALACE; the
+  other capital designs stay in the sample, shelved). New age: laurels with the age's numeral,
+  I to V (both packs have five ages); age I shows when a realm is founded with its capital.
+  Landing ships run up on the beach. Wonder designs are "not quite there yet": keep them for now,
+  redesign later. Idea for later (engine): start a world with people in small settlements
+  instead of ready-made kingdoms, so realms (and age I) arise during the history.
   Engine follow-up he asked for (changes histories): naval invasions and colonies only from coastal
   cities (maybe a distinct port sprite), landing as a small beachhead, then reinforcements to take
   more. After he picks, wire the animations into the map: play events as playback passes them, at

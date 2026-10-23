@@ -115,6 +115,30 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   remembers it (`settlement.onRuins`). Tooltip: "Ruins of X, destroyed ...", "built on the ruins
   of X", "sacked N times, last ..."; region page: a Sacked / Ruins section. Pack text numbers in
   fantasy now format in English ("1,210", not the browser's "1.210").
+- **Diplomacy plan (agreed 2026-10-23), one step at a time:** (1) relations with memory, treaties,
+  shared by both packs — **done**; (2) wars with goals, a war score from battles, peace terms from
+  the score, truces of 20-40 years, weariness (most wars 5-40 years); (3) alliances that join wars
+  (calls to arms, refusals, betrayal) and coalitions against a realm grown far beyond the rest;
+  (4) tribute becomes vassalage (wealth to the overlord, troops in its wars, protection), vassals
+  absorbed gradually or breaking free, replacing one-step absorb-minor / fealty-sworn; (5) a
+  "Diplomacy" map mode (hover or select a realm: allies, vassals, enemies, truces), a treaties list
+  on the realm page, a page per war. Daan's picks: shared for both packs, coalitions yes, vassals
+  absorbed gradually, the map mode yes. After diplomacy: technology and economy.
+- **Diplomacy step 1 (2026-10-23, changes every history):** core.js diplomacy section:
+  world.treaties ({ id, kind, a, b, start, end, ended, until, ... }) and world.grievanceLog
+  ([year, from, to, delta, reason]); `AEON.treaty / endTreaty / treatyBetween / treatiesOf /
+  remember / memoriesBetween`; `driftRelations()` once a tick (resting level as in PACK_API,
+  half-life 60 years, frozen at war); treaties with `until` lapse, a fallen realm's end;
+  logSack makes the victim remember. Historical: wars (startWar / endWar) are war treaties and the
+  declaration is remembered, war ends trade; land taken (annex), raids, tribute (treaty, revolt
+  ends it), marriage (treaty, 80 years), trade routes (100) and leagues (150), pilgrims are
+  remembered; `relationBase`: shared faith +0.15, rival faiths -0.05. Fantasy: `war()` /
+  `peace()` helpers make every declaration a war treaty (war-declared, holy, mage and relic wars,
+  sea crossings); alliance-sworn makes an alliance (100 years) and a marriage; tribute to a wyrm is
+  a tribute treaty; land taken is remembered. Realm page: Relations lists strong feelings and every
+  treaty in force with its last three memories (fixed the old broken links there). Results: wars
+  still long (historical median 90-95 years; fantasy 380-440, as before: fantasy wars only end by
+  a peace event) — step 2 is what shortens them. Fantasy ends with 10-20 realms (seeds 3, 42, 7).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

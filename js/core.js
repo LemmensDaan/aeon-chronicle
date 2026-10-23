@@ -63,6 +63,8 @@ AEON.createWorld = function (opts) {
     settleLog: [],            // [year, regionId, tier] whenever a settlement appears, changes size or goes (0)
     battleLog: [],            // [year, attackerId, defenderId, attackerMen, defenderMen, regionId|null, attackerWon, atSea]
     sackLog: [],              // [year, regionId, attackerId, victimId|null, "plundered"|"razed"]
+    treaties: [],             // { id, kind, a, b, start, end, ended, ... } — see AEON.treaty
+    grievanceLog: [],         // [year, fromId, toId, delta, reason] — see AEON.remember
     rng: rng,
     _ids: { polity: 1, figure: 1, artifact: 1, event: 1 },
     _cooldowns: {},
@@ -588,6 +590,8 @@ AEON.warAim = function (world, att, def, opts) {
 AEON.logSack = logSack;
 function logSack(world, region, att, kind) {
   (world.sackLog || (world.sackLog = [])).push([world.year, region.id, att ? att.id : null, region.owner || null, kind]);
+  const victim = region.owner && world.polities[region.owner];
+  if (victim && att) AEON.remember(world, victim, att, kind === "razed" ? -0.4 : -0.25, kind + " " + ((region.settlement && region.settlement.name) || region.name || "a province"));
 }
 /* a place plundered: its settlement shrinks a size (a village is burned out and left a ruin),
    and a share of its people are killed or carried off; returns how many */
@@ -662,6 +666,7 @@ function endPolity(world, polity, fate) {
   if (!polity || polity.ended) return;
   polity.ended = world.year;
   polity.fate = fate || "It ended without record of how.";
+  endTreatiesOf(world, polity);
   for (const rid of polity.regions.slice()) {
     const r = world.regions[rid];
     if (r) { r.owner = null; logOwner(world, r.id, null); }
@@ -934,6 +939,97 @@ AEON.typeAt = function (world, p, year) {
   return null;
 };
 
+/* ------------------------------------------------------------ diplomacy --
+   How realms stand with one another, the same for every pack. p.relations[q.id] (-1 hostile to 1
+   friendly, kept equal both ways) is set by the packs' events; here it gains a memory:
+   - treaties (world.treaties): "war", "truce", "peace", "alliance", "tribute" (a pays b), "trade"
+     and "marriage", each with a start and an end (AEON.treaty, AEON.endTreaty; read with
+     AEON.treatyBetween and AEON.treatiesOf). One made with `until` lapses that year; a realm's
+     open treaties end when it falls.
+   - grievances and favours (world.grievanceLog): what one realm did to another and why, which
+     moves their relation (AEON.remember).
+   - drift: every tick a relation moves back toward its resting level, half the way in 60 years.
+     Neighbours rub (-0.1); realms of one kind (+0.1) or one culture (+0.1) warm to each other; an
+     alliance (+0.5) or a marriage (+0.2) holds it up; a pack can add its own reasons
+     (pack.relationBase(world, a, b), such as a shared faith). A war holds it where it is. */
+const DRIFT_HALF = 60;
+function pairKey(a, b) { return a < b ? a + "|" + b : b + "|" + a; }
+AEON.treaty = function (world, kind, a, b, extra) {
+  world._ids.treaty = (world._ids.treaty || 0) + 1;
+  const t = { id: "t" + world._ids.treaty, kind: kind, a: a.id, b: b.id, start: world.year, end: null, ended: null };
+  if (extra) for (const k in extra) t[k] = extra[k];
+  (world.treaties || (world.treaties = [])).push(t);
+  return t;
+};
+AEON.endTreaty = function (world, t, how) {
+  if (!t || t.end != null) return;
+  t.end = world.year; t.ended = how || null;
+};
+/* the open treaty of a kind between two realms (any kind if kind is null), or null */
+AEON.treatyBetween = function (world, a, b, kind) {
+  const T = world.treaties || [];
+  for (let i = T.length - 1; i >= 0; i--) {
+    const t = T[i];
+    if (t.end == null && (kind == null || t.kind === kind) && ((t.a === a.id && t.b === b.id) || (t.a === b.id && t.b === a.id))) return t;
+  }
+  return null;
+};
+/* a realm's treaties in force during a year (every one it ever made if year is null) */
+AEON.treatiesOf = function (world, p, year) {
+  return (world.treaties || []).filter(function (t) {
+    return (t.a === p.id || t.b === p.id) && (year == null || (t.start <= year && (t.end == null || t.end > year)));
+  });
+};
+/* a realm remembers what another did to it: delta moves their relation (negative a grievance,
+   positive a favour), and the reason is kept */
+AEON.remember = function (world, from, to, delta, reason) {
+  if (!from || !to || from === to) return;
+  const v = clamp((from.relations[to.id] || 0) + delta, -1, 1);
+  from.relations[to.id] = v; to.relations[from.id] = v;
+  (world.grievanceLog || (world.grievanceLog = [])).push([world.year, from.id, to.id, delta, reason || null]);
+};
+/* what two realms remember of each other up to a year: [{ year, from, to, delta, reason }], newest first */
+AEON.memoriesBetween = function (world, a, b, year) {
+  const out = [], L = world.grievanceLog || [];
+  for (let i = L.length - 1; i >= 0; i--) {
+    const e = L[i];
+    if (year != null && e[0] > year) continue;
+    if ((e[1] === a.id && e[2] === b.id) || (e[1] === b.id && e[2] === a.id)) out.push({ year: e[0], from: e[1], to: e[2], delta: e[3], reason: e[4] });
+  }
+  return out;
+};
+function endTreatiesOf(world, p) {
+  for (const t of world.treaties || []) if (t.end == null && (t.a === p.id || t.b === p.id)) AEON.endTreaty(world, t, "fall");
+}
+function driftRelations(world, alive) {
+  const k = 1 - Math.pow(0.5, world.timeStep / DRIFT_HALF), war = {}, held = {};
+  for (const t of world.treaties || []) {
+    if (t.end != null) continue;
+    if (t.until != null && world.year >= t.until) { AEON.endTreaty(world, t, "lapsed"); continue; }
+    const key = pairKey(t.a, t.b);
+    if (t.kind === "war") war[key] = true;
+    else if (t.kind === "alliance") held[key] = (held[key] || 0) + 0.5;
+    else if (t.kind === "marriage") held[key] = (held[key] || 0) + 0.2;
+  }
+  for (const p of alive) {
+    if (p.ended) continue;
+    let near = null;
+    for (const qid in p.relations) {
+      if (!(p.id < qid)) continue;                         /* each pair once */
+      const q = world.polities[qid];
+      if (!q || q.ended) continue;
+      const key = pairKey(p.id, qid);
+      if (war[key]) continue;
+      if (!near) { near = {}; for (const n of neighborPolities(world, p)) near[n.id] = true; }
+      let base = (near[qid] ? -0.1 : 0) + (p.archetypeId === q.archetypeId ? 0.1 : 0) + (p.culture && p.culture === q.culture ? 0.1 : 0) + (held[key] || 0);
+      if (world.pack.relationBase) base += world.pack.relationBase(world, p, q) || 0;
+      base = clamp(base, -1, 1);
+      const v = Math.round((p.relations[qid] + (base - p.relations[qid]) * k) * 1000) / 1000;
+      p.relations[qid] = v; q.relations[p.id] = v;
+    }
+  }
+}
+
 /* How a realm's people spread over its land: by habitability, and far more thickly where there is a
    settlement (a capital most of all). Only the map and tooltips read region populations, so this
    shapes no history. */
@@ -1135,6 +1231,8 @@ function baselineTick(world) {
       endPolity(world, p, "Its territory dwindled to nothing and its name passed out of use.");
     }
   }
+
+  driftRelations(world, alive);
 
   /* record territory size occasionally for sparklines */
   if (world.chronicle.length % 1 === 0) {

@@ -408,6 +408,17 @@ function rn(c, r, p) {
 }
 function sn(c, r, p) { return r.settlement ? r.settlement.name : rn(c, r, p); }
 function setRel(a, b, v) { if (!a || !b) return; a.relations[b.id] = v; b.relations[a.id] = v; }
+/* war and peace as treaties (core.js diplomacy): a war is open from its declaration to its peace */
+function war(c, a, b, cause) {
+  setRel(a, b, -1);
+  if (AEON.treatyBetween(c.world, a, b, "war")) return;
+  AEON.treaty(c.world, "war", a, b, cause ? { cause: cause } : null);
+  AEON.remember(c.world, b, a, 0, "declared war on it");
+}
+function peace(c, a, b) {
+  setRel(a, b, 0.1);
+  AEON.endTreaty(c.world, AEON.treatyBetween(c.world, a, b, "war"), "peace");
+}
 function stab(p, d) { p.traits.stability = clamp(p.traits.stability + d, 0.02, 0.98); }
 function piety(p, d) { p.traits.piety = clamp(p.traits.piety + d, 0.02, 0.98); }
 function stock(p, key, mul) { p[key] = Math.max(60, Math.round(p[key] * mul)); }
@@ -544,6 +555,7 @@ function scatterRelics(c, p, to, how) {
 /* hand a region from `lose` to `win`, taking relics if it was the capital */
 function annex(c, win, lose, region, fate) {
   const w = c.world;
+  AEON.remember(w, lose, win, -0.15, "took " + sn(c, region, lose));
   const wasCapital = region.id === lose.capital;
   const loot = wasCapital ? held(w, lose) : [];
   F(w).conquests.push({ win: win.id, lose: lose.id, region: region.id, year: w.year });
@@ -856,7 +868,7 @@ const SPINE = [
     test: function (c) { return c.polity.military > 0.25 && c.rivals().length > 0 && c.polity.traits.aggression > 0.3; },
     run: function (c) {
       const p = c.polity, foe = c.pick(c.rivals());
-      setRel(p, foe, -1);
+      war(c, p, foe);
       c.world.stats.wars++;
       return mk(3, ["war"], [c.actor(p), c.actor(foe)], p.capital,
         p.name + " declared war upon " + pn(foe) + ", citing " + c.choice(CASUS_BELLI) + ". " +
@@ -937,7 +949,7 @@ const SPINE = [
     run: function (c) {
       const p = c.polity;
       const foe = c.pick(c.rivals().filter(function (o) { return (p.relations[o.id] || 0) < -0.5; }));
-      setRel(p, foe, 0.1);
+      peace(c, p, foe);
       stab(p, 0.04); stab(foe, 0.04);
       return mk(2, ["peace", "diplomacy"], [c.actor(p), c.actor(foe)], p.capital,
         "Envoys of " + pn(p) + " and " + pn(foe) + " met at a ford that belonged to neither and swore peace on " + c.choice(["salt", "iron", "an open flame", "the bones of a saint", "bread broken in three"]) +
@@ -951,6 +963,9 @@ const SPINE = [
       const p = c.polity;
       const o = c.pick(c.neighbors().filter(function (x) { return (p.relations[x.id] || 0) > -0.2; }));
       setRel(p, o, 0.8);
+      AEON.remember(c.world, p, o, 0, "swore a defensive pact at a wedding");
+      AEON.treaty(c.world, "alliance", p, o, { until: c.year + 100 });
+      AEON.treaty(c.world, "marriage", p, o, { until: c.year + 80 });
       p.prestige = clamp(p.prestige + 0.02, 0, 1);
       return mk(2, ["alliance", "diplomacy"], [c.actor(p), c.actor(o)], p.capital,
         "A marriage was arranged between the houses of " + pn(p) + " and " + pn(o) + ", and a defensive pact was sworn at the wedding feast, " +
@@ -1265,7 +1280,7 @@ const GODS = [
     run: function (c) {
       const w = c.world, p = c.polity, g = godOf(w, p);
       const foe = c.pick(c.rivals());
-      setRel(p, foe, -1); w.stats.wars++;
+      war(c, p, foe); w.stats.wars++;
       p.traits.aggression = clamp(p.traits.aggression + 0.06, 0, 0.98);
       return mk(3, ["war", "holy-war"], [c.actor(p), c.actor(foe)], p.capital,
         "A holy war against " + pn(foe) + " was proclaimed in the name of " + g.name + ", " + g.epithet + ", whose priests reported a clear and personal instruction. " +
@@ -1556,7 +1571,7 @@ const MAGIC = [
       const sp = c.choice(SPELLS);
       const mage = c.newFigure(p, "mage");
       blight(r, 0.35);
-      stock(foe, "population", 0.9); setRel(p, foe, -1); drain(w, 0.003);
+      stock(foe, "population", 0.9); war(c, p, foe); drain(w, 0.003);
       return mk(4, ["magic", "blight", "war"], [c.actor(p), c.actor(foe), c.actor(mage), c.actor(r)], r.id,
         fn(mage) + " of " + pn(p) + " cast " + sp + " upon " + rn(c, r, foe) + " in the territory of " + pn(foe) + ". The fields were black by the equinox and remain so. " +
         "The spell has not been cast since, partly from scruple and partly because the words were found to have been lost in the casting.");
@@ -1573,7 +1588,7 @@ const MAGIC = [
       const mages = livingPolities(w).filter(function (p) { return p.traits.curiosity > 0.5 && p.regions.length; });
       const two = c.shuffle(mages).slice(0, 2);
       const a = two[0], b = two[1];
-      setRel(a, b, -1); w.stats.wars++;
+      war(c, a, b); w.stats.wars++;
       [a, b].forEach(function (p) {
         stock(p, "population", 0.8); stab(p, -0.08);
         for (let i = 0; i < 2; i++) { const r = w.regions[c.pick(p.regions)]; blight(r, 0.25); }
@@ -1867,7 +1882,8 @@ const MONSTERS = [
       const p = c.polity;
       const D = c.pick(c.neighbors().filter(function (o) { return o.archetypeId === "dragon-fief"; }));
       p.wealth = clamp(p.wealth - 0.1, 0, 1); stab(p, -0.03);
-      setRel(p, D, 0.1);
+      peace(c, p, D);
+      if (!AEON.treatyBetween(c.world, p, D, "tribute")) AEON.treaty(c.world, "tribute", p, D, { until: c.year + 50 });
       return mk(2, ["dragon", "tribute"], [c.actor(p), c.actor(D)], p.capital,
         pn(p) + " sent " + c.int(20, 90) + " wagons of grain, tin and young women of no particular family to " + pn(D) + " in " + yl(c.year) + ", " +
         "in the hope that it would be remembered, and the girls, in some cases, returned.");
@@ -2295,7 +2311,7 @@ const MEMORY = [
       }));
       const foe = w.polities[ev.win];
       const r = w.regions[ev.region];
-      setRel(p, foe, -1); w.stats.wars++;
+      war(c, p, foe); w.stats.wars++;
       p.traits.aggression = clamp(p.traits.aggression + 0.05, 0, 0.98);
       p.prestige = clamp(p.prestige + 0.03, 0, 1);
       return mk(3, ["war", "memory", "revenge"], [c.actor(p), c.actor(foe)].concat(r ? [c.actor(r)] : []), p.capital,
@@ -2393,7 +2409,7 @@ const ACTION_EVENTS = [
       const w = c.world, p = c.polity, t = overSea(c, p, true);
       if (!t) return null;
       const r = t.region, q = w.polities[r.owner], name = sn(c, r, q);
-      setRel(p, q, -1);
+      war(c, p, q);
       /* a defender with ships meets the fleet at sea; then only part of the host can land */
       if (AEON.navyOf(w, q) >= 3) {
         const s = AEON.battle(w, p, q, { sea: true });

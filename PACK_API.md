@@ -249,6 +249,16 @@ the attack and may take land back. Losses are owed by both sides and rebuilt ove
 `AEON.armyOf`, `AEON.navyOf` (now, after losses) and `AEON.fieldArmy` (what reaches one front)
 are for weighing realms; every battle is logged in `world.battleLog` for the map.
 
+Diplomacy: `p.relations[q.id]` (-1..1, kept equal both ways) drifts each tick back toward a resting
+level (neighbours -0.1, same archetype or culture +0.1 each, alliance +0.5, marriage +0.2, plus
+optional `pack.relationBase(world, a, b)`), half the way in 60 years, except while at war.
+`AEON.remember(world, from, to, delta, reason)` moves it and keeps why (`reason` reads as what `to`
+did, e.g. "took Ashford"; `AEON.memoriesBetween`). Treaties: `AEON.treaty(world, kind, a, b,
+{ until, ... })` with kind "war", "truce", "peace", "alliance", "tribute" (a pays b), "trade" or
+"marriage"; `AEON.endTreaty`, `AEON.treatyBetween(world, a, b, kind)`, `AEON.treatiesOf(world, p,
+year)`. Treaties with `until` lapse; a fallen realm's treaties end. Sacks are remembered by the
+victim automatically.
+
 War aims: `AEON.warAim(world, attacker, defender, { conquer, plunder, raze })` returns "conquer",
 "plunder" or "raze" (the options scale the weights; realm types' `plunder` factor and temper set
 them). `AEON.plunder(world, region, attacker)` sacks a place and leaves it with its owner;

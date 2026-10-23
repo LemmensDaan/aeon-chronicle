@@ -575,6 +575,9 @@ function startWar(ctx, a, b, cause, extra) {
   const wr = { a: a.id, b: b.id, start: ctx.year, over: false, winsA: 0, winsB: 0, cause: cause, holy: false, name: warName(ctx, a, b) };
   if (extra) for (const k in extra) wr[k] = extra[k];
   H(ctx.world).wars[warKey(a, b)] = wr;
+  AEON.treaty(ctx.world, "war", a, b, { name: wr.name, cause: cause });
+  AEON.remember(ctx.world, b, a, 0, "declared war on it, citing " + cause);
+  AEON.endTreaty(ctx.world, AEON.treatyBetween(ctx.world, a, b, "trade"), "war");
   relate(a, b, -1);
   ctx.world.stats.wars++;
   return wr;
@@ -582,6 +585,7 @@ function startWar(ctx, a, b, cause, extra) {
 function endWar(ctx, wr) {
   wr.over = true; wr.end = ctx.year;
   const w = ctx.world, a = w.polities[wr.a], b = w.polities[wr.b];
+  if (a && b) AEON.endTreaty(w, AEON.treatyBetween(w, a, b, "war"), "peace");
   if (a && b) relate(a, b, -0.2);
   if (a) tire(w, a, -0.5);
   if (b) tire(w, b, -0.5);
@@ -607,6 +611,7 @@ function conquestToll(ctx, region, to, wasCapital) {
 }
 function annex(ctx, region, to, fate) {
   const from = region.owner && ctx.world.polities[region.owner];
+  if (from && from !== to) AEON.remember(ctx.world, from, to, -0.15, "took " + provName(region));
   const wasCapital = !!from && from.capital === region.id;
   if (from && from.regions.length === 1 && !from.ended) {
     ctx.endPolity(from, fate || "Its last province was taken and its name passed into the registers of the conqueror.");
@@ -1273,7 +1278,8 @@ const EVENTS = [
     const p = ctx.polity;
     const q = ctx.pick(ctx.neighbors().filter(function (x) { return !warBetween(ctx, p, x) && (p.relations[x.id] || 0) > -0.4; }));
     const goods = ctx.pick(pickEra(GOODS, ctx));
-    relate(p, q, clamp((p.relations[q.id] || 0) + 0.25, -1, 1));
+    AEON.remember(ctx.world, p, q, 0.25, "opened a trade in " + goods);
+    if (!AEON.treatyBetween(ctx.world, p, q, "trade")) AEON.treaty(ctx.world, "trade", p, q, { goods: goods, until: ctx.year + 100 });
     p.population = Math.round(p.population * 1.015); q.population = Math.round(q.population * 1.015);
     p.prestige = clamp(p.prestige + 0.02, 0, 1); adjustT(p, "stability", 0.012);
     H(ctx.world).routes.push({ a: p.id, b: q.id, year: ctx.year });
@@ -1293,6 +1299,7 @@ const EVENTS = [
     for (const a of all) { for (const b of all) if (a !== b) a.relations[b.id] = clamp((a.relations[b.id] || 0) + 0.3, -1, 1); a.population = Math.round(a.population * 1.02); a.prestige = clamp(a.prestige + 0.04, 0, 1); }
     const nm = ctx.choice(["The League of " + locName(ctx.world.regions[p.capital]), "The " + p.adjective + " Hanse", "The Concord of the Free Markets", "The Salt League", "The Union of Ports"]);
     H(ctx.world).routes.push({ a: p.id, b: ns[0].id, year: ctx.year, league: nm });
+    for (const q of ns) { AEON.remember(ctx.world, p, q, 0, "joined it in " + nm.replace(/^The /, "the ")); AEON.treaty(ctx.world, "trade", p, q, { name: nm, until: ctx.year + 150 }); }
     return res(3, ["trade", "league", "diplomacy"], A.apply(null, [ctx].concat(all)), p.capital,
       nm + " was founded by " + all.map(function (x) { return x.name; }).join(", ") + ", which agreed to a common weight, a common measure and a common court for the settlement of disputes. The common court heard its first case within a month, and it was between two members.");
   } },
@@ -1582,7 +1589,7 @@ const EVENTS = [
     const p = ctx.polity, w = ctx.world;
     const foes = ctx.rivals().filter(function (q) { return ctx.regionsOf(q).some(function (r) { return coastal(ctx, r); }); });
     const foe = ctx.pick(foes), r = ctx.pick(ctx.regionsOf(foe).filter(function (x) { return coastal(ctx, x); }));
-    relate(p, foe, clamp((p.relations[foe.id] || 0) - 0.3, -1, 1));
+    AEON.remember(w, foe, p, -0.3, "raided " + locName(r));
     const ships = Math.max(3, Math.round(AEON.navyOf(w, p) * 0.4));
     /* a defender with a fleet of its own puts out to meet the raiders */
     if (AEON.navyOf(w, foe) >= 3) {
@@ -1719,6 +1726,7 @@ const EVENTS = [
         annex(ctx, rg, W); tags.push("territory");
       } else {
         h.tribute[L.id] = { lord: W.id, since: ctx.year };
+        AEON.treaty(w, "tribute", L, W, { name: t });
         text = t + " ended " + nm + " after " + (ctx.year - wr.start) + " years. " + L.name + " was made tributary to " + W.name + ", owing " + ctx.choice(["an annual payment of silver", "ten thousand measures of grain a year", "a yearly tribute of horses and hostages", "a tithe of the harvest"]) + ", and its ruler's heir was sent to the victor's court to be educated.";
         tags.push("tribute");
       }
@@ -1752,7 +1760,8 @@ const EVENTS = [
     const p = ctx.polity, w = ctx.world, h = H(w);
     const q = ctx.pick(ctx.rivals().filter(function (x) { return !warBetween(ctx, p, x) && !h.tribute[x.id] && strength(w, p) > strength(w, x) * 1.35; }));
     h.tribute[q.id] = { lord: p.id, since: ctx.year };
-    relate(q, p, -0.3);
+    AEON.treaty(w, "tribute", q, p);
+    AEON.remember(w, q, p, -0.3, "demanded tribute");
     const what = pickEra([["a yearly tribute of copper and cattle"], ["a yearly tribute of tin and hostages"], ["a yearly tribute in silver"], ["a yearly tribute of gold and horses"], ["an annual payment of silver and the right of passage for troops"], ["a yearly subsidy in coin"]], ctx)[0];
     return res(3, ["tribute", "diplomacy"], A(ctx, p, q), q.capital,
       p.name + " marched an army to the borders of " + q.name + " and demanded " + what + ". " + q.name + " paid, the alternative being worse, and recorded the sum in its books under a different heading.");
@@ -1780,6 +1789,7 @@ const EVENTS = [
   run: function (ctx) {
     const p = ctx.polity, h = H(ctx.world), tb = h.tribute[p.id], lord = ctx.world.polities[tb.lord];
     delete h.tribute[p.id];
+    AEON.endTreaty(ctx.world, AEON.treatyBetween(ctx.world, p, lord, "tribute"), "revolt");
     const wr = startWar(ctx, p, lord, "the tribute that had become an insult");
     adjustT(p, "aggression", 0.05);
     return res(3, ["revolt", "war", "tribute"], A(ctx, p, lord), p.capital,
@@ -1791,7 +1801,8 @@ const EVENTS = [
   run: function (ctx) {
     const p = ctx.polity;
     const q = ctx.pick(ctx.neighbors().filter(function (x) { return !warBetween(ctx, p, x) && (p.relations[x.id] || 0) > -0.5; }));
-    relate(p, q, clamp((p.relations[q.id] || 0) + 0.45, -1, 1));
+    AEON.remember(ctx.world, p, q, 0.45, "married into its ruling house");
+    AEON.treaty(ctx.world, "marriage", p, q, { until: ctx.year + 80 });
     H(ctx.world).marriages.push({ a: p.id, b: q.id, year: ctx.year });
     const clause = ctx.choice(["any child of the marriage would inherit both thrones should the male lines fail", "the bride's dowry-province would revert to her family if she died childless", "neither house would give shelter to the other's rebels", "the first son would be raised at the court of the mother's father"]);
     return res(2, ["marriage", "diplomacy"], A(ctx, p, q, rulerOf(ctx, p), rulerOf(ctx, q)), p.capital,
@@ -2052,10 +2063,10 @@ const EVENTS = [
       return res(2, ["religion", "pilgrimage", "memory"], A(ctx, p, r, rl), r.id, who(rl) + " of " + p.name + " walked the last " + ctx.int(5, 40) + " miles to the shrine at " + provName(r) + " barefoot, a distance that was recorded by the escort, who were not.");
     }
     if (ctx.chance(0.7)) {
-      relate(p, o, clamp((p.relations[o.id] || 0) + 0.15, -1, 1)); p.prestige = clamp(p.prestige + 0.02, 0, 1);
+      AEON.remember(w, p, o, 0.15, "welcomed its pilgrims at " + provName(r)); p.prestige = clamp(p.prestige + 0.02, 0, 1);
       return res(2, ["religion", "pilgrimage", "memory"], A(ctx, p, o, r), r.id, "A pilgrimage from " + p.name + " to the shrine at " + provName(r) + " in " + o.name + ", founded " + (ctx.year - ev.year) + " years before, passed without incident and brought a modest improvement in relations, which both courts attributed to piety.");
     }
-    relate(p, o, clamp((p.relations[o.id] || 0) - 0.4, -1, 1));
+    AEON.remember(w, p, o, -0.4, "let its pilgrims be attacked on the road to " + provName(r));
     return res(3, ["religion", "pilgrimage", "memory", "incident"], A(ctx, p, o, r), r.id, "Pilgrims from " + p.name + " were attacked on the road to the shrine at " + provName(r) + " in " + o.name + ", and " + ctx.int(20, 300) + " were killed. " + o.name + " said it was bandits; " + p.name + " said it was " + o.name + ". Relations did not recover for a generation.");
   } },
 
@@ -2364,6 +2375,13 @@ AEON.registerPack({
     { id: "medieval",  name: "The Medieval Age",  short: "Medieval",  at: 2800 },
     { id: "powder",    name: "The Age of Powder", short: "Powder",    at: 3400 },
   ],
+
+  /* the resting level of two realms' relation, beyond core.js's own reasons: one faith warms them,
+     rival faiths cool them */
+  relationBase: function (w, a, b) {
+    const h = w._hist, fa = h && h.faithOf[a.id], fb = h && h.faithOf[b.id];
+    return fa != null && fa === fb ? 0.15 : fa != null && fb != null ? -0.05 : 0;
+  },
 
   /* 0..1: how worn down a realm is by its wars, for core.js musterForces */
   warWeariness: function (w, p) { return w._hist ? (w._hist.fatigue[p.id] || 0) / 0.35 : 0; },

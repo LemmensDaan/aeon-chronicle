@@ -227,13 +227,25 @@ function pagePolity(id) {
       s.appendChild(fp);
     }
   }
-  var rel = [];
-  for (var oid in (p.relations || {})) if (Math.abs(p.relations[oid]) >= 0.5 && w.polities[oid]) rel.push([oid, p.relations[oid]]);
+  /* how it stood with the others: the strong feelings and every treaty in force, each with the
+     last things they remembered of each other (core.js diplomacy) */
+  var rel = [], open = AEON.treatiesOf ? AEON.treatiesOf(w, p, w.year) : [], seen = {};
+  for (var oid in (p.relations || {})) if (Math.abs(p.relations[oid]) >= 0.5 && w.polities[oid]) { rel.push([oid, p.relations[oid]]); seen[oid] = 1; }
+  open.forEach(function (t) { var o = t.a === p.id ? t.b : t.a; if (!seen[o] && w.polities[o]) { rel.push([o, p.relations[o] || 0]); seen[o] = 1; } });
   if (rel.length) {
     s = section(pg, "Relations");
     var rul = h("ul", "ch-ul");
+    var TIE = { war: "at war", truce: "in truce", alliance: "allied", marriage: "joined by marriage", trade: "trading" };
     rel.sort(function (a, b) { return a[1] - b[1]; }).forEach(function (r) {
-      var li = h("li"); add(li, link("polity", +r[0]), " — " + (r[1] < 0 ? "hostile" : "friendly") + " (" + (Math.round(r[1] * 100) / 100) + ")");
+      var o = w.polities[r[0]], ties = open.filter(function (t) { return t.a === r[0] || t.b === r[0]; }).map(function (t) {
+        return t.kind === "tribute" ? (t.a === p.id ? "pays it tribute" : "takes tribute from it") : TIE[t.kind] || t.kind;
+      });
+      var mood = r[1] <= -0.5 ? "hostile" : r[1] >= 0.5 ? "friendly" : r[1] < -0.15 ? "cool" : r[1] > 0.15 ? "warm" : "indifferent";
+      var li = h("li"); add(li, link("polity", r[0]), " — " + [mood + " (" + (Math.round(r[1] * 100) / 100) + ")"].concat(ties).join(", "));
+      var mem = AEON.memoriesBetween ? AEON.memoriesBetween(w, p, o, w.year).filter(function (m) { return m.reason; }).slice(0, 3) : [];
+      if (mem.length) li.appendChild(h("div", "ch-lead", mem.map(function (m) {
+        return (m.from === p.id ? "they " : "it ") + m.reason + " (" + yr(m.year) + ")";
+      }).join("; ")));
       rul.appendChild(li);
     });
     s.appendChild(rul);

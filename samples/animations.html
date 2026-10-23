@@ -88,16 +88,15 @@ const WONDERS = [
   { name: "ziggurat", sp: sprite(["....kyk....", "...kkkkk...", "...kxxsk...", "..kkkkkkk..", "..kxxxxsk..", ".kkkkkkkkk.", ".kxxkbkxsk.", "kkkkkkkkkkk"], PAL) },
   { name: "lighthouse", sp: sprite(["..oyo..", ".koyok.", ".kkkkk.", "..kxk..", "..krk..", "..kxk..", "..krk..", ".kxxsk.", ".krrrk.", ".kxxsk.", "kxxbxsk", "kkkkkkk"], PAL) },
   { name: "domed hall", sp: sprite(["......y......", "....kkkkk....", "...kxxxxsk...", "..kxxxxxssk..", ".kkkkkkkkkkk.", ".kxkxkxkxkxk.", ".kxkxkxkxkxk.", ".kxkxkbkxkxk.", "kkkkkkkkkkkkk"], PAL) },
-  { name: "temple", sp: sprite([".....k.....", "...kkykk...", ".kkxxxxxkk.", "kkkkkkkkkkk", ".x.x.x.x.x.", ".x.x.x.x.x.", ".x.x.x.x.x.", "kkkkkkkkkkk", "kxxxxxxxxsk", "kkkkkkkkkkk"], PAL) },
+  { name: "Greek temple", sp: sprite(["......kkkk......", "....kkxxxxkk....", "..kkxxxxxxxxkk..", ".kkkkkkkkkkkkkk.", ".kxxxxxxxxxxxxk.", ".kkkkkkkkkkkkkk.", ".xsnxsnxsnxsnxs.", ".xsnxsnxsnxsnxs.", ".xsnxsnxsnxsnxs.", ".xsnxsnxsnxsnxs.", "kkkkkkkkkkkkkkkk", "kxxxxxxxxxxxxxsk", "kkkkkkkkkkkkkkkk"], PAL) },
 ];
 /* Greek and Roman wonders, more to choose from (e: bronze) */
-PAL.e = "#a87a3a";
+PAL.e = "#a87a3a"; PAL.n = "#4a3c2c";
 const CLASSICAL = [
   { name: "colosseum", sp: sprite(["..kkkkkkkkk....", ".kxkxkxkxkxk...", "kxxxxxxxxxxxkk.", "kxkxkxkxkxkxkxk", "kxxxxxxxxxxxxsk", "kxkxkxkxkxkxkxk", "kxxxxxxxxxxxxsk", "kkkkkkkkkkkkkkk"], PAL) },
   { name: "triumphal arch", sp: sprite(["...kykyk...", "kkkkkkkkkkk", "kxxxxyxxxsk", "kkkkkkkkkkk", "kxxkkkkkxsk", "kxk.....ksk", "kxk.....ksk", "kxk.....ksk", "kxk.....ksk", "kkk.....kkk"], PAL) },
-  { name: "aqueduct", sp: sprite(["kkkkkkkkkkkkkkkkk", "kxxxxxxxxxxxxxxsk", "kkkkkkkkkkkkkkkkk", "kxkkkxkkkxkkkxkkk", "kx...kx...kx...kx", "kx...kx...kx...kx", "kx...kx...kx...kx", "kx...kx...kx...kx", "kk...kk...kk...kk"], PAL) },
   { name: "colossus", sp: sprite(["o......", "y.kyk..", "k.kek..", "kkkekk.", "..keek.", "..keek.", "..keek.", "..kekek", "..kekek", ".kkkkkk", ".kxxsk.", ".kxxsk.", "kkkkkkk"], PAL) },
-  { name: "victory column", sp: sprite([".kek.", "kkkkk", ".kxk.", ".ksk.", ".kxk.", ".ksk.", ".kxk.", ".ksk.", ".kxk.", ".ksk.", ".kxk.", "kkkkk", "kxxsk", "kkkkk"], PAL) },
+  { name: "obelisk", sp: sprite(["....k....", "...kyk...", "..kyyok..", "..kxxsk..", "..kxtsk..", "..kxxsk..", "..kxxsk..", "..ktxsk..", "..kxxsk..", "..kxxsk..", "..kxtsk..", "..kxxsk..", ".kkkkkkk.", ".kxxxxsk.", "kkkkkkkkk", "kxxxxxxsk", "kkkkkkkkk"], PAL) },
 ];
 /* capital designs, to choose from (f / F: the realm's colour) */
 const CAPITALS = [
@@ -279,6 +278,14 @@ function seaPath(P, a, b) {
     return [sx / n, sy / n];
   });
 }
+/* a landing: a sea lane from a port to open water off a beach on row y (the shore met walking
+   east from x), then straight in through the shallows until the bow runs up on the sand */
+function landing(P, from, y, x) {
+  const bx = shore(P, y, x, +1), r = seaPath(P, from, [bx - 12, y]), e = r[r.length - 1];
+  const n = Math.ceil(Math.hypot(bx - 4 - e[0], y - e[1]));
+  for (let k = 1; k <= n; k++) r.push([lerp(e[0], bx - 4, k / n), lerp(e[1], y, k / n)]);
+  return { route: r, bx: bx, y: y };
+}
 /* the first land pixel met walking from x along row y in direction dir */
 function shore(P, y, x, dir) { while (x >= 0 && x < W && !P.land[y * W + x]) x += dir; return x; }
 function landCells(P, test) { return P.cells.filter(function (c) { return test(c); }); }
@@ -422,12 +429,14 @@ const SCENES = [
       if (t > 4500 && t < 5100) march(g, 66, 34, 2, REALM.a, t, true);
     } },
 
-  { title: "Invasion by sea", note: "Only from a port. The fleet keeps to open water, lands, and holds a small beachhead with a camp. A second wave brings more men, who march inland and take the town.", period: 12600,
+  { title: "Invasion by sea", note: "Only from a port. The fleet keeps to open water, then runs up on the beach; the men hold a small beachhead with a camp. A second wave lands further along and marches inland to take the town.", period: 13200,
     land: [[18, 35, 22, 30], [60, 29, 5, 4], [98, 38, 26, 30]],
     setup: function (P) {
       P.py = 38; P.px = shore(P, P.py, 47, -1);
       P.ly = 24; P.lx = shore(P, P.ly, 66, +1);
-      P.route = seaPath(P, [P.px + 6, P.py], [P.lx - 10, P.ly + 2]);
+      const from = [P.px + 6, P.py];
+      P.wave1 = [2, 10, 18].map(function (d) { return landing(P, from, P.ly + d, 66); });
+      P.wave2 = [26, 34].map(function (d) { return landing(P, from, P.ly + d, 66); });
       P.beach = function (c) { return Math.hypot(c.x - (P.lx + 3), c.y - P.ly) < 8; };
       P.vx = 88; P.vy = 42;
       P.taken = function (c) { return Math.hypot(c.x - P.vx, c.y - P.vy) < 13; };
@@ -436,32 +445,32 @@ const SCENES = [
       paintRealms(g, P, function (c) {
         if (c.x < 50) return "a";
         if (c.x < 66) return null;
-        if (P.beach(c)) return t < 3900 ? "b" : t < 4700 ? contest("b", "a") : "a";
-        if (P.taken(c)) return t < 10200 ? "b" : t < 11000 ? contest("b", "a") : "a";
+        if (P.beach(c)) return t < 4300 ? "b" : t < 5000 ? contest("b", "a") : "a";
+        if (P.taken(c)) return t < 10800 ? "b" : t < 11600 ? contest("b", "a") : "a";
         return "b";
-      }, function (c) { return P.beach(c) ? fade(t, 4700) : P.taken(c) ? fade(t, 11000) : 0; });
+      }, function (c) { return P.beach(c) ? fade(t, 5000) : P.taken(c) ? fade(t, 11600) : 0; });
       blit(g, PORT, P.px - 8, P.py - 7, tab("a"));
       blit(g, KEEP, 6, 22, tab("a"));
       blit(g, KEEP, 102, 26, tab("b"));
       blit(g, VILLAGE, P.vx - 3, P.vy - 4);
-      if (t > 11000) blit(g, FLAG, P.vx + 2, P.vy - 9, { f: REALM.a });
-      const R = P.route, n = R.length - 1;
-      for (let s = 0; s < 3; s++) { const p = ease(t / 3000); shipOn(g, R, p * n - s * 8, REALM.a, t, s, p < 1); }
-      if (t > 4300) for (let s = 0; s < 2; s++) { const p = ease((t - 4300) / 2900); shipOn(g, R, p * n - 24 - s * 8, REALM.a, t, s + 3, p < 1); }
-      const cx = P.lx + 1, cy = P.ly - 5;
-      if (t > 3900) { blit(g, CAMP, cx, cy, tab("a")); twinkle(g, cx + 1, cy - 2, (t - 3900) / 800); }
-      if (t > 3000 && t < 3900) march(g, lerp(R[n][0], cx + 4, ease((t - 3000) / 900)), cy, 2, REALM.a, t, true);
-      if (t > 7200 && t < 9000) march(g, lerp(cx + 4, P.vx - 6, ease((t - 7200) / 1800)), lerp(cy, P.vy - 6, ease((t - 7200) / 1800)), 3, REALM.a, t, true);
-      if (t >= 8800 && t < 10400) brawl(g, P.vx - 2, P.vy - 3, t, 6);
-      if (t >= 10400 && t < 11000) dust(g, P.vx - 8, P.vy, 12, t);
+      if (t > 11600) blit(g, FLAG, P.vx + 2, P.vy - 9, { f: REALM.a });
+      const sail = function (L, s, start) { const R = L.route, p = ease((t - start) / 3000); shipOn(g, R, p * (R.length - 1), REALM.a, t, s, p > 0 && p < 1); };
+      P.wave1.forEach(function (L, s) { sail(L, s, s * 300); });
+      if (t > 4800) P.wave2.forEach(function (L, s) { sail(L, s + 3, 4800 + s * 300); });
+      const cx = P.lx + 1, cy = P.ly - 5, A = P.wave1[0], B = P.wave2[0];
+      if (t > 4300) { blit(g, CAMP, cx, cy, tab("a")); twinkle(g, cx + 1, cy - 2, (t - 4300) / 800); }
+      if (t > 3600 && t < 4300) { const q = ease((t - 3600) / 700); march(g, lerp(A.bx - 1, cx + 4, q), lerp(A.y - 7, cy, q), 2, REALM.a, t, true); }
+      if (t > 8100 && t < 9700) { const q = ease((t - 8100) / 1600); march(g, lerp(B.bx - 1, P.vx - 6, q), lerp(B.y - 7, P.vy - 6, q), 3, REALM.a, t, true); }
+      if (t >= 9500 && t < 11000) brawl(g, P.vx - 2, P.vy - 3, t, 6);
+      if (t >= 11000 && t < 11600) dust(g, P.vx - 8, P.vy, 12, t);
     } },
 
-  { title: "Exploration and a colony", note: "A ship leaves port for an empty shore; the settlers camp at the water's edge, claim a little land, and the camp grows into a village.", period: 8600,
+  { title: "Exploration and a colony", note: "A ship leaves port for an empty shore and runs up on the beach; the settlers camp at the water's edge, claim a little land, and the camp grows into a village.", period: 8600,
     land: [[18, 36, 22, 30], [100, 30, 16, 13]],
     setup: function (P) {
       P.py = 40; P.px = shore(P, P.py, 50, -1);
       P.ly = 30; P.lx = shore(P, P.ly, 70, +1);
-      P.route = seaPath(P, [P.px + 6, P.py], [P.lx - 10, P.ly + 2]);
+      P.ship = landing(P, [P.px + 6, P.py], P.ly + 6, 70);
       P.near = function (c, r) { return c.x > 66 && Math.hypot(c.x - (P.lx + 3), c.y - P.ly) < r; };
     },
     draw: function (g, P, t) {
@@ -473,10 +482,10 @@ const SCENES = [
       }, function (c) { return P.near(c, 7) ? fade(t, 4200) : P.near(c, 13) ? fade(t, 6200) : 0; });
       blit(g, PORT, P.px - 8, P.py - 7, tab("d"));
       blit(g, KEEP, 6, 22, tab("d"));
-      const R = P.route, n = R.length - 1, p = ease(t / 3600);
-      shipOn(g, R, p * n, REALM.d, t, 0, p < 1);
+      const L = P.ship, R = L.route, p = ease(t / 3600);
+      shipOn(g, R, p * (R.length - 1), REALM.d, t, 0, p < 1);
       const cx = P.lx + 1, cy = P.ly - 5;
-      if (t > 3600 && t < 4200) march(g, lerp(R[n][0], cx + 3, ease((t - 3600) / 600)), cy, 1, REALM.d, t, true);
+      if (t > 3600 && t < 4200) { const q = ease((t - 3600) / 600); march(g, lerp(L.bx - 1, cx + 3, q), lerp(L.y - 7, cy, q), 1, REALM.d, t, true); }
       if (t > 4200 && t < 6200) { blit(g, CAMP, cx, cy, tab("d")); twinkle(g, cx + 1, cy - 2, (t - 4200) / 800); }
       if (t >= 6200) { blit(g, CAMP, cx, cy, tab("d")); blit(g, VILLAGE, cx + 9, cy - 1); twinkle(g, cx + 12, cy - 3, (t - 6200) / 800); }
     } },
@@ -496,7 +505,7 @@ const SCENES = [
           return;
         }
         if ((p > 0 && p < 1) || (f.k === "b" && back > 0 && back < 1)) {
-          g.fillStyle = FOAM; for (let m = 2; m < 10; m += 2) if ((m / 2 + Math.floor(t / 150)) % 2) g.fillRect(f.x + (f.k === "a" && back === 0 ? -m - 2 : m + 2), f.y + 1, 1, 1);
+          g.fillStyle = FOAM; for (let m = 2; m < 10; m += 2) if ((m / 2 + Math.floor(t / 150)) % 2) g.fillRect(f.x + (f.k === "a" || back > 0 ? -m - 2 : m + 2), f.y + 1, 1, 1);
         }
         blit(g, SHIP, x, y, { f: REALM[f.k] });
       });
@@ -548,7 +557,7 @@ const SCENES = [
       if (moved && t < 3400) twinkle(g, 90, 22, (t - 2600) / 800);
     } },
 
-  { title: "Capital designs", note: "Instead of the keep, to choose from, left to right: a domed palace, a citadel tower, a great hall under the realm's colours, the largest city with a crown.", period: 4000,
+  { title: "Capital designs (shelved)", note: "Kept for later; for now every capital is the keep. Left to right: a domed palace, a citadel tower, a great hall under the realm's colours, the largest city with a crown.", period: 4000,
     land: [[60, 35, 56, 28]],
     draw: function (g, P, t) {
       const K = ["a", "b", "c", "d"];
@@ -561,7 +570,7 @@ const SCENES = [
       });
     } },
 
-  { title: "A wonder is raised", note: "Four designs to choose from, left to right: a ziggurat, a lighthouse, a domed hall, a temple. Each is built up from the ground.", period: 6000,
+  { title: "A wonder is raised", note: "Four designs to choose from, left to right: a ziggurat, a lighthouse, a domed hall, a Greek temple. Each is built up from the ground.", period: 6000,
     land: [[60, 35, 56, 28]],
     draw: function (g, P, t) {
       paintRealms(g, P, function () { return "b"; });
@@ -575,11 +584,11 @@ const SCENES = [
       });
     } },
 
-  { title: "Greek and Roman wonders", note: "More to choose from, left to right: a colosseum, a triumphal arch, an aqueduct, a colossus, a victory column.", period: 6500,
+  { title: "Greek and Roman wonders", note: "More to choose from, left to right: a colosseum, a triumphal arch, a colossus, an obelisk.", period: 6500,
     land: [[60, 35, 56, 28]],
     draw: function (g, P, t) {
       paintRealms(g, P, function () { return "d"; });
-      const base = 44, X = [5, 27, 47, 75, 95];
+      const base = 44, X = [10, 40, 70, 94];
       CLASSICAL.forEach(function (wd, k) {
         const sp = wd.sp, x = X[k], p = ease((t - 400 - k * 450) / 1600), h = Math.round(sp.h * p);
         const fire = Math.floor(t / 150) % 2 ? { o: GOLD, y: PAL.o } : null;
@@ -589,7 +598,7 @@ const SCENES = [
       });
     } },
 
-  { title: "Settlements destroyed", note: "Each kind burns and leaves its own ruin, which stays on the map: a village, a town, a city, the capital (still the old keep), a port with its broken jetty.", period: 7000,
+  { title: "Settlements destroyed", note: "Each kind burns and leaves its own ruin, which stays on the map: a village, a town, a city, the capital (the keep), a port with its broken jetty.", period: 7000,
     land: [[54, 36, 50, 26]],
     setup: function (P) { P.base = 41; P.px = shore(P, P.base - 2, W - 1, -1); },
     draw: function (g, P, t) {

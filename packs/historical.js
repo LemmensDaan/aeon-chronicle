@@ -585,11 +585,13 @@ function startWar(ctx, a, b, cause, extra) {
 function endWar(ctx, wr) {
   wr.over = true; wr.end = ctx.year;
   const w = ctx.world, a = w.polities[wr.a], b = w.polities[wr.b];
-  if (a && b) AEON.endTreaty(w, AEON.treatyBetween(w, a, b, "war"), "peace");
+  if (a && b) { AEON.endTreaty(w, AEON.treatyBetween(w, a, b, "war"), "peace"); AEON.makeTruce(w, a, b); }
   if (a && b) relate(a, b, -0.2);
   if (a) tire(w, a, -0.5);
   if (b) tire(w, b, -0.5);
 }
+/* how long a war lasted, in words (core.js AEON.warLength) */
+function lasted(y) { return y == null ? "some years" : y < 1 ? "a single campaigning season" : y < 1.75 ? "a year" : Math.round(y) + " years"; }
 function winsOf(wr, p) { return wr.a === p.id ? wr.winsA : wr.winsB; }
 function addWin(wr, p) { if (wr.a === p.id) wr.winsA++; else wr.winsB++; }
 function frontier(ctx, p, q) {
@@ -1710,11 +1712,19 @@ const EVENTS = [
 
 { id: "peace-treaty", scope: "polity", weight: 18,
   test: function (ctx) { return wars(ctx, ctx.polity).some(function (x) { return ctx.year - x.war.start >= 10; }); },
+  /* also run by core.js warClock to end a war (ctx.war, ctx.warScore for its side a): the terms
+     follow the war score */
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
-    const wf = ctx.pick(wars(ctx, p).filter(function (x) { return ctx.year - x.war.start >= 10; }));
-    const foe = wf.foe, wr = wf.war, d = winsOf(wr, p) - winsOf(wr, foe);
-    const nm = wr.name || "the war";
+    let wf;
+    if (ctx.war) {
+      const foe0 = w.polities[ctx.war.a === p.id ? ctx.war.b : ctx.war.a], wr0 = foe0 && warBetween(ctx, p, foe0);
+      if (!wr0) return null;
+      wf = { war: wr0, foe: foe0 };
+    } else wf = ctx.pick(wars(ctx, p).filter(function (x) { return ctx.year - x.war.start >= 10; }));
+    const foe = wf.foe, wr = wf.war;
+    const d = ctx.war ? Math.round(ctx.warScore * 4) * (ctx.war.a === p.id ? 1 : -1) : winsOf(wr, p) - winsOf(wr, foe);
+    const nm = wr.name || "the war", len = lasted(AEON.warLength(w, ctx.war || AEON.treatyBetween(w, p, foe, "war")));
     const t = treatyName(ctx, w.regions[p.capital]);
     let text, tags = ["peace", "treaty"], reg = p.capital;
     if (Math.abs(d) >= 2) {
@@ -1722,16 +1732,16 @@ const EVENTS = [
       const fr = frontier(ctx, W, L);
       if (L.regions.length > 1 && fr.length && ctx.chance(0.5)) {
         const rg = ctx.pick(fr); reg = rg.id;
-        text = t + " ended " + nm + " after " + (ctx.year - wr.start) + " years. " + L.name + " ceded " + provName(rg) + " to " + W.name + " and paid an indemnity in " + ctx.choice(["silver", "grain", "horses", "timber", "tin"]) + ".";
+        text = t + " ended " + nm + " after " + len + ". " + L.name + " ceded " + provName(rg) + " to " + W.name + " and paid an indemnity in " + ctx.choice(["silver", "grain", "horses", "timber", "tin"]) + ".";
         annex(ctx, rg, W); tags.push("territory");
       } else {
         h.tribute[L.id] = { lord: W.id, since: ctx.year };
         AEON.treaty(w, "tribute", L, W, { name: t });
-        text = t + " ended " + nm + " after " + (ctx.year - wr.start) + " years. " + L.name + " was made tributary to " + W.name + ", owing " + ctx.choice(["an annual payment of silver", "ten thousand measures of grain a year", "a yearly tribute of horses and hostages", "a tithe of the harvest"]) + ", and its ruler's heir was sent to the victor's court to be educated.";
+        text = t + " ended " + nm + " after " + len + ". " + L.name + " was made tributary to " + W.name + ", owing " + ctx.choice(["an annual payment of silver", "ten thousand measures of grain a year", "a yearly tribute of horses and hostages", "a tithe of the harvest"]) + ", and its ruler's heir was sent to the victor's court to be educated.";
         tags.push("tribute");
       }
     } else {
-      text = t + " ended " + nm + " after " + (ctx.year - wr.start) + " years with no one the winner. Prisoners were exchanged, the frontier was left where it had been before the war, and both sides erected monuments to a victory.";
+      text = t + " ended " + nm + " after " + len + " with no one the winner. Prisoners were exchanged, the frontier was left where it had been before the war, and both sides erected monuments to a victory.";
     }
     endWar(ctx, wr); relate(p, foe, 0.1);
     adjustT(p, "stability", 0.03); adjustT(foe, "stability", 0.03);

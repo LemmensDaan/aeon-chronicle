@@ -61,7 +61,7 @@ AEON.createWorld = function (opts) {
     chronicle: [],
     ownerLog: [],             // [year, regionId, ownerId|null] — lets any year be reconstructed
     settleLog: [],            // [year, regionId, tier] whenever a settlement appears, changes size or goes (0)
-    battleLog: [],            // [year, attackerId, defenderId, attackerMen, defenderMen, regionId|null, attackerWon, atSea]
+    battleLog: [],            // [year, attackerId, defenderId, attackerMen, defenderMen, regionId|null, attackerWon, atSea, margin 1-3]
     sackLog: [],              // [year, regionId, attackerId, victimId|null, "plundered"|"razed"]
     treaties: [],             // { id, kind, a, b, start, end, ended, ... } — see AEON.treaty
     grievanceLog: [],         // [year, fromId, toId, delta, reason] — see AEON.remember
@@ -279,8 +279,9 @@ function makeCtx(world, subject) {
       const hostile = living(world).filter(function (o) {
         return o !== p && (p.relations[o.id] || 0) < -0.2;
       });
+      /* a realm under truce is no rival until it lapses */
       const all = n.concat(hostile.filter(function (h) { return n.indexOf(h) < 0; }));
-      return all;
+      return all.filter(function (o) { return !AEON.treatyBetween(world, p, o, "truce"); });
     },
 
     actor: function (obj) {
@@ -956,23 +957,40 @@ const DRIFT_HALF = 60;
 function pairKey(a, b) { return a < b ? a + "|" + b : b + "|" + a; }
 AEON.treaty = function (world, kind, a, b, extra) {
   world._ids.treaty = (world._ids.treaty || 0) + 1;
-  const t = { id: "t" + world._ids.treaty, kind: kind, a: a.id, b: b.id, start: world.year, end: null, ended: null };
+  /* a war declared during a truce breaks it */
+  if (kind === "war") {
+    const truce = AEON.treatyBetween(world, a, b, "truce");
+    if (truce) { AEON.endTreaty(world, truce, "broken"); AEON.remember(world, b, a, -0.3, "broke the truce of " + truce.start); }
+  }
+  const t = { id: "t" + world._ids.treaty, kind: kind, a: a.id, b: b.id, start: world.year, end: null, ended: null, ev: world.chronicle.length };
   if (extra) for (const k in extra) t[k] = extra[k];
   (world.treaties || (world.treaties = [])).push(t);
+  const ix = openIndex(world), k = pairKey(t.a, t.b);
+  ix[k + "|" + kind] = t; ix[k + "|*"] = t;
   return t;
 };
 AEON.endTreaty = function (world, t, how) {
   if (!t || t.end != null) return;
-  t.end = world.year; t.ended = how || null;
+  t.end = world.year; t.ended = how || null; t.endEv = world.chronicle.length;
+  /* the pair's next open treaty, if any, takes its place in the index */
+  const ix = openIndex(world), k = pairKey(t.a, t.b), T = world.treaties;
+  if (ix[k + "|" + t.kind] === t) { ix[k + "|" + t.kind] = null; for (let i = T.length - 1; i >= 0; i--) if (T[i].end == null && T[i].kind === t.kind && pairKey(T[i].a, T[i].b) === k) { ix[k + "|" + t.kind] = T[i]; break; } }
+  if (ix[k + "|*"] === t) { ix[k + "|*"] = null; for (let i = T.length - 1; i >= 0; i--) if (T[i].end == null && pairKey(T[i].a, T[i].b) === k) { ix[k + "|*"] = T[i]; break; } }
 };
 /* the open treaty of a kind between two realms (any kind if kind is null), or null */
-AEON.treatyBetween = function (world, a, b, kind) {
-  const T = world.treaties || [];
-  for (let i = T.length - 1; i >= 0; i--) {
-    const t = T[i];
-    if (t.end == null && (kind == null || t.kind === kind) && ((t.a === a.id && t.b === b.id) || (t.a === b.id && t.b === a.id))) return t;
+/* the open treaties, by pair and kind ("a|b|kind", and "a|b|*" for the latest of any kind), kept
+   up to date as treaties are made and ended */
+function openIndex(world) {
+  let ix = world._openIx;
+  if (!ix) {
+    ix = {};
+    for (const t of world.treaties || []) if (t.end == null) { const k = pairKey(t.a, t.b); ix[k + "|" + t.kind] = t; ix[k + "|*"] = t; }
+    Object.defineProperty(world, "_openIx", { value: ix, enumerable: false, configurable: true, writable: true });
   }
-  return null;
+  return ix;
+}
+AEON.treatyBetween = function (world, a, b, kind) {
+  return openIndex(world)[pairKey(a.id, b.id) + "|" + (kind == null ? "*" : kind)] || null;
 };
 /* a realm's treaties in force during a year (every one it ever made if year is null) */
 AEON.treatiesOf = function (world, p, year) {
@@ -998,6 +1016,97 @@ AEON.memoriesBetween = function (world, a, b, year) {
   }
   return out;
 };
+/* ---- wars: short, scored, ended by peace and a truce ----
+   A war's score (AEON.warScore, -1..1, for its side a): battles won by their margin, and land
+   taken, raids and sacks remembered since it began. Every tick each open war may end, the more
+   likely the more one-sided it is and the longer it has run; one 8 years old ends, so none
+   outlasts about 10 years. Ending it is
+   the pack's peace event (pack.peaceEvent, default "peace-treaty"), run for side a with ctx.war
+   and ctx.warScore set, which sets the terms; then a truce of 20-40 years. */
+function firstFrom(list, y, at) {
+  let lo = 0, hi = list.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (at(list[m]) < y) lo = m + 1; else hi = m; }
+  return lo;
+}
+AEON.warScore = function (world, t) {
+  let raw = 0;
+  const B = world.battleLog || [];
+  for (let i = firstFrom(B, t.start, function (e) { return e[0]; }); i < B.length; i++) {
+    const e = B[i];
+    if (!((e[1] === t.a && e[2] === t.b) || (e[1] === t.b && e[2] === t.a))) continue;
+    const aWon = (e[1] === t.a) === !!e[6];
+    raw += (aWon ? 1 : -1) * (e[8] || 1);
+  }
+  const G = world.grievanceLog || [];
+  for (let i = firstFrom(G, t.start, function (e) { return e[0]; }); i < G.length; i++) {
+    const e = G[i];
+    if (e[3] >= 0) continue;
+    if (e[1] === t.b && e[2] === t.a) raw += 1.5;        /* b holds a grievance against a: a gained */
+    else if (e[1] === t.a && e[2] === t.b) raw -= 1.5;
+  }
+  return raw / (Math.abs(raw) + 3);
+};
+function warClock(world) {
+  const T = world.treaties || [], rng = world.rng;
+  const open = T.filter(function (t) { return t.kind === "war" && t.end == null; });
+  for (const t of open) {
+    if (t.end != null) continue;
+    const a = world.polities[t.a], b = world.polities[t.b];
+    if (!a || !b || a.ended || b.ended) { AEON.endTreaty(world, t, "fall"); continue; }
+    const years = world.year - (t.startDate != null ? t.startDate : t.start), sc = AEON.warScore(world, t);
+    const chance = years >= 8 ? 1 : 0.3 + 0.6 * Math.abs(sc) + (years >= 4 ? 0.35 : 0);
+    if (!rng.chance(chance)) continue;
+    concludePeace(world, t, sc);
+  }
+}
+function concludePeace(world, t, sc) {
+  const a = world.polities[t.a], b = world.polities[t.b];
+  const id = world.pack.peaceEvent || "peace-treaty";
+  const def = (world.pack.events || []).filter(function (d) { return d.id === id; })[0];
+  let out = null;
+  if (def) {
+    const ctx = makeCtx(world, { kind: "polity", obj: a });
+    ctx.war = t; ctx.warScore = sc;
+    try { out = def.run(ctx); } catch (e) { console.warn("[aeon] peace for " + t.id + " threw:", e); }
+  }
+  if (out) recordEvent(world, id, out);
+  else recordEvent(world, "peace", { importance: 2, tags: ["peace"], actors: [{ kind: "polity", id: a.id }, { kind: "polity", id: b.id }], regionId: a.capital,
+    text: a.name + " and " + b.name.replace(/^The /, "the ") + " made peace." });
+  if (t.end == null) AEON.endTreaty(world, t, "peace");
+  AEON.makeTruce(world, a, b);
+}
+/* a truce of 20-40 years after a war, unless one is already in force or a side has fallen */
+AEON.makeTruce = function (world, a, b) {
+  if (!a || !b || a.ended || b.ended || AEON.treatyBetween(world, a, b, "truce")) return null;
+  return AEON.treaty(world, "truce", a, b, { until: world.year + 20 + 5 * world.rng.int(0, 4) });
+};
+/* how long a war that is ending has lasted, in years (to the half year): from the date it began,
+   or, for one begun in this very tick, a season to a few years; kept as t.years */
+AEON.warLength = function (world, t) {
+  if (!t) return null;
+  if (t.years == null) {
+    const from = t.startDate != null ? t.startDate : world.year - world.timeStep * world.rng.range(0.1, 0.6);
+    t.years = Math.min(10, Math.max(0.3, Math.round((world.year - world.rng.range(0, 2) - from) * 2) / 2));
+  }
+  return t.years;
+};
+/* the dates of a tick's events: spread evenly through its years, in the order they happened,
+   to the month (ev.date, a fractional year; ev.year stays the tick's); treaties take the dates of
+   the events that made and ended them, and a war its length in years */
+function dateTick(world, from) {
+  const C = world.chronicle, n = C.length - from, y0 = world.year - world.timeStep;
+  for (let i = from; i < C.length; i++) C[i].date = Math.round((y0 + (i - from + 1) / (n + 1) * world.timeStep) * 12) / 12;
+  const dateOf = function (k) { return k != null && C[k] && C[k].year === world.year ? C[k].date : null; };
+  for (const t of world.treaties || []) {
+    if (t.start === world.year && t.startDate == null) t.startDate = dateOf(t.ev) != null ? dateOf(t.ev) : world.year;
+    if (t.end === world.year && t.endDate == null) {
+      t.endDate = t.kind === "war" && t.years != null ? Math.round((t.startDate + t.years) * 12) / 12
+        : Math.max(t.startDate || t.start, dateOf(t.endEv) != null ? dateOf(t.endEv) : world.year);
+      if (t.kind === "war" && t.years == null) t.years = Math.min(10, Math.round((t.endDate - t.startDate) * 10) / 10);
+    }
+  }
+}
+
 function endTreatiesOf(world, p) {
   for (const t of world.treaties || []) if (t.end == null && (t.a === p.id || t.b === p.id)) AEON.endTreaty(world, t, "fall");
 }
@@ -1059,9 +1168,16 @@ function archetypeOf(world, p) {
   for (const a of list) if (a.id === p.archetypeId) return a;
   return null;
 }
+/* whether a region touches the open sea (not a lake), worked out once per region: sea and lakes
+   do not change during a history */
 function onSea(world, r) {
-  for (const n of r.neighbors || []) { const q = world.regions[n]; if (q && q.barren && !q.lake) return true; }
-  return false;
+  let c = world._onSea;
+  if (!c) { c = new Int8Array(world.regions.length).fill(-1); Object.defineProperty(world, "_onSea", { value: c, enumerable: false, configurable: true, writable: true }); }
+  if (c[r.id] < 0) {
+    c[r.id] = 0;
+    for (const n of r.neighbors || []) { const q = world.regions[n]; if (q && q.barren && !q.lake) { c[r.id] = 1; break; } }
+  }
+  return c[r.id] === 1;
 }
 function roundForce(n) { return n >= 1000 ? Math.round(n / 100) * 100 : n >= 100 ? Math.round(n / 10) * 10 : Math.round(n); }
 function fullArmy(world, p) {
@@ -1148,7 +1264,7 @@ AEON.battle = function (world, att, def, opts) {
   L[debt] = (L[debt] || 0) + lostL;
   let take = 0;
   if (won) take = margin === "narrow" ? 1 : margin === "clear" ? (rng.chance(0.5) ? 2 : 1) : Math.max(2, Math.min(6, Math.round((opts.frontier || 2) * 0.35)));
-  (world.battleLog || (world.battleLog = [])).push([world.year, att.id, def.id, ea, ed, r ? r.id : null, won, sea]);
+  (world.battleLog || (world.battleLog = [])).push([world.year, att.id, def.id, ea, ed, r ? r.id : null, won, sea, margin === "narrow" ? 1 : margin === "clear" ? 2 : 3]);
   return { won: won, W: W, L: L, margin: margin, odds: odds, ratio: ratio, take: take, pushBack: !won && margin === "crushing",
            men: { att: ea, def: ed }, lost: { W: lostW, L: lostL } };
 };
@@ -1294,6 +1410,7 @@ function fireOne(world, scope, subject, consolidateOnly) {
 AEON.tick = function (world) {
   if (world.year >= world.endYear) return false;
   world.year += world.timeStep;
+  const ev0 = world.chronicle.length;
   updateEra(world);
   baselineTick(world);
 
@@ -1335,6 +1452,7 @@ AEON.tick = function (world) {
     if (rng.chance(0.5)) fireOne(world, "world", null);
   }
 
+  warClock(world);
   logSettlements(world);
 
   /* if everyone is gone, let a new polity rise from the ashes */
@@ -1351,6 +1469,7 @@ AEON.tick = function (world) {
     }
   }
 
+  dateTick(world, ev0);
   return true;
 };
 

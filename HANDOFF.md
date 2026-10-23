@@ -157,6 +157,21 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   104 s. Headless Edge does not run requestAnimationFrame under virtual time, so playback was
   checked by simulating the ui.js loop in node (scratch pace.js), not in a browser; the built-in
   browser pane refused localhost and file:// while Daan was away.
+- **Diplomacy step 2, short wars (2026-10-24, changes every history):** core.js `warClock()` each
+  tick: every open war treaty may end (30% + 60% x |war score| + 35% once 4 years old; at 8 years
+  it ends), through the pack's peace event run with ctx.war / ctx.warScore (`concludePeace`;
+  pack.peaceEvent, default "peace-treaty"; core fallback "X and Y made peace"), then a truce of
+  20-40 years (`AEON.makeTruce`; also from historical endWar and fantasy peace()). A war declared
+  during a truce breaks it (a grievance). ctx.rivals() leaves out truce partners. `AEON.warScore`
+  (-1..1 for side a): battles by margin (battleLog [8] is now the margin 1-3) and grievances
+  since the war began. Dates: `dateTick()` spreads each tick's events over its 5 years to the
+  month (ev.date; ev.year stays the tick's); treaties get startDate / endDate, wars `years`
+  (`AEON.warLength`, at most 10). Open treaties are indexed (`openIndex`), sea-shore regions
+  cached (`onSea`). Historical peace-treaty: terms from the score (d = round(score x 4)), "after
+  N years" from warLength. Fantasy peace-treaty: a one-sided war (|score| >= 0.4) ends with a
+  border province ceded or a 30-year tithe; the throttle never drops an engine-ended war. Results:
+  wars last 0.3-10 years (median 6-7); historical ends with 10-11 realms, fantasy 10-18.
+  Generation got slower: historical seed 7 about 9.5 s headless (was about 6).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

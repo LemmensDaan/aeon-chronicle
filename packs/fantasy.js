@@ -418,7 +418,9 @@ function war(c, a, b, cause) {
 function peace(c, a, b) {
   setRel(a, b, 0.1);
   AEON.endTreaty(c.world, AEON.treatyBetween(c.world, a, b, "war"), "peace");
+  AEON.makeTruce(c.world, a, b);
 }
+function lasted(y) { return y == null ? "some years" : y < 1 ? "a single season" : y < 1.75 ? "a year" : Math.round(y) + " years"; }
 function stab(p, d) { p.traits.stability = clamp(p.traits.stability + d, 0.02, 0.98); }
 function piety(p, d) { p.traits.piety = clamp(p.traits.piety + d, 0.02, 0.98); }
 function stock(p, key, mul) { p[key] = Math.max(60, Math.round(p[key] * mul)); }
@@ -946,14 +948,30 @@ const SPINE = [
   {
     id: "peace-treaty", scope: "polity", weight: 6, cooldown: 20,
     test: function (c) { return c.rivals().some(function (o) { return (c.polity.relations[o.id] || 0) < -0.5; }); },
+    /* also run by core.js warClock to end a war (c.war, c.warScore for its side a): a one-sided
+       war ends with land given up or a tithe paid */
     run: function (c) {
-      const p = c.polity;
-      const foe = c.pick(c.rivals().filter(function (o) { return (p.relations[o.id] || 0) < -0.5; }));
+      const p = c.polity, w = c.world;
+      const foe = c.war ? w.polities[c.war.a === p.id ? c.war.b : c.war.a] : c.pick(c.rivals().filter(function (o) { return (p.relations[o.id] || 0) < -0.5; }));
+      if (!foe) return null;
+      const t = c.war || AEON.treatyBetween(w, p, foe, "war"), sc = c.war ? c.warScore * (c.war.a === p.id ? 1 : -1) : 0;
+      const len = t ? lasted(AEON.warLength(w, t)) : null;
+      let terms = "", tags = ["peace", "diplomacy"], reg = p.capital;
+      if (Math.abs(sc) >= 0.4) {
+        const W = sc > 0 ? p : foe, L = sc > 0 ? foe : p, bs = borderRegions(w, L, W);
+        if (L.regions.length > 1 && bs.length && c.chance(0.6)) {
+          const r = c.pick(bs), nm = sn(c, r, L);
+          annex(c, W, L, r); reg = r.id; tags.push("territory");
+          terms = " " + cap(pn(L)) + " gave up " + nm + " to " + pn(W) + ".";
+        } else {
+          AEON.treaty(w, "tribute", L, W, { until: c.year + 30 }); tags.push("tribute");
+          terms = " " + cap(pn(L)) + " was to send " + pn(W) + " a tithe of its harvests for a generation.";
+        }
+      } else terms = " The terms were read aloud in two languages, and both versions were later found to contain different borders.";
       peace(c, p, foe);
       stab(p, 0.04); stab(foe, 0.04);
-      return mk(2, ["peace", "diplomacy"], [c.actor(p), c.actor(foe)], p.capital,
-        "Envoys of " + pn(p) + " and " + pn(foe) + " met at a ford that belonged to neither and swore peace on " + c.choice(["salt", "iron", "an open flame", "the bones of a saint", "bread broken in three"]) +
-        ". The terms were read aloud in two languages, and both versions were later found to contain different borders.");
+      return mk(2, tags, [c.actor(p), c.actor(foe)], reg,
+        (len ? "After " + len + " of war, envoys" : "Envoys") + " of " + pn(p) + " and " + pn(foe) + " met at a ford that belonged to neither and swore peace on " + c.choice(["salt", "iron", "an open flame", "the bones of a saint", "bread broken in three"]) + "." + terms);
     }
   },
   {
@@ -2576,7 +2594,8 @@ function throttled(def) {
   const p = THROTTLE[def.id];
   if (!p) return def;
   const inner = def.run;
-  def.run = function (c) { if (!c.chance(p)) return null; return inner(c); };
+  /* a war the engine is ending (c.war) is never throttled away */
+  def.run = function (c) { if (!c.war && !c.chance(p)) return null; return inner(c); };
   return def;
 }
 

@@ -22,8 +22,8 @@
 <body>
 <main>
 <h1>Map animations</h1>
-<p class="lede">How events could play out on the map while history runs. Each panel loops. Pixel scale 3,
-Aeon's palette; realms are the coloured territories. Sprites and timings are drafts to react to.</p>
+<p class="lede">Second round. Realms are now made of cells and drawn with the map's own borders. Ships only sail from
+ports and keep to open water; a landing takes a small beachhead first. Each panel loops; <code>?t=ms</code> freezes a frame and <code>?only=4</code> shows one panel large.</p>
 <div class="grid" id="grid"></div>
 </main>
 <script>
@@ -32,9 +32,12 @@ Aeon's palette; realms are the coloured territories. Sprites and timings are dra
 const INK = "#2a1a0e", HALO = "#efe2bf", GOLD = "#e0b84f";
 const SEA = ["#16295f", "#1f4294", "#3570c4"], FOAM = "#a6dbff", SAND = "#e6cd88", GRASS = ["#7da84a", "#6c9640"], TREE = "#2f6e45";
 const REALM = { a: "#c0504d", b: "#4f81bd", c: "#9bbb59", d: "#8064a2" };
-const W = 120, H = 70, S = 3;                             /* map pixels per panel, CSS px per map pixel */
+const W = 120, H = 70;                                    /* map pixels per panel */
 
-function sprite(rows, pal) { return { rows: rows, pal: pal, w: rows[0].length, h: rows.length }; }
+function sprite(rows, pal) {
+  rows.forEach(function (r) { if (r.length !== rows[0].length) throw new Error("ragged sprite row: " + r); });
+  return { rows: rows, pal: pal, w: rows[0].length, h: rows.length };
+}
 function blit(g, sp, x, y, over) {
   for (let j = 0; j < sp.h; j++) for (let i = 0; i < sp.w; i++) {
     const ch = sp.rows[j][i];
@@ -43,26 +46,51 @@ function blit(g, sp, x, y, over) {
     g.fillRect(Math.round(x) + i, Math.round(y) + j, 1, 1);
   }
 }
-const ROOF = { k: INK, w: "#efe6d6", r: "#b5452e", g: "#b7b1a4", b: "#7a4a22", f: "#3a6ea5", F: "#244a73" };
-const VILLAGE = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."], ROOF);
+/* draw only the part of a sprite above a line (rising out of, or sinking into, ground or sea) */
+function blitAbove(g, sp, x, y, line, over) {
+  g.save(); g.beginPath(); g.rect(0, 0, W, line); g.clip(); blit(g, sp, x, y, over); g.restore();
+}
+const PAL = { k: INK, w: "#efe6d6", r: "#b5452e", g: "#b7b1a4", b: "#7a4a22", f: "#3a6ea5", F: "#244a73", y: GOLD, o: "#e8742a",
+              c: "#ddd0aa", d: "#9a8a64", x: "#e3d3ad", s: "#b59d70", G: "#4f8a3a", t: "#8a7a5a" };
+const VILLAGE = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."], PAL);
+const TOWN = sprite(["......k....", ".....kgk...", "..k..kgk...", ".krk.kwk.k.", "krrrkkwkkrk", "kwwwkkwkkwk", "kwkwkkwkkwk", "kkkkkkkkkkk"], PAL);
+const CITY = sprite(["k.k.....k.k", "kgk.k.k.kgk", "kgkkgkgkkgk", "kgggggggggk", "kgrrkgkrrgk", "kgwwkgkwwgk", "kgggkkkgggk", "kggkbbbkggk", "kkkkkkkkkkk"], PAL);
 const KEEP = sprite(["......kff....", "......kfff...", "......kff....", "......k......", "..k.k.k.k.k..", "..kgkgkgkgk..",
-                     "..kgggggggk..", "k.kgggggggk.k", "kgkgwwgwwgkgk", "kgkgggkgggkgk", "kgkggkbkggkgk", "kkkkkkkkkkkkk"], ROOF);
+                     "..kgggggggk..", "k.kgggggggk.k", "kgkgwwgwwgkgk", "kgkgggkgggkgk", "kgkggkbkggkgk", "kkkkkkkkkkkkk"], PAL);
+const SEAT = sprite(["k.......k", "kk.krk.kk", "kgkrrrkgk", "kgkwwwkgk", "kgggggggk", "kggkbkggk", "kkkkkkkkk"], PAL);
+/* a port: a town on the shore with a jetty and a moored mast flying the realm's colour; the jetty
+   (the last four columns, row 6) reaches out over the water */
+const PORT = sprite(["......k......", ".....kgk.....", "..k..kgk...k.", ".krk.kwk..kf.", "krrrkkwkk.kf.", "kwwwkkwkk.k..",
+                     "kwkwkkwkkbbbb", "kkkkkkkkk.b.b"], PAL);
+/* the camp a landing party pitches at the water's edge: a standard and two tents */
+const CAMP = sprite(["kff.......", "kf....k...", "k....kck..", "k...kccdk.", "k..kcccddk", "kkkkkkkkkk"], PAL);
+const RUIN = sprite(["k........k.", "kg.k.....kg", "kgkgk..k.kg", "kggg.k.kgkg", "kg.gg.kgg.g", "kkkkkkkkkkk"], PAL);
+const RUBBLE = sprite(["....k......", "..kxk.k.kk.", ".kxsxkxkxsk", "kxsxxsxxsxk", "kkkkkkkkkkk"], PAL);
 /* a soldier in its realm's tabard (f), with a spear; two walking frames */
 const SOLDIER = [
   sprite(["....s", ".kk.s", ".kwks", "kffks", ".ffk.", ".kk..", ".k.k.", "k...k"], { k: INK, w: "#e8c9a0", f: "#888", s: "#c9ced6" }),
   sprite(["....s", ".kk.s", ".kwks", "kffks", ".ffk.", ".kk..", "..k..", ".kk.."], { k: INK, w: "#e8c9a0", f: "#888", s: "#c9ced6" }),
 ];
-/* the banner bearer leading them */
 const BANNER = sprite(["kfff", "kfff", "kff.", "k...", "kkk.", "kwk.", "kff.", "kk..", "k.k."], { k: INK, w: "#e8c9a0", f: "#888" });
-/* a ship under its realm's sail, and its wake */
 const SHIP = sprite(["....k....", "...kfk...", "..kfffk..", "..kfffk..", "...kfk...", "....k....", "kbbbbbbbk", ".kbbbbbk."], { k: INK, f: "#888", b: "#7a4a22" });
-const CROWN = sprite(["k.k.k", "kykyk", "kyyyk", "kkkkk"], { k: INK, y: GOLD });
-const OBELISK = sprite(["...k...", "..kyk..", "..kwk..", "..kwk..", ".kwwwk.", ".kwwwk.", "kkkkkkk"], { k: INK, y: GOLD, w: "#efe6d6" });
-const SWORDS = sprite(["s.....s", ".s...s.", "..s.s..", "...s...", "..s.s..", "bk...kb", "b.....b"], { s: "#c9ced6", k: INK, b: "#7a4a22" });
+const CROWN = sprite(["k.k.k", "kykyk", "kyyyk", "kkkkk"], PAL);
 const FLAG = sprite(["kff", "kff", "k..", "k..", "k.."], { k: INK, f: "#888" });
-const PENNANT = sprite(["poooooooo.", "pfffffffo.", "pfffffffo.", "pfffffffo.", "pffffffo..", "pfffffffo.", "pfffffffo.", "pfffffffo.", "poooooooo.", "p.........", "p.........", "pp........"],
-  { p: INK, o: INK, f: GOLD });
-const GLYPH3 = ["kkk", "..k", ".kk", "..k", "kkk"];       /* the numeral on the pennant: age 3 */
+
+/* new-age symbols, to choose from */
+const AGE = [
+  { name: "rising sun", sp: sprite(["y...y...y", ".y..y..y.", "...yyy...", "..yyyyy..", ".yyyyyyy.", "kkkkkkkkk", ".k..k..k."], PAL) },
+  { name: "hourglass", sp: sprite(["kkkkkkk", ".kwwwk.", ".kyyyk.", "..kyk..", "...y...", "..kyk..", ".kwyyk.", ".kyyyk.", "kkkkkkk"], PAL) },
+  { name: "laurels and numeral", sp: sprite(["..GG...GG..", ".GG.....GG.", "GG.k.k.k.GG", "G..k.k.k..G", "GG.k.k.k.GG", ".GG.....GG.", "..GG.r.GG..", "....rrr...."], PAL) },
+  { name: "open book", sp: sprite([".kkk..kkk.", "kwwwkkwwwk", "kwttkkwttk", "kwwwkkwwwk", "kwttkkwttk", "kwwwkkwwwk", ".kkkkkkkk."], PAL) },
+];
+/* wonder designs, to choose from */
+const WONDERS = [
+  { name: "ziggurat", sp: sprite(["....kyk....", "...kkkkk...", "...kxxsk...", "..kkkkkkk..", "..kxxxxsk..", ".kkkkkkkkk.", ".kxxkbkxsk.", "kkkkkkkkkkk"], PAL) },
+  { name: "lighthouse", sp: sprite(["..oyo..", ".koyok.", ".kkkkk.", "..kxk..", "..krk..", "..kxk..", "..krk..", ".kxxsk.", ".krrrk.", ".kxxsk.", "kxxbxsk", "kkkkkkk"], PAL) },
+  { name: "domed hall", sp: sprite(["......y......", "....kkkkk....", "...kxxxxsk...", "..kxxxxxssk..", ".kkkkkkkkkkk.", ".kxkxkxkxkxk.", ".kxkxkxkxkxk.", ".kxkxkbkxkxk.", "kkkkkkkkkkkkk"], PAL) },
+  { name: "temple", sp: sprite([".....k.....", "...kkykk...", ".kkxxxxxkk.", "kkkkkkkkkkk", ".x.x.x.x.x.", ".x.x.x.x.x.", ".x.x.x.x.x.", "kkkkkkkkkkk", "kxxxxxxxxsk", "kkkkkkkkkkk"], PAL) },
+];
+function tab(k) { return { f: REALM[k], F: mix(REALM[k], INK, 0.4) }; }
 
 /* the game project's speech bubble: an edge colour, a parchment fill and a tail pointing down at
    (x, y); it pops up from a little lower, then bobs a pixel every half second */
@@ -76,6 +104,7 @@ function bubble(g, x, y, edge, t, draw, w, h) {
 }
 /* the game project's four-frame twinkle: a dot, a small cross, a long cross, then its tips drifting */
 function twinkle(g, x, y, a) {
+  if (a < 0 || a >= 1) return;
   const f = Math.min(3, Math.floor(a * 4));
   g.fillStyle = f === 3 ? "rgba(255,248,225,.55)" : "#fff8e1";
   if (f < 3) g.fillRect(x, y, 1, 1);
@@ -83,15 +112,68 @@ function twinkle(g, x, y, a) {
   for (let d = from; d <= to; d++) { g.fillRect(x - d, y, 1, 1); g.fillRect(x + d, y, 1, 1); g.fillRect(x, y - d, 1, 1); g.fillRect(x, y + d, 1, 1); }
 }
 function hash(a, b) { let h = Math.imul(a + 1, 374761393) ^ Math.imul(b + 7, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function rgbOf(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 function mix(c, d, t) {
-  const p = function (h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
-  const a = p(c), b = p(d);
+  const a = rgbOf(c), b = rgbOf(d);
   return "rgb(" + Math.round(a[0] + (b[0] - a[0]) * t) + "," + Math.round(a[1] + (b[1] - a[1]) * t) + "," + Math.round(a[2] + (b[2] - a[2]) * t) + ")";
 }
 function ease(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
+function clamp01(t) { return Math.max(0, Math.min(1, t)); }
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function bayer(x, y) { return (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16; }
+
+/* ------------------------------------------------------------ effects */
+/* a cartoon scuffle: a boiling dust cloud with fists, feet and blades poking out, and stars */
+function brawl(g, cx, cy, t, r) {
+  const f = Math.floor(t / 90), C = [];
+  for (let k = 0; k < 6; k++) {
+    const a = k / 5 * 6.28 + hash(k, f) * 0.8, d = k ? r * 0.5 : 0;
+    C.push([cx + Math.cos(a) * d + (hash(k, f + 3) - 0.5) * 1.5, cy + Math.sin(a) * d * 0.7, r * (0.48 + 0.2 * hash(k, f + 7))]);
+  }
+  const inside = function (x, y) { return C.some(function (c) { return (x + 0.5 - c[0]) ** 2 + (y + 0.5 - c[1]) ** 2 <= c[2] * c[2]; }); };
+  for (let y = Math.floor(cy - r - 2); y <= cy + r + 2; y++) for (let x = Math.floor(cx - r - 3); x <= cx + r + 3; x++) {
+    if (!inside(x, y)) continue;
+    const edge = !inside(x + 1, y) || !inside(x - 1, y) || !inside(x, y + 1) || !inside(x, y - 1);
+    g.fillStyle = edge ? INK : y > cy + r * 0.25 ? "#cdbf9c" : "#efe4c8";
+    g.fillRect(x, y, 1, 1);
+  }
+  for (let k = 0; k < 3; k++) {                           /* limbs and blades */
+    const a = hash(k, f + 11) * 6.28, ux = Math.cos(a), uy = Math.sin(a);
+    let d = 0;
+    while (d < r + 4 && inside(Math.round(cx + ux * d), Math.round(cy + uy * d))) d++;
+    for (let s = 0; s < 3; s++) {
+      g.fillStyle = s === 2 ? (k === 0 ? "#c9ced6" : "#e8c9a0") : INK;
+      g.fillRect(Math.round(cx + ux * (d + s)), Math.round(cy + uy * (d + s)), 1, 1);
+    }
+  }
+  for (let k = 0; k < 2; k++) {                           /* stars */
+    const a = hash(k, f + 21) * 6.28, x = Math.round(cx + Math.cos(a) * (r + 2)), y = Math.round(cy + Math.sin(a) * (r + 1));
+    g.fillStyle = GOLD; g.fillRect(x, y - 1, 1, 3); g.fillRect(x - 1, y, 3, 1);
+  }
+}
+function flames(g, x, y, w, t) {
+  for (let i = 0; i < w; i++) {
+    const h = Math.floor(hash(i, Math.floor(t / 90) + x) * 4);
+    if (!h) continue;
+    g.fillStyle = PAL.o; g.fillRect(x + i, y - h, 1, h);
+    g.fillStyle = GOLD; g.fillRect(x + i, y - 1, 1, 1);
+  }
+}
+function smoke(g, x, y, t, n, spread) {
+  for (let k = 0; k < n; k++) {
+    const age = (t / 1400 + hash(k, 1)) % 1, px = x + (hash(k, 2) - 0.5) * spread + Math.sin(age * 6 + k) * 1.5, py = y - age * 14;
+    g.fillStyle = "rgba(70,62,58," + (0.65 * (1 - age)).toFixed(2) + ")";
+    const s = age > 0.45 ? 2 : 1;
+    g.fillRect(Math.round(px), Math.round(py), s, s);
+  }
+}
+function dust(g, x, y, w, t) {
+  g.fillStyle = "rgba(230,215,180,.85)";
+  for (let k = 0; k < 8; k++) g.fillRect(x + Math.round(hash(k, Math.floor(t / 120)) * w), y + Math.round(hash(k + 9, Math.floor(t / 120)) * 3) - 1, 1, 1);
+}
 
 /* ------------------------------------------------------------ a little world per panel */
-/* land: a few soft blobs; owners: the nearest realm seed within its reach */
+/* land: a few soft blobs */
 function makeLand(blobs) {
   const land = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -102,6 +184,67 @@ function makeLand(blobs) {
   }
   return land;
 }
+/* cells: like the map's regions, every pixel belongs to its nearest jittered seed; realms own cells */
+function makeCells(land) {
+  const STEP = 8, cells = [], cellOf = new Int16Array(W * H);
+  for (let gy = 0; gy * STEP < H + STEP; gy++) for (let gx = 0; gx * STEP < W + STEP; gx++) {
+    const x = gx * STEP + hash(gx, gy + 40) * 7, y = gy * STEP + hash(gx + 40, gy) * 7;
+    /* u: x with a wobble, so a split along "u < 60" makes a ragged border like the map's */
+    cells.push({ i: cells.length, gx: gx, gy: gy, x: x, y: y, u: x + (hash(gx + 90, gy + 90) - 0.5) * 16 });
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let best = 0, bd = Infinity;
+    for (const c of cells) { const d = (x - c.x) ** 2 + (y - c.y) ** 2; if (d < bd) { bd = d; best = c.i; } }
+    cellOf[y * W + x] = best;
+  }
+  return { cells: cells, cellOf: cellOf };
+}
+/* distance from land, in pixels, for every water pixel (land is 0) */
+function makeDepth(land) {
+  const D = new Int16Array(W * H).fill(-1), q = [];
+  for (let i = 0; i < W * H; i++) if (land[i]) { D[i] = 0; q.push(i); }
+  for (let h = 0; h < q.length; h++) {
+    const i = q[h], x = i % W, y = (i - x) / W;
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+      const nx = x + d[0], ny = y + d[1];
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) return;
+      const j = ny * W + nx;
+      if (D[j] < 0) { D[j] = D[i] + 1; q.push(j); }
+    });
+  }
+  return D;
+}
+/* a sea lane between two points that keeps to open water, smoothed */
+function seaPath(P, a, b) {
+  const ok = function (i) { return P.depth[i] >= 5; };
+  const near = function (p) {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < W * H; i++) if (ok(i)) { const d = (i % W - p[0]) ** 2 + (Math.floor(i / W) - p[1]) ** 2; if (d < bd) { bd = d; best = i; } }
+    return best;
+  };
+  const s = near(a), e = near(b), prev = new Int32Array(W * H).fill(-1), q = [s];
+  prev[s] = s;
+  for (let h = 0; h < q.length && prev[e] < 0; h++) {
+    const i = q[h], x = i % W, y = (i - x) / W;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if ((!dx && !dy) || nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const j = ny * W + nx;
+      if (prev[j] < 0 && ok(j)) { prev[j] = i; q.push(j); }
+    }
+  }
+  const raw = [];
+  for (let i = e; ; i = prev[i]) { raw.unshift([i % W, Math.floor(i / W)]); if (i === s) break; }
+  return raw.map(function (p, k) {
+    let sx = 0, sy = 0, n = 0;
+    for (let d = -4; d <= 4; d++) { const r = raw[Math.max(0, Math.min(raw.length - 1, k + d))]; sx += r[0]; sy += r[1]; n++; }
+    return [sx / n, sy / n];
+  });
+}
+/* the first land pixel met walking from x along row y in direction dir */
+function shore(P, y, x, dir) { while (x >= 0 && x < W && !P.land[y * W + x]) x += dir; return x; }
+function landCells(P, test) { return P.cells.filter(function (c) { return test(c); }); }
+
 function paintTerrain(g, land) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
@@ -120,131 +263,233 @@ function paintTerrain(g, land) {
     if (land[y * W + x] && land[Math.min(H - 1, y + 2) * W + x]) { g.fillStyle = TREE; g.fillRect(x, y, 2, 2); g.fillStyle = INK; g.fillRect(x, y + 2, 2, 1); }
   }
 }
-/* owners as a function: (x, y) -> realm key or null; drawn as a dithered wash with a dark border */
-function paintRealms(g, land, ownerAt, flash) {
-  const own = new Array(W * H);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) own[y * W + x] = land[y * W + x] ? ownerAt(x, y) : null;
+/* realms the way js/pixelmap.js draws them in the political mode: a dithered wash, a dark edge
+   pixel and a softer second pixel where owners meet; water never counts as another owner. flash
+   (0-1) lightens freshly taken cells. */
+function paintRealms(g, P, owner, flash) {
+  const own = P.cells.map(function (c) { return owner(c); });
+  const fl = flash ? P.cells.map(function (c) { return own[c.i] ? flash(c, own[c.i]) : 0; }) : null;
+  const img = g.getImageData(0, 0, W, H), d = img.data, land = P.land, cellOf = P.cellOf;
+  const at = function (x, y, o) { return x < 0 || y < 0 || x >= W || y >= H || !land[y * W + x] ? o : own[cellOf[y * W + x]]; };
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x, o = own[i];
+    const i = y * W + x;
+    if (!land[i]) continue;
+    const o = own[cellOf[i]];
     if (!o) continue;
-    const col = REALM[o] || o;
-    const edge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(function (d) { const nx = x + d[0], ny = y + d[1]; return nx >= 0 && ny >= 0 && nx < W && ny < H && land[ny * W + nx] && own[ny * W + nx] !== o; });
-    const f = flash ? flash(x, y, o) : 0;
-    if (edge) { g.fillStyle = mix(col, INK, 0.45); g.fillRect(x, y, 1, 1); }
-    else if ((x + y) % 2 === 0 || f > 0) { g.globalAlpha = 0.5 + 0.5 * f; g.fillStyle = f > 0 ? mix(col, "#fff4d6", f * 0.6) : col; g.fillRect(x, y, 1, 1); g.globalAlpha = 1; }
+    const cl = rgbOf(REALM[o]), p = i * 4;
+    const edge = at(x + 1, y, o) !== o || at(x - 1, y, o) !== o || at(x, y + 1, o) !== o || at(x, y - 1, o) !== o;
+    const edge2 = !edge && (at(x + 2, y, o) !== o || at(x - 2, y, o) !== o || at(x, y + 2, o) !== o || at(x, y - 2, o) !== o);
+    if (edge) { d[p] = cl[0] * 0.5; d[p + 1] = cl[1] * 0.5; d[p + 2] = cl[2] * 0.5; }
+    else {
+      const a = edge2 ? 0.62 : bayer(x, y) < 0.5 ? 0.66 : 0.44;
+      for (let k = 0; k < 3; k++) d[p + k] += (cl[k] - d[p + k]) * a;
+    }
+    const f = fl ? fl[cellOf[i]] : 0;
+    if (f > 0) { const L = [255, 244, 214]; for (let k = 0; k < 3; k++) d[p + k] += (L[k] - d[p + k]) * f * 0.6; }
   }
+  g.putImageData(img, 0, 0);
 }
-function nearestOwner(seeds) {
-  return function (x, y) {
-    let best = null, bd = Infinity;
-    for (const s of seeds) { const d = Math.hypot(x - s.x, y - s.y); if (d <= s.r && d < bd) { bd = d; best = s.k; } }
-    return best;
-  };
+/* the contested look before a border changes: cells flicker between the two owners */
+function flicker(c, t, a, b) { return (Math.floor(t / 140) + c.gx + c.gy) % 2 ? a : b; }
+function fade(t, at, len) { return t >= at ? Math.max(0, 1 - (t - at) / (len || 900)) : 0; }
+
+/* ships: at a point along a sea lane (index s), bobbing, with a wake while under way */
+function shipOn(g, path, s, color, t, k, moving) {
+  const i = Math.max(0, Math.min(path.length - 1, Math.round(s))), p = path[i];
+  const bob = Math.sin(t / 300 + k * 1.7) > 0.4 ? 1 : 0;
+  if (moving) {
+    g.fillStyle = FOAM;
+    for (let m = 2; m < 9; m++) if ((m + Math.floor(t / 150)) % 2) { const q = path[Math.max(0, i - m)]; g.fillRect(Math.round(q[0]), Math.round(q[1]) + 1, 1, 1); }
+  }
+  blit(g, SHIP, p[0] - 4, p[1] - 6 + bob, { f: color });
 }
+function march(g, x, y, n, color, t, banner) {
+  const step = Math.floor(t / 160) % 2;
+  if (banner) blit(g, BANNER, x + 6, y - 2, { f: color });
+  for (let i = 0; i < n; i++) blit(g, SOLDIER[(step + i) % 2], x - i * 5, y + (i % 2), { f: color });
+}
+function lerp(a, b, p) { return a + (b - a) * p; }
 
 /* ------------------------------------------------------------ the scenes */
 const SCENES = [
-  { title: "Expansion", note: "A realm grows outward; new land flashes in its colour and twinkles.", period: 5000,
+  { title: "Expansion", note: "Land is taken a few cells at a time, each batch flashing in; no smooth growth.", period: 6000,
     land: [[60, 35, 50, 30]],
-    draw: function (g, land, t) {
-      const r = 12 + 22 * ease(t / 3200);
-      const seeds = [{ k: "a", x: 45, y: 34, r: r }, { k: "b", x: 92, y: 36, r: 18 }];
-      paintRealms(g, land, nearestOwner(seeds), function (x, y, o) {
-        if (o !== "a") return 0;
-        const d = Math.hypot(x - 45, y - 34);
-        return d > r - 3 ? Math.max(0, 1 - (r - d) / 3) * (0.6 + 0.4 * Math.sin(t / 80)) : 0;
-      });
-      if (t < 3600) for (let k = 0; k < 6; k++) {
-        const a = hash(k, Math.floor(t / 600)) * 6.28, x = Math.round(45 + Math.cos(a) * (r - 1)), y = Math.round(34 + Math.sin(a) * (r - 1) * 0.8);
-        if (land[y * W + x]) twinkle(g, x, y, (t % 600) / 600);
-      }
-      blit(g, KEEP, 39, 26, { f: REALM.a, F: mix(REALM.a, INK, 0.4) });
-      blit(g, KEEP, 86, 28, { f: REALM.b, F: mix(REALM.b, INK, 0.4) });
+    setup: function (P) {
+      const ax = 40, ay = 34, bx = 94, by = 36;
+      P.rival = function (c) { return Math.hypot(c.x - bx, c.y - by) < 18; };
+      P.when = {};
+      const grow = landCells(P, function (c) { const d = Math.hypot(c.x - ax, c.y - ay); return d >= 11 && d < 34 && !P.rival(c); })
+        .sort(function (u, v) { return Math.hypot(u.x - ax, u.y - ay) + hash(u.i, 5) * 8 - Math.hypot(v.x - ax, v.y - ay) - hash(v.i, 5) * 8; });
+      grow.forEach(function (c, k) { P.when[c.i] = 300 + Math.floor(k / 3) * 380; });
+      P.home = function (c) { return Math.hypot(c.x - ax, c.y - ay) < 11; };
+    },
+    draw: function (g, P, t) {
+      paintRealms(g, P, function (c) { return P.rival(c) ? "b" : P.home(c) || P.when[c.i] <= t ? "a" : null; },
+        function (c, o) { return o === "a" && P.when[c.i] != null ? fade(t, P.when[c.i], 500) : 0; });
+      for (const k in P.when) { const c = P.cells[k], a = (t - P.when[k]) / 600; if (a >= 0 && a < 1) twinkle(g, Math.round(c.x), Math.round(c.y), a); }
+      blit(g, KEEP, 34, 26, tab("a"));
+      blit(g, KEEP, 88, 28, tab("b"));
     } },
-  { title: "Collapse and split", note: "The far provinces flicker between old and new colours, then break away under their own border.", period: 5200,
+
+  { title: "Collapse and split", note: "The far provinces flicker, break away, and their largest town becomes the new realm's capital: the crown comes down on it.", period: 6400,
     land: [[60, 35, 52, 28]],
-    draw: function (g, land, t) {
-      const k = t / 5200;
-      paintRealms(g, land, function (x, y) {
-        if (x < 64) return "d";
-        if (k < 0.3) return "d";
-        if (k < 0.6) return (Math.floor(t / 140) + (x >> 2) + (y >> 2)) % 2 ? "d" : "c";
-        return "c";
-      }, function (x, y, o) { return k > 0.6 && k < 0.75 && x >= 64 ? 1 - (k - 0.6) / 0.15 : 0; });
-      if (k > 0.25 && k < 0.6) { g.fillStyle = INK; for (let y = 10; y < 62; y += 2) if (land[y * W + 64]) g.fillRect(64 + (hash(y, Math.floor(t / 120)) > 0.5 ? 1 : 0), y, 1, 2); }
-      blit(g, KEEP, 30, 26, { f: REALM.d, F: mix(REALM.d, INK, 0.4) });
-      if (k > 0.6) bubble(g, 90, 30, INK, t - 0.6 * 5200, function (l, tp) { blit(g, FLAG, l + 3, tp + 2, { f: REALM.c }); }, 9, 9);
+    draw: function (g, P, t) {
+      const k = t / 6400, out = function (c) { return c.u >= 64; };
+      paintRealms(g, P, function (c) {
+        if (!out(c) || k < 0.25) return "d";
+        if (k < 0.55) return flicker(c, t, "d", "a");
+        return "a";
+      }, function (c) { return out(c) ? fade(t, 0.55 * 6400, 900) : 0; });
+      blit(g, KEEP, 30, 26, tab("d"));
+      const tx = 84, ty = 26;
+      if (k < 0.62) blit(g, TOWN, tx, ty + 4);
+      if (k > 0.5 && k < 0.62) blit(g, CROWN, tx + 3, lerp(4, ty - 2, ease((k - 0.5) / 0.12)));
+      if (k >= 0.62) { blit(g, KEEP, tx - 1, ty, tab("a")); twinkle(g, tx + 7, ty - 2, (t - 0.62 * 6400) / 800); }
+      if (k > 0.68) bubble(g, tx + 6, ty - 1, INK, t - 0.68 * 6400, function (l, tp) { blit(g, FLAG, l + 3, tp + 2, { f: REALM.a }); }, 9, 9);
     } },
-  { title: "Invasion over land", note: "A war band marches from the capital to the target; dust and crossed swords for the clash; then the land changes hands.", period: 6000,
+
+  { title: "Invasion over land", note: "The war band marches to the border and a scuffle boils up there; then the contested cells flicker before they change hands.", period: 7600,
     land: [[60, 35, 54, 28]],
-    draw: function (g, land, t) {
-      const won = t > 4300;
-      paintRealms(g, land, function (x, y) { return x < 58 ? "a" : (won && x < 82 ? "a" : "b"); },
-        function (x, y, o) { return won && o === "a" && x >= 58 && x < 82 ? Math.max(0, 1 - (t - 4300) / 900) : 0; });
-      blit(g, KEEP, 22, 26, { f: REALM.a, F: mix(REALM.a, INK, 0.4) });
-      blit(g, VILLAGE, 72, 30);
-      const p = ease(Math.min(1, t / 3000)), x0 = 34, x1 = 64, x = x0 + (x1 - x0) * p, y = 34;
-      if (t < 4300) {
-        const step = Math.floor(t / 160) % 2;
-        blit(g, BANNER, x + 6, y - 2, { f: REALM.a });
-        for (let i = 0; i < 3; i++) blit(g, SOLDIER[(step + i) % 2], x - i * 5, y + (i % 2), { f: REALM.a });
-        for (let i = 0; i < 2; i++) blit(g, SOLDIER[(step + i + 1) % 2], 80 + i * 5, 33 + i, { f: REALM.b });
+    draw: function (g, P, t) {
+      const zone = function (c) { return c.u >= 58 && c.u < 84; };
+      paintRealms(g, P, function (c) {
+        if (c.u < 58) return "a";
+        if (!zone(c)) return "b";
+        if (t < 3900) return "b";
+        if (t < 5100) return flicker(c, t, "a", "b");
+        return "a";
+      }, function (c) { return zone(c) ? fade(t, 5100, 900) : 0; });
+      blit(g, KEEP, 18, 26, tab("a"));
+      blit(g, KEEP, 96, 26, tab("b"));
+      blit(g, VILLAGE, 72, 32);
+      if (t > 5100) blit(g, FLAG, 76, 27, { f: REALM.a });
+      if (t < 2700) {
+        march(g, lerp(36, 58, ease(t / 2600)), 34, 3, REALM.a, t, true);
+        march(g, lerp(80, 70, ease((t - 1600) / 1100)), 33, 2, REALM.b, t + 80, false);
       }
-      if (t > 3000 && t < 4300) {
-        const a = (t - 3000) / 1300;
-        g.fillStyle = "rgba(230,215,180,.8)";
-        for (let k = 0; k < 14; k++) { const ang = hash(k, 9) * 6.28, d = 2 + a * 9 * hash(k, 10); g.fillRect(Math.round(74 + Math.cos(ang) * d), Math.round(36 + Math.sin(ang) * d * 0.6), 1, 1); }
-        bubble(g, 74, 30, "#7a1010", t - 3000, function (l, tp) { blit(g, SWORDS, l + 2, tp + 2); }, 11, 11);
-      }
+      if (t >= 2600 && t < 4500) brawl(g, 64, 36, t, 6);
+      if (t >= 4500 && t < 5300) dust(g, 58, 38, 12, t);
+      if (t > 4500 && t < 5100) march(g, 66, 34, 2, REALM.a, t, true);
     } },
-  { title: "Invasion by sea", note: "Warships under the realm's sails cross from a port, leaving a wake; the troops land and the coast is taken.", period: 6500,
-    land: [[22, 35, 24, 30], [100, 34, 24, 28]],
-    draw: function (g, land, t) {
-      const landed = t > 4200;
-      paintRealms(g, land, function (x, y) { return x < 50 ? "a" : (landed && y < 40 ? "a" : "b"); },
-        function (x, y, o) { return landed && o === "a" && x >= 50 ? Math.max(0, 1 - (t - 4200) / 900) : 0; });
-      blit(g, KEEP, 12, 24, { f: REALM.a, F: mix(REALM.a, INK, 0.4) });
-      blit(g, KEEP, 100, 40, { f: REALM.b, F: mix(REALM.b, INK, 0.4) });
-      const p = ease(Math.min(1, t / 3800));
-      for (let s = 0; s < 3; s++) {
-        const x = 44 + 36 * p - s * 6, y = 22 + s * 7 + Math.round(Math.sin(t / 300 + s));
-        if (t < 4400) {
-          g.fillStyle = FOAM;
-          for (let k = 1; k < 6; k++) if ((k + Math.floor(t / 150)) % 2) g.fillRect(Math.round(x - k * 2), Math.round(y + 7), 1, 1);
-          blit(g, SHIP, x, y, { f: REALM.a });
+
+  { title: "Invasion by sea", note: "Only from a port. The fleet keeps to open water, lands, and holds a small beachhead with a camp. A second wave brings more men, who march inland and take the town.", period: 12600,
+    land: [[18, 35, 22, 30], [60, 29, 5, 4], [98, 38, 26, 30]],
+    setup: function (P) {
+      P.py = 38; P.px = shore(P, P.py, 47, -1);
+      P.ly = 24; P.lx = shore(P, P.ly, 66, +1);
+      P.route = seaPath(P, [P.px + 6, P.py], [P.lx - 10, P.ly + 2]);
+      P.beach = function (c) { return Math.hypot(c.x - (P.lx + 3), c.y - P.ly) < 8; };
+      P.vx = 88; P.vy = 42;
+      P.taken = function (c) { return Math.hypot(c.x - P.vx, c.y - P.vy) < 13; };
+    },
+    draw: function (g, P, t) {
+      paintRealms(g, P, function (c) {
+        if (c.x < 50) return "a";
+        if (c.x < 66) return null;
+        if (P.beach(c)) return t < 3900 ? "b" : t < 4700 ? flicker(c, t, "a", "b") : "a";
+        if (P.taken(c)) return t < 10200 ? "b" : t < 11000 ? flicker(c, t, "a", "b") : "a";
+        return "b";
+      }, function (c) { return P.beach(c) ? fade(t, 4700) : P.taken(c) ? fade(t, 11000) : 0; });
+      blit(g, PORT, P.px - 8, P.py - 7, tab("a"));
+      blit(g, KEEP, 6, 22, tab("a"));
+      blit(g, KEEP, 102, 26, tab("b"));
+      blit(g, VILLAGE, P.vx - 3, P.vy - 4);
+      if (t > 11000) blit(g, FLAG, P.vx + 2, P.vy - 9, { f: REALM.a });
+      const R = P.route, n = R.length - 1;
+      for (let s = 0; s < 3; s++) { const p = ease(t / 3000); shipOn(g, R, p * n - s * 8, REALM.a, t, s, p < 1); }
+      if (t > 4300) for (let s = 0; s < 2; s++) { const p = ease((t - 4300) / 2900); shipOn(g, R, p * n - 24 - s * 8, REALM.a, t, s + 3, p < 1); }
+      const cx = P.lx + 1, cy = P.ly - 5;
+      if (t > 3900) { blit(g, CAMP, cx, cy, tab("a")); twinkle(g, cx + 1, cy - 2, (t - 3900) / 800); }
+      if (t > 3000 && t < 3900) march(g, lerp(R[n][0], cx + 4, ease((t - 3000) / 900)), cy, 2, REALM.a, t, true);
+      if (t > 7200 && t < 9000) march(g, lerp(cx + 4, P.vx - 6, ease((t - 7200) / 1800)), lerp(cy, P.vy - 6, ease((t - 7200) / 1800)), 3, REALM.a, t, true);
+      if (t >= 8800 && t < 10400) brawl(g, P.vx - 2, P.vy - 3, t, 6);
+      if (t >= 10400 && t < 11000) dust(g, P.vx - 8, P.vy, 12, t);
+    } },
+
+  { title: "Exploration and a colony", note: "A ship leaves port for an empty shore; the settlers camp at the water's edge, claim a little land, and the camp grows into a village.", period: 8600,
+    land: [[18, 36, 22, 30], [100, 30, 16, 13]],
+    setup: function (P) {
+      P.py = 40; P.px = shore(P, P.py, 50, -1);
+      P.ly = 30; P.lx = shore(P, P.ly, 70, +1);
+      P.route = seaPath(P, [P.px + 6, P.py], [P.lx - 10, P.ly + 2]);
+      P.near = function (c, r) { return c.x > 66 && Math.hypot(c.x - (P.lx + 3), c.y - P.ly) < r; };
+    },
+    draw: function (g, P, t) {
+      paintRealms(g, P, function (c) {
+        if (c.x < 50) return "d";
+        if (P.near(c, 7) && t > 4200) return "d";
+        if (P.near(c, 13) && t > 6200) return "d";
+        return null;
+      }, function (c) { return P.near(c, 7) ? fade(t, 4200) : P.near(c, 13) ? fade(t, 6200) : 0; });
+      blit(g, PORT, P.px - 8, P.py - 7, tab("d"));
+      blit(g, KEEP, 6, 22, tab("d"));
+      const R = P.route, n = R.length - 1, p = ease(t / 3600);
+      shipOn(g, R, p * n, REALM.d, t, 0, p < 1);
+      const cx = P.lx + 1, cy = P.ly - 5;
+      if (t > 3600 && t < 4200) march(g, lerp(R[n][0], cx + 3, ease((t - 3600) / 600)), cy, 1, REALM.d, t, true);
+      if (t > 4200 && t < 6200) { blit(g, CAMP, cx, cy, tab("d")); twinkle(g, cx + 1, cy - 2, (t - 4200) / 800); }
+      if (t >= 6200) { blit(g, CAMP, cx, cy, tab("d")); blit(g, VILLAGE, cx + 9, cy - 1); twinkle(g, cx + 12, cy - 3, (t - 6200) / 800); }
+    } },
+
+  { title: "Naval battle", note: "Two fleets meet at sea and trade shot; a ship burns and sinks with its debris, and the losers turn for home.", period: 9600,
+    land: [[-4, 35, 13, 40], [124, 35, 13, 40]],
+    draw: function (g, P, t) {
+      paintRealms(g, P, function (c) { return c.x < 60 ? "a" : "b"; });
+      const p = ease(t / 2400), back = ease((t - 5600) / 2400), F = [];
+      for (let s = 0; s < 3; s++) F.push({ k: "a", x: lerp(14, 46, p), y: 16 + s * 14 + (s === 1 ? 2 : 0) });
+      for (let s = 0; s < 3; s++) F.push({ k: "b", x: lerp(106, 74, p) + (s === 1 ? 0 : 32 * back), y: 20 + s * 14 });
+      const sunk = F[4], sink = clamp01((t - 5000) / 1800) * 9;
+      F.forEach(function (f, s) {
+        const bob = Math.sin(t / 300 + s * 1.7) > 0.4 ? 1 : 0, x = Math.round(f.x) - 4, y = Math.round(f.y) - 6 + bob;
+        if (f === sunk && t > 5000) {
+          if (sink < 9) blitAbove(g, SHIP, x, y + Math.round(sink), Math.round(f.y) + 2, { f: REALM[f.k] });
+          return;
         }
+        if ((p > 0 && p < 1) || (f.k === "b" && back > 0 && back < 1)) {
+          g.fillStyle = FOAM; for (let m = 2; m < 10; m += 2) if ((m / 2 + Math.floor(t / 150)) % 2) g.fillRect(f.x + (f.k === "a" && back === 0 ? -m - 2 : m + 2), f.y + 1, 1, 1);
+        }
+        blit(g, SHIP, x, y, { f: REALM[f.k] });
+      });
+      if (t > 2400 && t < 5600) {                          /* the exchange of shot */
+        const v = Math.floor(t / 260), src = F[v % 6], dst = F[(v + 3) % 6], a = (t % 260) / 260;
+        if (!(src === sunk && t > 4800)) {
+          g.fillStyle = "rgba(235,230,220,.8)"; g.fillRect(Math.round(src.x) + (src.k === "a" ? 4 : -5), Math.round(src.y) - 3, 2, 2);
+          g.fillStyle = INK; g.fillRect(Math.round(lerp(src.x, dst.x, a)), Math.round(lerp(src.y - 3, dst.y - 3, a) - Math.sin(a * Math.PI) * 4), 1, 1);
+          if (hash(v, 3) < 0.5) { g.fillStyle = FOAM; g.fillRect(Math.round(dst.x) + (hash(v, 4) < 0.5 ? -7 : 6), Math.round(dst.y) - 1 - Math.round(a * 2), 1, 2); }
+        }
+        smoke(g, 60, 30, t, 10, 30);
       }
-      if (t > 3800 && t < 4600) { const step = Math.floor(t / 160) % 2; for (let i = 0; i < 3; i++) blit(g, SOLDIER[(step + i) % 2], 82 + i * 5, 22 + i * 3, { f: REALM.a }); }
+      if (t > 4000 && t < 5600) flames(g, Math.round(sunk.x) - 2, Math.round(sunk.y) - 4 + Math.round(sink), 5, t);
+      if (t > 4000 && t < 7200) smoke(g, sunk.x, sunk.y - 6, t, 5, 4);
+      if (t > 5200 && t < 8600) {                         /* rings where it goes down, then floating debris */
+        const a = ((t - 5200) % 900) / 900;
+        g.fillStyle = FOAM;
+        for (let d = -1; d <= 1; d += 2) g.fillRect(Math.round(sunk.x + d * (4 + a * 5)), Math.round(sunk.y) + 2, 1, 1);
+        g.fillStyle = "#7a4a22";
+        if (t > 6800) for (let k = 0; k < 4; k++) g.fillRect(Math.round(sunk.x - 4 + hash(k, 8) * 8 + (t - 6800) / 900), Math.round(sunk.y) + (k % 2), 2, 1);
+      }
     } },
-  { title: "Exploration and a colony", note: "A lone ship sails to an empty shore; a flag goes up, and a village follows.", period: 6000,
-    land: [[20, 35, 22, 30], [104, 30, 20, 22]],
-    draw: function (g, land, t) {
-      paintRealms(g, land, function (x, y) { return x < 50 ? "c" : (t > 4200 && Math.hypot(x - 100, y - 30) < 9 ? "c" : null); },
-        function (x, y, o) { return t > 4200 && x >= 50 ? Math.max(0, 1 - (t - 4200) / 900) : 0; });
-      blit(g, KEEP, 10, 24, { f: REALM.c, F: mix(REALM.c, INK, 0.4) });
-      const p = ease(Math.min(1, t / 3500)), x = 40 + 46 * p, y = 30 + Math.round(Math.sin(t / 300));
-      if (t < 3800) { g.fillStyle = FOAM; for (let k = 1; k < 6; k++) if ((k + Math.floor(t / 150)) % 2) g.fillRect(Math.round(x - k * 2), y + 7, 1, 1); blit(g, SHIP, x, y, { f: REALM.c }); }
-      if (t > 3600) blit(g, FLAG, 96, 22 - Math.round(4 * ease((t - 3600) / 500)), { f: REALM.c });
-      if (t > 4400) { blit(g, VILLAGE, 99, 28); if (t < 5200) twinkle(g, 102, 26, (t - 4400) / 800); }
+
+  { title: "Entering a new age", note: "Four symbols to choose from, left to right: a rising sun, an hourglass, laurels with the age's numeral, an open book.", period: 5000,
+    land: [[60, 35, 56, 28]],
+    draw: function (g, P, t) {
+      const K = ["a", "b", "c", "d"];
+      paintRealms(g, P, function (c) { return K[Math.max(0, Math.min(3, Math.floor((c.u - 4) / 28)))]; });
+      AGE.forEach(function (a, k) {
+        const x = 12 + k * 28;
+        blit(g, KEEP, x - 6, 32, tab(K[k]));
+        const st = 400 + k * 250;
+        if (t > st && t < 4200) bubble(g, x, 31, GOLD, t - st, function (l, tp) { blit(g, a.sp, l + 3, tp + 3); }, a.sp.w + 6, a.sp.h + 6);
+      });
     } },
-  { title: "Entering a new age", note: "The game project's speech bubble over the capital, with the age's pennant; it pops up, then bobs.", period: 4500,
-    land: [[60, 35, 50, 28]],
-    draw: function (g, land, t) {
-      paintRealms(g, land, function (x) { return x < 70 ? "b" : "a"; });
-      blit(g, KEEP, 40, 28, { f: REALM.b, F: mix(REALM.b, INK, 0.4) });
-      blit(g, KEEP, 86, 28, { f: REALM.a, F: mix(REALM.a, INK, 0.4) });
-      if (t > 500 && t < 3800) bubble(g, 46, 26, GOLD, t - 500, function (l, tp) {
-        blit(g, PENNANT, l + 3, tp + 2);
-        g.fillStyle = INK; GLYPH3.forEach(function (row, j) { for (let i = 0; i < 3; i++) if (row[i] === "k") g.fillRect(l + 5 + i, tp + 3 + j, 1, 1); });
-      }, 16, 16);
-    } },
-  { title: "The capital moves", note: "The crown arcs from the old seat to the new one, which is then flown the realm's colours.", period: 4500,
+
+  { title: "The capital moves", note: "Unchanged: the crown arcs from the old seat to the new one, which is then flown the realm's colours.", period: 4500,
     land: [[60, 35, 54, 28]],
-    draw: function (g, land, t) {
-      paintRealms(g, land, function () { return "d"; });
-      const moved = t > 2600, banner = { f: REALM.d, F: mix(REALM.d, INK, 0.4) };
-      blit(g, moved ? sprite(["k.......k", "kk.krk.kk", "kgkrrrkgk", "kgkwwwkgk", "kgggggggk", "kggkbkggk", "kkkkkkkkk"], ROOF) : KEEP, moved ? 26 : 24, moved ? 30 : 26, banner);
-      blit(g, moved ? KEEP : sprite(["k.......k", "kk.krk.kk", "kgkrrrkgk", "kgkwwwkgk", "kgggggggk", "kggkbkggk", "kkkkkkkkk"], ROOF), moved ? 84 : 86, moved ? 26 : 30, banner);
+    draw: function (g, P, t) {
+      paintRealms(g, P, function () { return "d"; });
+      const moved = t > 2600, banner = tab("d");
+      blit(g, moved ? SEAT : KEEP, moved ? 26 : 24, moved ? 30 : 26, banner);
+      blit(g, moved ? KEEP : SEAT, moved ? 84 : 86, moved ? 26 : 30, banner);
       if (t > 600 && t < 2700) {
         const p = ease((t - 600) / 2000), x = 30 + (90 - 30) * p, y = 24 - Math.sin(p * Math.PI) * 11;
         blit(g, CROWN, x - 2, y - 2);
@@ -252,35 +497,80 @@ const SCENES = [
       }
       if (moved && t < 3400) twinkle(g, 90, 22, (t - 2600) / 800);
     } },
-  { title: "A wonder is raised", note: "The obelisk rises out of the ground beside the city, with sparkles.", period: 4500,
-    land: [[60, 35, 50, 28]],
-    draw: function (g, land, t) {
-      paintRealms(g, land, function () { return "b"; });
-      blit(g, KEEP, 46, 28, { f: REALM.b, F: mix(REALM.b, INK, 0.4) });
-      const p = ease((t - 600) / 1800), h = Math.round(OBELISK.h * p);
-      if (h > 0) {
-        g.save(); g.beginPath(); g.rect(62, 40 - h, 7, h); g.clip();
-        blit(g, OBELISK, 62, 40 - OBELISK.h);
-        g.restore();
+
+  { title: "A wonder is raised", note: "Four designs to choose from, left to right: a ziggurat, a lighthouse, a domed hall, a temple. Each is built up from the ground.", period: 6000,
+    land: [[60, 35, 56, 28]],
+    draw: function (g, P, t) {
+      paintRealms(g, P, function () { return "b"; });
+      const base = 44;
+      WONDERS.forEach(function (wd, k) {
+        const sp = wd.sp, x = 14 + k * 28 - (sp.w >> 1), p = ease((t - 400 - k * 450) / 1600), h = Math.round(sp.h * p);
+        const fire = Math.floor(t / 150) % 2 ? { o: GOLD, y: PAL.o } : null;
+        if (h > 0) { g.save(); g.beginPath(); g.rect(x, base - h, sp.w, h); g.clip(); blit(g, sp, x, base - sp.h, fire); g.restore(); }
+        if (p > 0 && p < 1) dust(g, x - 1, base, sp.w + 2, t + k * 50);
+        twinkle(g, x + (sp.w >> 1), base - sp.h - 2, (t - 2200 - k * 450) / 800);
+      });
+    } },
+
+  { title: "A settlement is destroyed", note: "Fire runs over the roofs and smoke rises; the city falls in and leaves a ruin, still smoking.", period: 7000,
+    land: [[60, 35, 54, 28]],
+    draw: function (g, P, t) {
+      paintRealms(g, P, function () { return "a"; });
+      const x = 54, y = 28;
+      if (t < 3600) {
+        blit(g, CITY, x, y);
+        if (t > 800) flames(g, x + 1, y + 3 + (t < 1600 ? 2 : 0), t < 1600 ? 4 : 9, t);
+        if (t > 3000) dust(g, x - 1, y + 8, 13, t);
+      } else {
+        blit(g, RUIN, x, y + 3);
+        if (t < 4400) { dust(g, x - 2, y + 8, 15, t); dust(g, x - 1, y + 4, 13, t + 60); }
       }
-      if (t > 600 && t < 2600) { g.fillStyle = "rgba(230,215,180,.8)"; for (let k = 0; k < 6; k++) g.fillRect(61 + Math.round(hash(k, Math.floor(t / 120)) * 9), 40 + Math.round(hash(k + 9, Math.floor(t / 120)) * 2), 1, 1); }
-      if (t > 2400 && t < 3600) for (let k = 0; k < 3; k++) twinkle(g, 60 + k * 5, 30 + (k % 2) * 4, ((t - 2400) / 1200 + k * 0.2) % 1);
+      if (t > 1000 && t < 6200) smoke(g, x + 5, y + 2, t, t < 3600 ? 10 : 5, 9);
+    } },
+
+  { title: "A wonder is destroyed", note: "The wonder shakes and cracks, then sinks into its own dust and leaves rubble.", period: 7000,
+    land: [[60, 35, 54, 28]],
+    draw: function (g, P, t) {
+      paintRealms(g, P, function () { return "b"; });
+      blit(g, KEEP, 30, 26, tab("b"));
+      const sp = WONDERS[2].sp, x = 56, base = 38;
+      if (t < 2200) {
+        const shake = t > 1000 ? (Math.floor(t / 60) % 2 ? 1 : 0) : 0;
+        blit(g, sp, x + shake, base - sp.h);
+        g.fillStyle = INK;                                 /* cracks spreading down the walls */
+        const n = Math.floor(clamp01((t - 900) / 1200) * 10);
+        for (let k = 0; k < n; k++) g.fillRect(x + shake + 2 + Math.floor(hash(k, 31) * 9), base - sp.h + 2 + Math.floor(hash(k, 32) * 6), 1, 1);
+      } else if (t < 3400) {
+        const drop = Math.round(ease((t - 2200) / 1200) * sp.h);
+        blitAbove(g, sp, x, base - sp.h + drop, base);
+        dust(g, x - 3, base - 1, sp.w + 6, t); dust(g, x - 1, base - 4, sp.w + 2, t + 50);
+        g.fillStyle = PAL.x;                               /* stones flung out */
+        const a = ((t - 2200) % 600) / 600;
+        for (let k = 0; k < 4; k++) { const d = k < 2 ? -1 : 1; g.fillRect(Math.round(x + 6 + d * (3 + a * 8 + k)), Math.round(base - 6 - Math.sin(a * Math.PI) * 5 + k), 1, 1); }
+      }
+      if (t >= 3000) blit(g, RUBBLE, x + 1, base - RUBBLE.h);
+      if (t >= 3400 && t < 4400) dust(g, x - 2, base - 1, sp.w + 4, t);
     } },
 ];
 
 /* ------------------------------------------------------------ run */
 const grid = document.getElementById("grid");
-const panels = SCENES.map(function (sc) {
+/* ?only=4 shows just the fourth panel, three times larger */
+const ONLY = /[?&]only=([0-9]+)/.exec(location.search);
+if (ONLY) { grid.style.display = "block"; document.head.insertAdjacentHTML("beforeend", "<style>canvas { width: 1080px; height: 630px; }</style>"); }
+const panels = SCENES.filter(function (sc, k) { return !ONLY || k === +ONLY[1] - 1; }).map(function (sc) {
   const fig = document.createElement("figure"), cv = document.createElement("canvas");
   cv.width = W; cv.height = H;
   const cap = document.createElement("figcaption");
   cap.innerHTML = "<b></b><span></span>";
   cap.querySelector("b").textContent = sc.title; cap.querySelector("span").textContent = sc.note;
   fig.appendChild(cv); fig.appendChild(cap); grid.appendChild(fig);
-  const land = makeLand(sc.land), base = document.createElement("canvas");
+  const land = makeLand(sc.land), cl = makeCells(land), base = document.createElement("canvas");
   base.width = W; base.height = H;
   paintTerrain(base.getContext("2d"), land);
-  return { sc: sc, g: cv.getContext("2d"), land: land, base: base };
+  const P = { land: land, cells: cl.cells, cellOf: cl.cellOf, depth: makeDepth(land) };
+  if (sc.setup) sc.setup(P);
+  return { sc: sc, g: cv.getContext("2d", { willReadFrequently: true }), P: P, base: base };
 });
 /* ?t=1500 freezes every panel at that moment, to look at one frame */
 const FIXED = /[?&]t=([0-9]+)/.exec(location.search);
@@ -288,9 +578,9 @@ function frame(now) {
   for (const p of panels) {
     const t = FIXED ? +FIXED[1] % p.sc.period : now % p.sc.period;
     p.g.drawImage(p.base, 0, 0);
-    p.sc.draw(p.g, p.land, t);
+    p.sc.draw(p.g, p.P, t);
   }
-  requestAnimationFrame(frame);
+  if (!FIXED) requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 </script>

@@ -15,10 +15,19 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   alternate history to `../../alt-history-generator` (both plain copies, not repos). Daan's direction:
   Aeon becomes one world generator with setup options (number of starting empires; magic none / low /
   medium / high). Not started.
-- **Waiting on Daan:** feedback on `samples/animations.html` (eight looping draft animations: expansion,
-  split, invasion by land and by sea, colony, new age bubble, capital move, wonder rising; `?t=ms`
-  freezes a frame). Once he has picked, wire them into the map: play events as playback passes them,
-  at a sensible rate, and play the moment's events once when the year is set by scrubbing.
+- **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
+  `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
+  (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;
+  land invasions get a scuffle cloud and the contested flicker before the change; ships sail only
+  from ports and keep to open water; a sea landing takes a small beachhead with a camp at the water's
+  edge, and a second wave takes the inland town; colonies start as a shore camp. New: naval battle
+  with a ship burning and sinking, a settlement destroyed, a wonder destroyed. He disliked the age
+  pennant and the obelisk wonder: round 2 offers four of each (sun / hourglass / laurels / book;
+  ziggurat / lighthouse / domed hall / temple). He liked the split and the capital move.
+  Engine follow-up he asked for (changes histories): naval invasions and colonies only from coastal
+  cities (maybe a distinct port sprite), landing as a small beachhead, then reinforcements to take
+  more. After he picks, wire the animations into the map: play events as playback passes them, at
+  a sensible rate, and play the moment's events once when the year is set by scrubbing.
 - **Recent rounds, newest first** (each has its own section below): beaches back and two road styles
   (cobbles between cities and capitals, solid tracks elsewhere); more action and consolidation
   (~50 realms early, 10-20 at the end, annexation, overseas invasions and colonies, moving capitals,

@@ -339,9 +339,9 @@ function compose(c, w, mode, roads) {
    ROAD_MAX cells long. Drawn into the map at map resolution as a dotted track with a slight
    bend, so it zooms with the land like the rivers do. */
 /* The style follows what a road joins, by the smaller end: a dotted track wherever a village is
-   involved, a solid track between towns and cities, a pale paved road between cities and
-   capitals. */
-const ROAD = [96, 68, 38], PAVED = [205, 184, 143], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
+   involved, a solid track between towns and cities, and a cobbled road between cities and
+   capitals (style 5 of samples/settlements.html, Daan's pick): two stones wide, light and dark in turn. */
+const ROAD = [96, 68, 38], COBBLE_A = [183, 163, 124], COBBLE_B = [143, 124, 90], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
 function drawRoads(c, w, d) {
   const R = w.regions, W = w.width, VW = c.VW, VH = c.VH, land = c.land, by = {};
   for (let k = 0; k < R.length; k++) {
@@ -371,9 +371,10 @@ function drawRoads(c, w, d) {
   const put = function (x, y, k, horizontal) {
     if (style === 1) { if (k % 3 !== 2) dot(x, y, ROAD); return; }
     if (style === 2) { dot(x, y, ROAD); return; }
-    /* paved: two pixels wide, across the direction of travel */
-    dot(x, y, PAVED);
-    if (horizontal) dot(x, y + 1, PAVED); else dot(x + 1, y, PAVED);
+    /* cobbled: two pixels wide across the direction of travel, the stones alternating */
+    const a = k % 2 ? COBBLE_A : COBBLE_B, b = k % 2 ? COBBLE_B : COBBLE_A;
+    dot(x, y, a);
+    if (horizontal) dot(x, y + 1, b); else dot(x + 1, y, b);
   };
   const line = function (x0, y0, x1, y1, k0) {
     const n = Math.max(1, Math.round(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))));

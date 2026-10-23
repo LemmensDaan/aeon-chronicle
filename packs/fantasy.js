@@ -458,7 +458,8 @@ function provText(w, art) {
   return " Its keepers had been " + pv.map(function (x) { return pn(w.polities[x.holder]) + " (" + yl(x.year) + ")"; }).join(", then ") + ".";
 }
 function countArch(w, id) { return livingPolities(w).filter(function (p) { return p.archetypeId === id; }).length; }
-function crowded(w) { return livingPolities(w).length >= 20; }
+/* too many realms for new ones to split off: the world's cap for this year (core.js realmCap) */
+function crowded(w) { return livingPolities(w).length >= AEON.realmCap(w); }
 function dragons(w) { return livingPolities(w).filter(function (p) { return p.archetypeId === "dragon-fief"; }); }
 
 /* prophecy bookkeeping: a prophecy is a chronicle event tagged "prophecy";
@@ -509,6 +510,13 @@ function annex(c, win, lose, region, fate) {
   F(w).conquests.push({ win: win.id, lose: lose.id, region: region.id, year: w.year });
   if (lose.regions.length === 1) c.endPolity(lose, fate || "Its last province fell, and with it the name.");
   c.transfer(region, win);
+  /* conquest burns villages and shrinks towns, and a conqueror may move to a greater fallen seat */
+  const s = region.settlement;
+  if (s && c.chance(wasCapital ? 0.12 : 0.2)) { if (s.tier <= 1) ruinify(region); else s.tier--; }
+  if (wasCapital && region.settlement && !win.ended) {
+    const own = w.regions[win.capital], ownTier = own && own.settlement ? own.settlement.tier : 0;
+    if (region.settlement.tier > ownTier && c.chance(0.5)) win.capital = region.id;
+  }
   loot.forEach(function (a) { give(w, a, win, "taken at the fall of " + lose.name); });
   return loot;
 }
@@ -805,7 +813,7 @@ const SPINE = [
     }
   },
   {
-    id: "war-declared", scope: "polity", weight: 6, cooldown: 30,
+    id: "war-declared", consolidate: true, scope: "polity", weight: 9, cooldown: 30,
     test: function (c) { return c.polity.military > 0.25 && c.rivals().length > 0 && c.polity.traits.aggression > 0.3; },
     run: function (c) {
       const p = c.polity, foe = c.pick(c.rivals());
@@ -817,7 +825,7 @@ const SPINE = [
     }
   },
   {
-    id: "border-battle", scope: "polity", weight: 8, cooldown: 10,
+    id: "border-battle", consolidate: true, scope: "polity", weight: 8, cooldown: 10,
     test: function (c) { return hostileNeighbors(c).length > 0; },
     run: function (c) {
       const w = c.world, a = c.polity, b = c.pick(hostileNeighbors(c));
@@ -838,7 +846,7 @@ const SPINE = [
     }
   },
   {
-    id: "siege-and-sack", scope: "polity", weight: 4, cooldown: 30,
+    id: "siege-and-sack", scope: "polity", weight: 6, cooldown: 30,
     test: function (c) {
       const w = c.world;
       return hostileNeighbors(c).some(function (o) { return o.regions.some(function (i) { return w.regions[i].settlement && w.regions[i].settlement.tier >= 2; }); });
@@ -1107,7 +1115,7 @@ const GODS = [
   },
   {
     id: "god-dies", scope: "world", weight: 4,
-    test: function (c) { return godsAlive(c.world, "awake").some(function (g) { return c.year - g.woke > 200; }); },
+    test: function (c) { if (crowded(c.world)) return false; return godsAlive(c.world, "awake").some(function (g) { return c.year - g.woke > 200; }); },
     run: function (c) {
       const w = c.world, G = F(w);
       const cands = godsAlive(w, "awake").filter(function (g) { return c.year - g.woke > 200; });
@@ -1366,7 +1374,7 @@ const PROPHECY = [
   },
   {
     id: "heir-returns", scope: "world", weight: 8,
-    test: function (c) {
+    test: function (c) { if (crowded(c.world)) return false;
       const w = c.world;
       return Object.keys(w.polities).some(function (k) { const x = w.polities[k]; return x.ended && !x.restored && !/^Departed/.test(x.fate || "") && c.year - x.ended > 80 && x.archetypeId !== "dragon-fief"; });
     },
@@ -1716,7 +1724,7 @@ const MAGIC = [
 const MONSTERS = [
   {
     id: "dragon-claims-region", scope: "world", weight: 4,
-    test: function (c) { const w = c.world; return magic(w) > 0.2 && dragons(w).length < 3 && c.year < 1000; },
+    test: function (c) { if (crowded(c.world)) return false; const w = c.world; return magic(w) > 0.2 && dragons(w).length < 3 && c.year < 1000; },
     run: function (c) {
       const w = c.world;
       const cands = w.regions.filter(function (r) {
@@ -2280,6 +2288,88 @@ const GREAT_WORKS = [
 ];
 function greatWorks(w) { return Object.keys(w.artifacts).map(function (k) { return w.artifacts[k]; }).filter(function (a) { return a.wonder && !a.destroyed; }); }
 
+/* ------------------------------------------------------------ consolidation, seas, seats */
+function minorOf(c, p) {
+  const w = c.world, lim = Math.max(4, Math.round(p.regions.length / 3));
+  return c.neighbors(p).filter(function (q) { return !q.ended && q.regions.length <= lim && q.regions.length < p.regions.length && q.military + relicMight(w, q) * 0.25 < (p.military + relicMight(w, p) * 0.25) * 0.8; });
+}
+function coast(w, r) { return r.neighbors.some(function (n) { const q = w.regions[n]; return q && q.barren && !q.lake; }); }
+function overSea(c, p, wantOwner) {
+  const w = c.world, all = c.regionsOf(p).filter(function (r) { return coast(w, r); });
+  if (!all.length) return null;
+  const ports = all.filter(function (r, i) { return i % Math.ceil(all.length / 6) === 0; });
+  let best = null, bd = Infinity;
+  for (const r of w.regions) {
+    if (r.barren || !coast(w, r)) continue;
+    if (wantOwner ? (r.owner == null || r.owner === p.id) : (r.owner != null || r.habitability < 0.25)) continue;
+    if (wantOwner) { const q = w.polities[r.owner]; if (!q || q.ended || c.neighbors(p).indexOf(q) >= 0 || q.military >= p.military * 0.85) continue; }
+    for (const port of ports) { const d = dist(r, port); if (d > 4 && d < 30 && d < bd) { bd = d; best = { region: r, port: port }; } }
+  }
+  return best;
+}
+const ACTION_EVENTS = [
+  {
+    id: "fealty-sworn", consolidate: true, scope: "polity", weight: 30, cooldown: 20,
+    /* only while there are more realms than the world is heading for, and then very likely */
+    test: function (c) { return c.polity.regions.length >= 4 && livingPolities(c.world).length > AEON.realmCap(c.world) && minorOf(c, c.polity).length > 0; },
+    run: function (c) {
+      const w = c.world, p = c.polity, q = c.pick(minorOf(c, p)), regs = c.regionsOf(q), seat = sn(c, w.regions[q.capital], q);
+      c.endPolity(q, "Swore fealty to " + pn(p) + " in " + yl(c.year) + " and was folded into it.");
+      regs.forEach(function (r) { c.transfer(r, p); });
+      p.prestige = clamp(p.prestige + 0.04, 0, 1);
+      return mk(4, ["annexation", "fall", "territory"], [c.actor(p), c.actor(q)], q.capital,
+        "The lords of " + pn(q) + " came to " + sn(c, w.regions[p.capital], p) + " and knelt to " + rulerTxt(w, p) + ", " +
+        c.choice(["their hands between the hands of the ruler, as the old oath requires", "having been shown the size of the host first", "with a dowry, a hostage and a song composed for the occasion"]) + ". " +
+        "From that day " + seat + " flew the banners of " + pn(p) + ", and its own were folded into a chest no one opened again.");
+    }
+  },
+  {
+    id: "sea-crossing", scope: "polity", weight: 3, cooldown: 60,
+    /* cheap test (has a coast); the crossing is planned when the fleet sails */
+    test: function (c) { const w = c.world; return c.polity.regions.length >= 5 && c.polity.military > 0.35 && c.regionsOf().some(function (r) { return coast(w, r); }); },
+    run: function (c) {
+      const w = c.world, p = c.polity, t = overSea(c, p, true);
+      if (!t) return null;
+      const r = t.region, q = w.polities[r.owner], name = sn(c, r, q);
+      setRel(p, q, -1);
+      annex(c, p, q, r, "Its last shore was taken by a fleet out of " + pn(p) + ".");
+      return mk(4, ["war", "invasion", "naval", "conquest"], [c.actor(p), c.actor(q), c.actor(r)], r.id,
+        "Longships out of " + sn(c, t.port, p) + " crossed the grey water to " + name + " and put the host of " + pn(p) + " ashore at dawn. " +
+        c.choice(["The beacons were lit too late to matter.", "The tide turned against the defenders, and so did their captain.", "The landing was sung of afterwards, chiefly by those who had not been in it."]) +
+        " " + name + " passed to " + pn(p) + ".");
+    }
+  },
+  {
+    id: "far-shore-settled", scope: "polity", weight: 3, cooldown: 70,
+    test: function (c) { const w = c.world; return c.polity.regions.length >= 3 && c.regionsOf().some(function (r) { return coast(w, r); }); },
+    run: function (c) {
+      const w = c.world, p = c.polity, t = overSea(c, p, false);
+      if (!t) return null;
+      const r = t.region;
+      c.transfer(r, p);
+      c.foundSettlement(r, 1);
+      return mk(2, ["colonisation", "naval", "settlement"], [c.actor(p), c.actor(r)], r.id,
+        "Settlers from " + sn(c, t.port, p) + " sailed to a shore no one had claimed and raised a stockade they named " + r.settlement.name + ". " +
+        "The first harvest failed and the second did not, which is the usual order.");
+    }
+  },
+  {
+    id: "seat-moved", scope: "polity", weight: 1.5, cooldown: 200,
+    test: function (c) { const p = c.polity, cur = c.world.regions[p.capital], t = cur && cur.settlement ? cur.settlement.tier : 0;
+      return c.regionsOf(p).some(function (r) { return r.id !== p.capital && r.settlement && r.settlement.tier >= 3 && (r.settlement.tier > t || p.traits.stability < 0.35); }); },
+    run: function (c) {
+      const w = c.world, p = c.polity, cur = w.regions[p.capital], t = cur && cur.settlement ? cur.settlement.tier : 0;
+      const cs = c.regionsOf(p).filter(function (r) { return r.id !== p.capital && r.settlement && r.settlement.tier >= 3 && (r.settlement.tier > t || p.traits.stability < 0.35); })
+        .sort(function (a, b) { return b.settlement.tier - a.settlement.tier || a.id - b.id; });
+      const r = cs[0], oldName = sn(c, cur, p), bigger = r.settlement.tier > t;
+      p.capital = r.id; stab(p, bigger ? 0.02 : -0.03);
+      return mk(3, ["capital", "internal"], [c.actor(p), c.actor(r)], r.id,
+        bigger ? "The court of " + pn(p) + " left " + oldName + " for " + r.settlement.name + ", where the markets were larger and the omens better. " + oldName + " kept the old throne and the draughts."
+               : "A faction of the court carried the regalia of " + pn(p) + " from " + oldName + " to " + r.settlement.name + " by night, and by morning the realm was governed from there. " + oldName + " called it theft and was ignored.");
+    }
+  },
+];
+
 const WONDER_EVENTS = [
   {
     id: "great-work-raised", scope: "polity", weight: 2.5, cooldown: 160,
@@ -2345,7 +2435,7 @@ const ARISINGS = [
   },
   {
     id: "druids-withdraw", scope: "polity", weight: 1.5, cooldown: 250,
-    test: function (c) {
+    test: function (c) { if (crowded(c.world)) return false;
       return c.polity.regions.length >= 3 && countArch(c.world, "druidic-circle") < 3 && !crowded(c.world) && c.polity.archetypeId !== "druidic-circle" &&
         c.regionsOf().some(function (r) { return r.id !== c.polity.capital && (r.biome === "forest" || r.biome === "taiga" || r.biome === "jungle"); });
     },
@@ -2364,7 +2454,7 @@ const ARISINGS = [
   },
   {
     id: "delving-clan-breaks-away", scope: "polity", weight: 1.5, cooldown: 250,
-    test: function (c) {
+    test: function (c) { if (crowded(c.world)) return false;
       return c.polity.regions.length >= 3 && countArch(c.world, "dwarf-hold") < 3 && !crowded(c.world) && c.polity.archetypeId !== "dwarf-hold" &&
         c.regionsOf().some(function (r) { return r.id !== c.polity.capital && r.biome === "mountain"; });
     },
@@ -2412,8 +2502,10 @@ AEON.registerPack({
   startYear: -2000,
   endYear: 1200,
   timeStep: 5,
-  seedPolities: 7,
-  eventsPerTick: 5,
+  seedPolities: 14,
+  eventsPerTick: 2,
+  realmsAtStart: 40,
+  realmsAtEnd: 10,
 
   yearLabel: yl,
 
@@ -2433,7 +2525,7 @@ AEON.registerPack({
   archetypes: ARCHETYPES,
   names: NAMES,
 
-  events: [].concat(SPINE, GODS, PROPHECY, MAGIC, MONSTERS, RELICS, MEMORY, WONDER_EVENTS, ARISINGS).map(throttled),
+  events: [].concat(SPINE, GODS, PROPHECY, MAGIC, MONSTERS, RELICS, MEMORY, WONDER_EVENTS, ACTION_EVENTS, ARISINGS).map(throttled),
 
   flavor: {
     epitaphs: EPITAPHS,

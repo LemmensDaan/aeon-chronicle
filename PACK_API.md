@@ -202,6 +202,14 @@ Artifact kinds that are buildings: they stay where they were made (`location`), 
 off, and count as **wonders** on the map and in the statistics. An artifact can also be marked a
 wonder on its own with `art.wonder = true`. A wonder stands from `created` until `destroyed`.
 
+### 3.1e `realmsAtStart`, `realmsAtEnd` (optional)
+
+How many living realms the world tends towards: `realmsAtStart` at the beginning (default 50), falling
+to `realmsAtEnd` (default 15) at the end; `ctx.realmCap()` gives the value for the current year. Gate
+events that create realms on it. An event marked `consolidate: true` (annexing, conquering, declaring
+war) may also be fired by the engine's consolidation pressure: extra turns for big realms whenever the
+world has more realms than the cap.
+
 ### 3.2 `eras`
 
 An ordered ladder. The engine advances the era by year, and events can gate on it.

@@ -271,6 +271,28 @@ asked that biome, elevation and habitability decide where settlements go.
   mountains, 8,392 → 6,528 events; fantasy 54 → 44 realms, 512 → 359 settlements, 8.0% → 4.3%.
   Changes every seed.
 
+## More action, consolidation (2026-10-23)
+
+Daan: more action within and between kingdoms; ~50 realms early, 10-20 standing at the end; half the
+events; conquest may raze settlements; capitals may move; overseas invasions and colonies.
+- `AEON.realmCap(world)`: `pack.realmsAtStart` falling to `realmsAtEnd` over the timeline (historical
+  50 -> 10, fantasy 40 -> 10). Every realm-creating event is gated on it (`crowded`). While the world
+  has more realms than the cap, the engine gives big realms up to three extra turns a tick, spent
+  only on events marked `consolidate: true` (historical: absorb-minor, conquest, war-declared;
+  fantasy: fealty-sworn, border-battle, war-declared).
+- New events: historical absorb-minor, overseas-invasion, capital-moved; fantasy fealty-sworn,
+  sea-crossing, far-shore-settled, seat-moved. Their tests stay cheap (the overseas search runs
+  only when the event fires, over at most 6 ports).
+- The toll of conquest (`conquestToll`, fantasy `annex`): a captured settlement may be razed or
+  shrink; a conqueror with a smaller seat may move its capital to the captured one.
+  `polity.capitalLog` and `AEON.capitalAt` keep past-year views right.
+- Fewer events: 2 polity events and at most 1 figure event a tick; orderly accessions and heir births
+  mostly go unrecorded (weights 34 -> 6, 10 -> 3).
+- Settlements favour rivers (x1.35), sea coasts (x1.2), lake shores (x1.3) and woods (x1.1); founding
+  on new land is rarer.
+- Five seeds: historical peaks ~44 realms and ends ~19, 3,480 events (was 6,494), ~260 settlements;
+  fantasy peaks ~28 and ends ~18, 1,705 events (was 3,038), ~215 settlements. Changes every seed.
+
 ## Known loose ends
 
 - The map doesn't refit when the chronicle widens for the graph (its zoom snaps to whole pixel steps,

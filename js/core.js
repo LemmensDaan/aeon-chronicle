@@ -12,6 +12,9 @@ AEON.registerPack = function (def) {
   def.scale = "planet";        /* galaxy-scale packs moved to the galaxy-generator project */
   def.timeStep = def.timeStep || 5;
   def.seedPolities = def.seedPolities || 7;
+  /* how many realms the world tends towards: many early, consolidating into a few great ones */
+  def.realmsAtStart = def.realmsAtStart || 50;
+  def.realmsAtEnd = def.realmsAtEnd || 15;
   def.events = def.events || [];
   def.eras = def.eras || [{ id: "default", name: "The Age", from: -Infinity }];
   def.archetypes = def.archetypes || [{ id: "state", name: "State", traitBias: {} }];
@@ -307,13 +310,15 @@ function makeCtx(world, subject) {
     transfer: function (region, to) { return transferRegion(world, region, to); },
     foundSettlement: function (region, tier) { return foundSettlement(world, region, tier); },
     /* how well a place can hold people (0..1), and the biggest settlement it can hold */
-    siteSuitability: function (region) { return AEON.siteSuitability(region); },
-    maxTier: function (region) { return AEON.maxTier(region); },
+    siteSuitability: function (region) { return AEON.siteSuitability(region, world); },
+    maxTier: function (region) { return AEON.maxTier(region, world); },
+    /* how many realms the world is heading for now (see AEON.realmCap) */
+    realmCap: function () { return AEON.realmCap(world); },
     /* a place to found a settlement among some regions: weighted by suitability, and only where
        one could stand; null if none */
     pickSite: function (regions) {
-      const ok = (regions || []).filter(function (r) { return !r.barren && AEON.siteSuitability(r) >= 0.12; });
-      return ok.length ? rng.weighted(ok, function (r) { const s = AEON.siteSuitability(r); return s * s; }) : null;
+      const ok = (regions || []).filter(function (r) { return !r.barren && AEON.siteSuitability(r, world) >= 0.12; });
+      return ok.length ? rng.weighted(ok, function (r) { const s = AEON.siteSuitability(r, world); return s * s; }) : null;
     },
     endPolity: function (p, fate) { return endPolity(world, p, fate); },
     spawnPolity: function (region, archetypeId) { return spawnPolity(world, region, archetypeId); },
@@ -416,19 +421,43 @@ function transferRegion(world, region, to) {
    and coasts), cut hard for ice, mountains, tundra, dry desert and swamp, and cut further the
    higher the ground. Decides how likely a settlement is founded there and how big it may grow
    (AEON.maxTier), so a region's look on the map follows from its land. */
-AEON.siteSuitability = function (r) {
+AEON.siteSuitability = function (r, world) {
   if (!r || r.barren) return 0;
   const b = r.biome;
   const biome = b === "ice" ? 0.05 : b === "mountain" ? 0.25 : b === "tundra" ? 0.45
-    : b === "desert" ? (r.river ? 0.8 : 0.4) : b === "swamp" ? 0.55 : 1;
+    : b === "desert" ? (r.river ? 0.8 : 0.4) : b === "swamp" ? 0.55 : (b === "forest" || b === "jungle") ? 1.1 : 1;
   const e = Math.max(0, (r.elevation - 0.5) / 0.5);          /* 0 at the shore, 1 on the peaks */
-  return clamp(r.habitability * biome * (1 - 0.7 * e * e) * 1.6, 0, 1);
+  /* water is where people settle: a river, a sea coast (harbours, fish), a lake shore */
+  let water = r.river ? 1.35 : 1;
+  if (world) {
+    let sea = false, lake = false;
+    for (const n of r.neighbors || []) { const q = world.regions[n]; if (q && q.barren) { if (q.lake) lake = true; else sea = true; } }
+    water *= (sea ? 1.2 : 1) * (lake ? 1.3 : 1);
+  }
+  return clamp(r.habitability * biome * water * (1 - 0.7 * e * e) * 1.6, 0, 1);
 };
 /* the largest settlement a place can grow: a mountain or ice settlement stays a village, poor
    land tops out at a town, and only good land holds a city */
-AEON.maxTier = function (r) {
-  const s = AEON.siteSuitability(r);
+AEON.maxTier = function (r, world) {
+  const s = AEON.siteSuitability(r, world);
   return s >= 0.55 ? 4 : s >= 0.36 ? 3 : s >= 0.18 ? 2 : 1;
+};
+
+/* How many living realms the world tends towards in its current year: pack.realmsAtStart at the
+   beginning, falling to pack.realmsAtEnd at the end. Packs gate splits and secessions on it and
+   annex small realms while the world is above it, so many small states consolidate into a few. */
+AEON.realmCap = function (world) {
+  const p = world.pack, t = clamp((world.year - p.startYear) / Math.max(1, p.endYear - p.startYear), 0, 1);
+  return Math.round(p.realmsAtStart - (p.realmsAtStart - p.realmsAtEnd) * t);
+};
+/* where a polity's capital stood in a year: capitals move (to a conquered greater city, or in a
+   struggle at court), and polity.capitalLog records each move */
+AEON.capitalAt = function (p, year) {
+  const log = p.capitalLog;
+  if (!log || !log.length) return p.capital;
+  let c = log[0].capital;
+  for (const e of log) { if (e.year <= year) c = e.capital; else break; }
+  return c;
 };
 
 /* Settlement sizes are tiers 1..4 (tier 4 is a city that has outgrown its walls; packs use
@@ -463,9 +492,16 @@ function logSettlements(world) {
     hidden("_settleObj", new Array(world.regions.length).fill(null));
     hidden("_pastSettle", {});            /* regionId -> [{ s, until }]: settlements since razed or replaced */
   }
+  for (const id in world.polities) {
+    const p = world.polities[id];
+    if (p.ended != null || p.capital == null) continue;
+    if (!p.capitalLog) p.capitalLog = [];
+    const last = p.capitalLog[p.capitalLog.length - 1];
+    if (!last || last.capital !== p.capital) p.capitalLog.push({ year: world.year, capital: p.capital });
+  }
   const R = world.regions, obj = world._settleObj;
   for (let i = 0; i < R.length; i++) {
-    if (R[i].settlement && R[i].settlement.tier > AEON.maxTier(R[i])) R[i].settlement.tier = AEON.maxTier(R[i]);
+    if (R[i].settlement && R[i].settlement.tier > AEON.maxTier(R[i], world)) R[i].settlement.tier = AEON.maxTier(R[i], world);
     const cur = R[i].settlement || null, t = cur ? cur.tier : 0;
     if (cur !== obj[i]) {
       if (obj[i]) (world._pastSettle[i] || (world._pastSettle[i] = [])).push({ s: obj[i], until: world.year });
@@ -528,7 +564,7 @@ function foundSettlement(world, region, tier) {
   if (!region.name) region.name = callName(world, "place", { region: region, polity: polity });
   region.settlement = {
     name: callName(world, "settlement", { region: region, polity: polity }) || region.name,
-    tier: clamp(tier || 1, 1, AEON.maxTier(region)),
+    tier: clamp(tier || 1, 1, AEON.maxTier(region, world)),
     founded: world.year,
   };
   return region.settlement;
@@ -662,7 +698,8 @@ AEON.viewAt = function (world, year) {
     const alive = p.ended == null || p.ended > year;
     pv.ended = alive ? null : p.ended;
     pv.fate = alive ? null : p.fate;
-    pv.capital = owners[p.capital] === id ? p.capital : (first[id] !== undefined ? first[id] : p.capital);
+    const capThen = AEON.capitalAt(p, year);
+    pv.capital = owners[capThen] === id ? capThen : (first[id] !== undefined ? first[id] : capThen);
     pols[id] = pv;
   }
   v.polities = pols;
@@ -783,7 +820,7 @@ function baselineTick(world) {
         /* harsh land is settled too, only far less eagerly: a soft frontier, not a wall */
         const target = rng.weighted(open, function (r) { return r.habitability * r.habitability + 0.004; });
         transferRegion(world, target, p);
-        if (rng.chance(0.12 * Math.min(1, AEON.siteSuitability(target) * 1.6))) foundSettlement(world, target, rng.int(1, 2));
+        if (rng.chance(0.07 * Math.min(1, AEON.siteSuitability(target, world) * 1.6))) foundSettlement(world, target, rng.int(1, 2));
       }
     }
 
@@ -849,8 +886,8 @@ function eligible(world, def, ctx, subjectKey) {
   return true;
 }
 
-function fireOne(world, scope, subject) {
-  const defs = world.pack.events.filter(function (d) { return (d.scope || "polity") === scope; });
+function fireOne(world, scope, subject, consolidateOnly) {
+  const defs = world.pack.events.filter(function (d) { return (d.scope || "polity") === scope && (!consolidateOnly || d.consolidate); });
   if (!defs.length) return;
   const ctx = makeCtx(world, subject);
   const subjectKey = subject ? (subject.obj.id || "w") : "w";
@@ -891,9 +928,19 @@ AEON.tick = function (world) {
     fired++;
   }
 
+  /* Consolidation pressure: while the world holds more realms than it is heading for
+     (AEON.realmCap), big realms get up to three extra turns, spent only on events a pack marks
+     consolidate: true (annexation, conquest, war). So fifty early states fold into a dozen or so
+     without the ordinary event budget having to make room. */
+  const living0 = living(world), over = living0.length - AEON.realmCap(world);
+  for (let i = 0; i < Math.min(3, Math.ceil(over / 6)); i++) {
+    const p = rng.weighted(living(world), function (x) { return x.regions.length; });
+    if (p) fireOne(world, "polity", { kind: "polity", obj: p }, true);
+  }
+
   let figs = 0;
   for (const p of rng.shuffle(alive)) {
-    if (figs >= 2) break;
+    if (figs >= 1) break;
     if (p.ended || !p.ruler) continue;
     const f = world.figures[p.ruler];
     if (f && rng.chance(0.12)) { fireOne(world, "figure", { kind: "figure", obj: f }); figs++; }

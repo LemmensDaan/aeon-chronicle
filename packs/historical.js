@@ -526,7 +526,9 @@ function H(w) {
 }
 function due(ctx, key, p, years) { const h = H(ctx.world); h.last = h.last || {}; const t = h.last[key + p.id]; return t == null || ctx.year - t >= years; }
 function mark(ctx, key, p) { const h = H(ctx.world); h.last = h.last || {}; h.last[key + p.id] = ctx.year; }
-function crowded(ctx, n) { return ctx.living().length >= (n || 30); }
+/* too many realms for new ones to split off: the world's cap for this year (core.js realmCap),
+   plus some slack for the few events that allow it */
+function crowded(ctx, extra) { return ctx.living().length >= ctx.realmCap() + (extra || 0); }
 function P(ctx) { return ctx.polity || (ctx.figure && ctx.world.polities[ctx.figure.polityId]) || null; }
 function eIdx(ctx) { return ERA_IDX[ctx.era] || 0; }
 function gOf(f) { return genderOfNum(parseInt(String(f.id).slice(1), 10)); }
@@ -589,12 +591,27 @@ function frontier(ctx, p, q) {
   const w = ctx.world;
   return ctx.regionsOf(q).filter(function (r) { return r.neighbors.some(function (n) { return w.regions[n].owner === p.id; }); });
 }
+/* What conquest does to a place: a settlement may be razed (a village burned out) or shrink,
+   and a conqueror whose own seat is smaller may move its capital to the fallen one. */
+function conquestToll(ctx, region, to, wasCapital) {
+  const s = region.settlement;
+  if (s && ctx.chance(wasCapital ? 0.12 : 0.2)) {
+    if (s.tier <= 1) { region.settlement = null; if (region.features.indexOf("ruins") < 0) region.features.push("ruins"); }
+    else s.tier--;
+  }
+  if (wasCapital && region.settlement && to && !to.ended) {
+    const own = ctx.world.regions[to.capital], ownTier = own && own.settlement ? own.settlement.tier : 0;
+    if (region.settlement.tier > ownTier && ctx.chance(0.5)) to.capital = region.id;
+  }
+}
 function annex(ctx, region, to, fate) {
   const from = region.owner && ctx.world.polities[region.owner];
+  const wasCapital = !!from && from.capital === region.id;
   if (from && from.regions.length === 1 && !from.ended) {
     ctx.endPolity(from, fate || "Its last province was taken and its name passed into the registers of the conqueror.");
   }
   ctx.transfer(region, to);
+  conquestToll(ctx, region, to, wasCapital);
 }
 function makeRuin(region) {
   if (region.features.indexOf("ruins") < 0) region.features.push("ruins");
@@ -602,6 +619,34 @@ function makeRuin(region) {
 }
 function treatyName(ctx, region) { return fill(ctx.choice(TREATIES), { P: provName(region) }); }
 function pickEra(tbl, ctx) { return tbl[Math.min(eIdx(ctx), tbl.length - 1)]; }
+/* small, weak neighbours a realm could absorb */
+function minorNeighbours(ctx, p) {
+  const w = ctx.world, sp = strength(w, p), lim = Math.max(4, Math.round(p.regions.length / 3));
+  return ctx.neighbors(p).filter(function (q) { return !q.ended && q.regions.length <= lim && q.regions.length < p.regions.length && strength(w, q) < sp * 0.8; });
+}
+/* a coast across the sea from one of a realm's ports, held by a weaker realm it does not border */
+function invasionTarget(ctx, p) {
+  const w = ctx.world, all = ctx.regionsOf(p).filter(function (r) { return coastal(ctx, r); });
+  if (!all.length) return null;
+  const ports = all.filter(function (r, i) { return i % Math.ceil(all.length / 6) === 0; }), sp = strength(w, p);
+  let best = null, bd = Infinity;
+  for (const id in w.polities) {
+    const q = w.polities[id];
+    if (q === p || q.ended || strength(w, q) > sp * 0.8 || frontier(ctx, p, q).length) continue;
+    for (const r of ctx.regionsOf(q)) {
+      if (!coastal(ctx, r)) continue;
+      for (const port of ports) { const d = dist(r, port); if (d < 30 && d < bd) { bd = d; best = { foe: q, region: r, port: port }; } }
+    }
+  }
+  return best;
+}
+/* where a realm might move its seat: a city of its own bigger than the capital, or, in a realm at
+   odds with itself, another city */
+function newSeat(ctx, p) {
+  const cur = ctx.world.regions[p.capital], t = cur && cur.settlement ? cur.settlement.tier : 0;
+  const cs = ctx.regionsOf(p).filter(function (r) { return r.id !== p.capital && r.settlement && r.settlement.tier >= 3 && (r.settlement.tier > t || p.traits.stability < 0.35); });
+  return cs.length ? cs.sort(function (a, b) { return b.settlement.tier - a.settlement.tier || a.id - b.id; })[0] : null;
+}
 function openLand(ctx, p) {
   const w = ctx.world, out = [];
   for (const r of ctx.regionsOf(p)) {
@@ -722,7 +767,7 @@ const EVENTS = [
 /* ---------------------------------------------------------- founding ---- */
 
 { id: "tribal-founding", scope: "world", weight: 3,
-  test: function (ctx) { return ctx.living().length < 30 && ctx.world.regions.some(function (r) { return !r.barren && !r.owner && r.habitability > 0.35; }); },
+  test: function (ctx) { return !crowded(ctx) && ctx.world.regions.some(function (r) { return !r.barren && !r.owner && r.habitability > 0.35; }); },
   run: function (ctx) {
     const w = ctx.world;
     const free = w.regions.filter(function (r) { return !r.barren && !r.owner && r.habitability > 0.35; });
@@ -750,7 +795,7 @@ const EVENTS = [
     return res(1, ["colonisation", "settlement"], A(ctx, p, r), r.id, t + (town ? " A settlement, " + town.name + ", followed." : ""));
   } },
 
-{ id: "overseas-colony", scope: "polity", weight: 3, minEra: "iron", cooldown: 60,
+{ id: "overseas-colony", scope: "polity", weight: 5, minEra: "iron", cooldown: 60,
   test: function (ctx) { const p = ctx.polity; return p.tech > 0.22 && ctx.regionsOf(p).some(function (r) { return coastal(ctx, r); }); },
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world;
@@ -815,7 +860,7 @@ const EVENTS = [
       "Order was restored in " + p.name + " by " + how + ". " + who(rl) + " announced the end of the troubles; the troubles did not attend the announcement.");
   } },
 
-{ id: "accession-orderly", scope: "polity", weight: 34,
+{ id: "accession-orderly", scope: "polity", weight: 6,
   test: function (ctx) { return ungreeted(ctx, ctx.polity); },
   run: function (ctx) {
     const p = ctx.polity, prev = predecessor(ctx, p), f = adoptHeir(ctx, p);
@@ -915,7 +960,7 @@ const EVENTS = [
   } },
 
 { id: "partition-between-heirs", scope: "polity", weight: 3, minEra: "classical",
-  test: function (ctx) { return !crowded(ctx, 40) && ungreeted(ctx, ctx.polity) && ctx.polity.regions.length >= 4; },
+  test: function (ctx) { return !crowded(ctx, 8) && ungreeted(ctx, ctx.polity) && ctx.polity.regions.length >= 4; },
   run: function (ctx) {
     const p = ctx.polity, prev = predecessor(ctx, p), f = rulerOf(ctx, p);
     const regs = secessionGroup(ctx, p, 0.4), np = splitRealm(ctx, p, regs, "successor", 0.4);
@@ -925,7 +970,7 @@ const EVENTS = [
       (prev ? who(prev) : "The ruler") + " had several sons and no doctrine of primogeniture. " + who(f) + " kept " + seat(ctx, p) + " and the older provinces; the rest, centred on " + locName(ctx.world.regions[np.capital]) + ", became the separate realm of " + np.name + ". Both brothers swore it was temporary.");
   } },
 
-{ id: "heir-born", scope: "figure", weight: 10, cooldown: 30,
+{ id: "heir-born", scope: "figure", weight: 3, cooldown: 30,
   test: function (ctx) {
     const p = P(ctx), f = ctx.figure, age = ctx.year - f.born;
     return !!p && p.ruler === f.id && !H(ctx.world).heirs[p.id] && age >= 18 && age <= 55;
@@ -999,7 +1044,7 @@ const EVENTS = [
       "In " + p.name + " " + ctx.choice(why) + ". Officials in " + seat(ctx, p) + " noted that this was the " + ctx.choice(["third", "fourth", "sixth", "ninth", "latest"]) + " such report " + ctx.choice(["that year", "of the decade", "since the old ruler's death"]) + " and filed it with the others.");
   } },
 
-{ id: "conquest", scope: "polity", weight: 7,
+{ id: "conquest", consolidate: true, scope: "polity", weight: 12,
   test: function (ctx) {
     const p = ctx.polity;
     return wars(ctx, p).some(function (x) { return strength(ctx.world, p) > strength(ctx.world, x.foe) * 1.3 && frontier(ctx, p, x.foe).length > 0; });
@@ -1013,8 +1058,9 @@ const EVENTS = [
     else { const fr = frontier(ctx, W, L); regs = ctx.shuffle(fr).slice(0, Math.max(2, Math.min(fr.length, Math.round(L.regions.length * 0.3)))); }
     const n = regs.length, first = regs[0], capName = seat(ctx, L), rl = rulerOf(ctx, L);
     if (whole) {
+      const oldCap = L.capital;
       ctx.endPolity(L, "Conquered by " + W.name + " in " + yl(ctx.year) + "; its ruler was killed or removed, and its provinces were entered in the registers of the victor.");
-      for (const r of regs) ctx.transfer(r, W);
+      for (const r of regs) { ctx.transfer(r, W); conquestToll(ctx, r, W, r.id === oldCap); }
     } else { for (const r of regs) annex(ctx, r, W); }
     endWar(ctx, wf.war); relate(W, L, 0);
     W.prestige = clamp(W.prestige + 0.08, 0, 1); adjustT(L, "stability", -0.1);
@@ -1343,7 +1389,7 @@ const EVENTS = [
 
 /* ---------------------------------------------------------------- war ---- */
 
-{ id: "war-declared", scope: "polity", weight: 5, cooldown: 45,
+{ id: "war-declared", consolidate: true, scope: "polity", weight: 8, cooldown: 30,
   test: function (ctx) {
     const p = ctx.polity;
     return p.military > 0.2 && p.traits.aggression > 0.3 && wars(ctx, p).length < 2 &&
@@ -1520,6 +1566,63 @@ const EVENTS = [
       (ruin ? "A town that resisted was destroyed so thoroughly that its name is known from one other source only. " : "") + "The garrisons were not defeated so much as bypassed, and learned of it from the smoke." + (last ? " " + q.name + " ended there." : ""));
   } },
 
+/* ---------------------------------------------- consolidation, overseas, capitals --- */
+
+/* a great realm swallows a small neighbour, while the world has more realms than it is heading for */
+{ id: "absorb-minor", consolidate: true, scope: "polity", weight: 30, cooldown: 20,
+  /* only while the world has more realms than it is heading for; then it is the likeliest thing
+     a great realm does, which is what pulls fifty states down to a dozen or so */
+  test: function (ctx) {
+    const p = ctx.polity;
+    return p.regions.length >= 4 && ctx.living().length > ctx.realmCap() && minorNeighbours(ctx, p).length > 0;
+  },
+  run: function (ctx) {
+    const p = ctx.polity, w = ctx.world, c = minorNeighbours(ctx, p);
+    const q = ctx.rng.weighted(c, function (x) { return 1 / x.regions.length; });
+    const regs = ctx.regionsOf(q), capName = seat(ctx, q), rl = rulerOf(ctx, q), how = ctx.int(0, 2);
+    ctx.endPolity(q, how === 0 ? "Submitted to " + p.name + " in " + yl(ctx.year) + " and was absorbed into it." :
+      how === 1 ? "Passed to " + p.name + " by marriage and treaty in " + yl(ctx.year) + "." : "Bought out by " + p.name + " in " + yl(ctx.year) + ", its lords pensioned.");
+    for (const r of regs) ctx.transfer(r, p);
+    p.prestige = clamp(p.prestige + 0.04, 0, 1);
+    const txt = how === 0
+      ? q.name + " submitted to " + p.name + " without a battle. " + (rl ? who(rl) : "Its ruler") + " received the envoys at " + capName + ", read the terms twice and signed them once; the " + q.adjective + " banners were taken down before the week was out."
+      : how === 1
+      ? "By a marriage and a treaty that took longer to draft than the wedding took to arrange, " + q.name + " passed into the hands of " + p.name + ". " + capName + " kept its council and lost its say."
+      : p.name + " bought " + q.name + " outright: the price was " + ctx.int(3, 40) + " years of its revenue, paid in instalments the lords of " + capName + " were not alive to see completed.";
+    return res(4, ["annexation", "territory", "fall"], A(ctx, p, q, rl), q.capital, txt);
+  } },
+
+/* an army crosses the sea to take a weaker realm's coast */
+{ id: "overseas-invasion", scope: "polity", weight: 3, minEra: "iron", cooldown: 60,
+  /* the test only checks for a port; the search for a target happens when the fleet sails */
+  test: function (ctx) { const p = ctx.polity; return p.tech > 0.3 && p.regions.length >= 6 && ctx.regionsOf(p).some(function (r) { return coastal(ctx, r); }); },
+  run: function (ctx) {
+    const p = ctx.polity, w = ctx.world, t = invasionTarget(ctx, p);
+    if (!t) return null;
+    const q = t.foe, land = t.region, from = t.port;
+    const take = [land].concat(ctx.regionsOf(q).filter(function (r) { return r !== land && coastal(ctx, r) && dist(r, land) <= 3; }).slice(0, 2));
+    if (!warBetween(ctx, p, q)) startWar(ctx, p, q, "the crossing to " + provName(land));
+    for (const r of take) if (!q.ended) annex(ctx, r, p, "Its last coast was taken by a fleet from " + p.name + ".");
+    p.prestige = clamp(p.prestige + 0.05, 0, 1);
+    return res(4, ["war", "invasion", "naval", "conquest", "territory"], A(ctx, p, q, land), land.id,
+      "A fleet from " + locName(from) + " carried the army of " + p.name + " across the sea to " + provName(land) + ". " +
+      ctx.choice(["The levies of " + q.name + " met it on the beach and did not stay there long.", "It landed unopposed, which the commanders took for luck and the chroniclers for treason.", "The landing cost a third of the ships; the rest of the campaign cost less."]) +
+      " " + (take.length > 1 ? take.length + " coastal provinces" : provName(land)) + " passed to " + p.name + ".");
+  } },
+
+/* a realm moves its seat: to a greater city of its own, or because a faction there won at court */
+{ id: "capital-moved", scope: "polity", weight: 1.5, cooldown: 200,
+  test: function (ctx) { return !!newSeat(ctx, ctx.polity); },
+  run: function (ctx) {
+    const p = ctx.polity, r = newSeat(ctx, p), old = ctx.world.regions[p.capital], oldName = locName(old);
+    if (!r) return null;
+    const bigger = (r.settlement.tier || 0) > ((old.settlement && old.settlement.tier) || 0);
+    p.capital = r.id; adjustT(p, "stability", bigger ? 0.02 : -0.03);
+    return res(3, ["capital", "internal"], A(ctx, p, r), r.id,
+      bigger ? "The court of " + p.name + " moved from " + oldName + " to " + locName(r) + ", which had long since outgrown it. " + cap(oldName) + " kept its palaces and lost its importance."
+             : "After a struggle at court that the losing side called a coup, the government of " + p.name + " was moved from " + oldName + " to " + locName(r) + ". " + cap(oldName) + " was left with the old dynasty, its temples and its grievances.");
+  } },
+
 { id: "peace-treaty", scope: "polity", weight: 18,
   test: function (ctx) { return wars(ctx, ctx.polity).some(function (x) { return ctx.year - x.war.start >= 10; }); },
   run: function (ctx) {
@@ -1670,7 +1773,7 @@ const EVENTS = [
       "A revolt of the peasantry broke out in " + p.name + " over " + ctx.choice(["a new levy on salt", "the enclosure of the common pasture", "the price of bread after the failed harvest", "forced labour on the capital's walls", "a tax on hearths"]) + ". " + host + ", led by " + (lead && lead.name || "a local carter") + ", burned " + ctx.int(10, 90) + " manor houses and the tax rolls kept in them. About " + approx(n) + " people died before the revolt was put down; the levy was afterwards withdrawn, an outcome which the rebels' surviving descendants considered adequate.");
   } },
 
-{ id: "secession-province", scope: "polity", weight: 1, cooldown: 120,
+{ id: "secession-province", scope: "polity", weight: 2.5, cooldown: 120,
   test: function (ctx) { return !crowded(ctx) && ctx.polity.traits.stability < 0.45 && ctx.polity.regions.length >= 3; },
   run: function (ctx) {
     const p = ctx.polity, regs = secessionGroup(ctx, p, 0.2);
@@ -1684,7 +1787,7 @@ const EVENTS = [
       "The distant province of " + provName(ctx.world.regions[np.capital]) + " renounced its allegiance to " + p.name + " under its governor " + (gov && gov.title ? gov.title + " " : "") + (gov && gov.name || "") + ", who had not been paid for " + ctx.int(2, 6) + " years and had concluded that no one was coming. The new state, " + np.name + ", was recognised by no one and tolerated by everyone.");
   } },
 
-{ id: "civil-war", scope: "polity", weight: 1.2, cooldown: 150,
+{ id: "civil-war", scope: "polity", weight: 2, cooldown: 150,
   test: function (ctx) { const p = ctx.polity; return !crowded(ctx) && p.regions.length >= 3 && (p.traits.stability < 0.3 || !!H(ctx.world).pretenders[p.id]); },
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
@@ -1702,7 +1805,7 @@ const EVENTS = [
       "Civil war split " + p.name + " in two. " + pre.name + ", who claimed the throne by an older right than " + who(rl) + ", was proclaimed " + pre.title + " in " + locName(w.regions[np.capital]) + ", and the provinces of the " + ctx.choice(["east", "west", "north", "south", "hills", "coast"]) + " followed. The new realm called itself " + np.name + "; both sides called the other rebels. The conflict was known as " + wr.name + ".");
   } },
 
-{ id: "fragmentation", scope: "polity", weight: 1.5, cooldown: 200,
+{ id: "fragmentation", scope: "polity", weight: 2.5, cooldown: 200,
   test: function (ctx) { return !crowded(ctx) && ctx.polity.regions.length >= 9 && ctx.polity.traits.stability < 0.5; },
   run: function (ctx) {
     const p = ctx.polity, before = p.regions.length, made = [];
@@ -1823,7 +1926,7 @@ const EVENTS = [
   } },
 
 { id: "heresy-suppressed", scope: "polity", weight: 1.2, cooldown: 120,
-  test: function (ctx) { const p = ctx.polity; return !!activeFaith(ctx, p) && p.traits.piety > 0.55; },
+  test: function (ctx) { if (crowded(ctx)) return false; const p = ctx.polity; return !!activeFaith(ctx, p) && p.traits.piety > 0.55; },
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w), f = activeFaith(ctx, p);
     const sect = h.faiths.filter(function (s) { return s.parent === f.id; })[0];
@@ -2055,8 +2158,10 @@ AEON.registerPack({
   startYear: -3000,
   endYear: 1500,
   timeStep: 5,
-  seedPolities: 7,
-  eventsPerTick: 5,
+  seedPolities: 16,
+  eventsPerTick: 2,
+  realmsAtStart: 50,
+  realmsAtEnd: 10,
 
   yearLabel: yl,
 

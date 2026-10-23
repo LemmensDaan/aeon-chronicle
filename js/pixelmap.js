@@ -167,7 +167,8 @@ function buildTerrain(world) {
         if (ny >= 0 && ny < VH && land[ny * VW + (x + dx + VW) % VW]) { coast = true; break; }
       }
       const d = 0.5 - e;
-      put(i, coast ? P.foam : d < 0.018 + t * 0.012 ? P.shallow : d < 0.075 + t * 0.03 ? P.mid : P.deep);
+      /* the surf: foam dithered over the shallows, not a solid ring (the waves animate on top) */
+      put(i, coast ? (t < 0.5 ? P.foam : P.shallow) : d < 0.018 + t * 0.012 ? P.shallow : d < 0.075 + t * 0.03 ? P.mid : P.deep);
       continue;
     }
     /* jitter the biome lookup with the dither matrix so biome borders break up into pixels */
@@ -175,7 +176,17 @@ function buildTerrain(world) {
     const biome = c.barren ? "grassland" : c.biome;
     const eNW = E[Math.max(0, y - 1) * VW + (x + VW - 1) % VW], eSE = E[Math.min(VH - 1, y + 1) * VW + (x + 1) % VW];
     const lvl = Math.min(2, Math.floor(Math.max(0, Math.min(0.999, 0.55 + (eNW - eSE) * 38)) * 2 + t));
-    if (e < 0.506 && biome !== "ice" && biome !== "swamp") put(i, P.sand[lvl]);
+    /* beaches: land touching the sea is sand, and low ground a pixel further in, except under
+       mountains, ice and swamp; lake shores stay green */
+    let sea = 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const ny = y + dy, j = ny * VW + (x + dx + VW) % VW;
+      if (ny < 0 || ny >= VH || land[j] || R[cellOf[j]].lake) continue;
+      const dd = Math.max(Math.abs(dx), Math.abs(dy));
+      if (!sea || dd < sea) sea = dd;
+    }
+    const beach = sea && biome !== "ice" && biome !== "swamp" && biome !== "mountain" && (sea === 1 ? e < 0.56 : e < 0.515 + t * 0.01);
+    if (beach || (e < 0.506 && biome !== "ice" && biome !== "swamp")) put(i, P.sand[lvl]);
     else if (biome === "mountain" && e > 0.86) put(i, P.snow[lvl]);
     else put(i, (P[biome] || P.grassland)[lvl]);
   }
@@ -383,7 +394,9 @@ function drawRoads(c, w, d) {
     return k0 + n;
   };
   const road = function (a, b) {
-    style = Math.min(rank(a), rank(b));
+    /* two kinds: cobbles between cities and capitals, a solid track everywhere else (Daan: the
+       dotted track did not read well) */
+    style = Math.min(rank(a), rank(b)) >= 3 ? 3 : 2;
     const ax = R[a].x * PPC + PPC / 2, ay = R[a].y * PPC + PPC / 2;
     const bx = ax + dxw(R[a].x, R[b].x) * PPC, by2 = R[b].y * PPC + PPC / 2;
     const len = Math.hypot(bx - ax, by2 - ay) || 1, bend = (cellRand(a * 7919 + b, 11) - 0.5) * 5;

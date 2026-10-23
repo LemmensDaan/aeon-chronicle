@@ -50,7 +50,7 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
 - **Military plan (agreed 2026-10-23), one step at a time:** (1) army and fleet per realm, logged
   and shown — **done**; (2) battles by strength plus chance — **done**, the margin sets how much land changes
   hands, both sides lose men, war-band sizes follow the strengths, same model at sea; (3) realm
-  types that change through the ages (by age + size + events: kingdom -> empire, collapse ->
+  types that change through the ages — **done** (by age + size + events: kingdom -> empire, collapse ->
   successor/warlord states, coastal city-state with a fleet -> thalassocracy), one shared mechanic
   with each pack's own names; (4) war aims conquer / plunder / raze, a sack record per region,
   razing can empty land completely and leave ownerless ruins that can be resettled. Daan's picks:
@@ -80,6 +80,25 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   attackers win ~62-67% on land; fantasy ends with 17-20, attackers win ~42-51% (defender
   terrain). Map: war bands follow the battle's men (1-5 a side, mapfx `bands()` reads
   world.battleLog), and a repelled crossing plays as a sea fight the attacker loses.
+- **Step 3, realm types (2026-10-23, changes every history):** `pack.realmTypes` (PACK_API 3.3b),
+  core.js `chooseType()` every tick: the best `fit(s)` among the types open in the realm's age
+  (and to its kind), kept while within 0.5 of the best, for its first 30 years, and for 50 years
+  after it stops fitting. Size is relative (`s.rel` against the median realm, `s.rank`), since
+  region counts differ 10x between packs and ages. The archetype stays the realm's kind (events
+  and names still use it); the type is `p.typeId` / `p.typeName`, logged in `p.typeLog`, with
+  army / navy / expansion factors, a one-off trait shift, and `plunder` (unused until step 4).
+  Successor / warlord states: `p.heirOf` (core.js inheritLearning, now also for one-region
+  splits) within 80 years. Historical: 26 types (chiefdom, city-state, river kingdom, temple state,
+  nomad confederacy, great kingdom, highland confederacy, kingdom, city league, thalassocracy,
+  satrapy empire, republic, hegemony, imperial state, tribal confederation, feudal kingdom,
+  caliphate, khanate, merchant republic, theocracy, principality, absolute monarchy, colonial
+  empire, gunpowder empire, constitutional state, successor / warlord). Fantasy: 29, with each
+  people's own forms (Clan-Delve -> Under-Kingdom -> Steam-Hold, Elder / Twilight Court, Barrow-Court
+  -> Undying Dominion, Wyrm-Fief -> Dragon-Dominion, Tower-Tyranny -> Magisterium, Market-Moot ->
+  Guild / Free Republic, Thanedom, Shrine-Hold -> Holy See), Over-Kingdom / Grand Empire, Sea-League;
+  Sundered Crown / Reaver-Hold only for kingdoms, wizard realms and hill clans. Changes are events
+  (importance 2, empires 4): about 50-100 a history. Shown in the map tooltip, the realm page
+  (subtitle, "Forms of state") and the atlas. Six seeds end with 10-11 realms (one fantasy seed 20).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

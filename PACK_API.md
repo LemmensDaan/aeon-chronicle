@@ -249,6 +249,29 @@ the attack and may take land back. Losses are owed by both sides and rebuilt ove
 `AEON.armyOf`, `AEON.navyOf` (now, after losses) and `AEON.fieldArmy` (what reaches one front)
 are for weighing realms; every battle is logged in `world.battleLog` for the map.
 
+### 3.3b `realmTypes` (optional)
+
+The forms of state a realm grows into and out of through the ages; the archetype stays its kind.
+Every tick each realm takes the type that fits best (core.js `chooseType`), with some stickiness.
+
+```js
+realmTypes: [
+  { id: "satrapy-empire", name: "Satrapy Empire", ages: [1, 1],   // open in ages 1..1 (pack.ages index)
+    families: ["empire", "successor"],                             // optional: only these archetypes
+    army: 1.15, navy: 1, expansion: 1.1, plunder: 1,              // factors, default 1
+    shift: { stability: 0.03 },                                    // traits nudged once, on adoption
+    importance: 4,                                                 // of the event (default 2)
+    rise: "{N} had outgrown its old name of {F}: ...",            // {N} realm, {aF}/{F} old type, {aT}/{T} new
+    fit: function (s) { return s.rel >= 3 && s.rank <= 4 ? 3 : 0; } },
+]
+```
+
+`fit(s)` returns a score (0 or less: not open). `s` has `age`, `family` (archetype id), `regions`,
+`rel` (size against the median living realm), `rank` (1 is the largest), `coast` (share of its
+land on the sea), `cities`, `navy`, `army`, `years`, `heir` (broken off another realm within 80
+years) and the traits. A change is logged in `p.typeLog` and recorded as a `realm-transformed`
+event; `AEON.typeAt(world, p, year)` gives the type in a year.
+
 ### 3.4 `names`
 
 Procedural name generators. **Every one takes `rng` as its first argument** and must be

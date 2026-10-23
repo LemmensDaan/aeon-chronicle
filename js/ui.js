@@ -604,7 +604,8 @@ function fillTip(view, r) {
     for (const x of view.regions) if (x.owner === owner.id) provinces++;
     const bits = [provinces + (provinces === 1 ? " province" : " provinces")];
     if (live && owner.population) bits.unshift(owner.population.toLocaleString() + " people");
-    bits.push((owner.archetypeName ? owner.archetypeName + ", " : "") + "since " + pack.yearLabel(owner.founded));
+    const form = AEON.typeAt(world, owner, year), kind = form ? form.name : owner.archetypeName;
+    bits.push((kind ? kind + ", " : "") + "since " + pack.yearLabel(owner.founded));
     tipEl.appendChild(el("div", { class: "dim", text: bits.join(" · ") }));
     const forces = AEON.forcesAt(owner, year);
     if (forces) tipEl.appendChild(el("div", { class: "dim", text: forces.army.toLocaleString() + " soldiers · " + forces.navy.toLocaleString() + (forces.navy === 1 ? " ship" : " ships") }));

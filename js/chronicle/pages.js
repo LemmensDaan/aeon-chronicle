@@ -102,8 +102,10 @@ function lifespan(a, b, now, aliveWord, endWord) {
 function pagePolity(id) {
   var w = S.world, p = w.polities[id], d = derived();
   if (!p) return missing("polity", id);
-  var pg = h("div", "ch-page ch-wide"), arch = archetype(p.archetypeId);
-  var sub = (arch ? arch.name : (p.archetypeId || "Polity")) + (p.adjective ? " · " + p.adjective : "") + " — " + lifespan(p.founded, p.ended, w.year, "still standing", "fell");
+  var pg = h("div", "ch-page ch-wide"), arch = archetype(p.archetypeId), form = AEON.typeAt(w, p, w.year);
+  /* its form of state in the year shown, then its kind when that is a different word */
+  var kind = arch ? arch.name : (p.archetypeId || "Polity");
+  var sub = (form ? form.name + (form.name !== kind ? " · " + kind : "") : kind) + (p.adjective ? " · " + p.adjective : "") + " — " + lifespan(p.founded, p.ended, w.year, "still standing", "fell");
   pg.appendChild(header("Polity", p.name, sub, p.color));
   if (arch && arch.blurb) pg.appendChild(h("p", "ch-sub", arch.blurb));
   if (p.fate) pg.appendChild(h("blockquote", "ch-fate", p.fate));
@@ -140,6 +142,20 @@ function pagePolity(id) {
       au.appendChild(nx);
     }
     s.appendChild(au);
+  }
+
+  /* the forms of state it took, from the realm types of its pack */
+  if (p.typeLog && p.typeLog.length > 1) {
+    s = section(pg, "Forms of state");
+    var tu = h("ul", "ch-ul"), types = S.world.pack.realmTypes || [];
+    p.typeLog.forEach(function (e, i) {
+      var t = types.filter(function (x) { return x.id === e.type; })[0];
+      if (!t || e.year > w.year) return;
+      var li = h("li");
+      add(li, h("b", null, t.name), " — " + (i === 0 ? "at its founding, " : "from ") + yr(e.year));
+      tu.appendChild(li);
+    });
+    s.appendChild(tu);
   }
 
   s = section(pg, "Territory over time");

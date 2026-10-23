@@ -2533,6 +2533,77 @@ function throttled(def) {
   return def;
 }
 
+/* ---------------------------------------------------------------- realm types --- *
+ * The form of state a realm has in its age, which it grows into and out of (core.js chooseType).
+ * Ages: 0 Hearths, 1 Runes, 2 Towers, 3 Charters, 4 Clockwork. fit(s) scores a realm (s.rel: times
+ * the median realm's size, s.rank, s.coast, s.navy, s.heir, its kind in s.family and its traits);
+ * the generic type of each age scores 1, a people's own form about 2, empires and sundered realms
+ * 3 and up. */
+function great(s) { return s.rel >= 3 && s.rank <= 4; }
+function kin(s, ids) { return ids.indexOf(s.family) >= 0; }
+const CROWNED = ["mortal-kingdom", "wizard-tyranny", "hill-clans"];
+const REALM_TYPES = [
+  /* every age: the pieces of a broken crown (peoples with forms of their own keep those) */
+  { id: "sundered-crown", name: "Sundered Crown", ages: [0, 4], army: 0.9,
+    fit: function (s) { return s.heir && s.stability >= 0.35 && kin(s, CROWNED) ? 3.6 : 0; } },
+  { id: "reaver-hold", name: "Reaver-Hold", ages: [0, 4], army: 1.2, plunder: 1.6,
+    fit: function (s) { return s.heir && s.stability < 0.35 && kin(s, CROWNED) ? 3.8 : 0; } },
+  /* the common run of realms */
+  { id: "hearth-holding", name: "Hearth-Holding", ages: [0, 0], expansion: 1.15, fit: function () { return 1; } },
+  { id: "petty-kingdom", name: "Petty Kingdom", ages: [1, 1], fit: function () { return 1; } },
+  { id: "high-kingdom", name: "High Kingdom", ages: [2, 2], fit: function () { return 1; } },
+  { id: "chartered-crown", name: "Chartered Crown", ages: [3, 3], shift: { stability: 0.02 },
+    rise: "The lords and towns of {N} wrung a charter from the crown; once {aF}, it was {aT}.",
+    fit: function () { return 1; } },
+  { id: "clockwork-monarchy", name: "Clockwork Monarchy", ages: [4, 4], army: 1.05,
+    rise: "{N} was run by engines, clerks and timetables now; the old {F} had become {aT}.",
+    fit: function () { return 1; } },
+  /* great realms and sea powers */
+  { id: "over-kingdom", name: "Over-Kingdom", ages: [1, 2], army: 1.15, expansion: 1.1, importance: 4,
+    rise: "Lesser crowns knelt to {N} now; no longer {aF} among equals, it was {aT}.",
+    fit: function (s) { return great(s) ? 2.8 : 0; } },
+  { id: "grand-empire", name: "Grand Empire", ages: [3, 4], army: 1.2, expansion: 1.1, shift: { stability: 0.03 }, importance: 4,
+    rise: "{N}, until then {aF}, was proclaimed an empire, and its ruler was crowned beneath a dome built for the purpose.",
+    fit: function (s) { return great(s) ? 3 : 0; } },
+  { id: "sea-league", name: "Sea-League", ages: [2, 4], navy: 1.5, army: 0.85, importance: 3,
+    rise: "{N} was master of its seas now, and more {aT} than {aF}.",
+    fit: function (s) { return s.coast >= 0.2 && s.navy >= 25 ? 2 + s.coast * 2 + (kin(s, ["free-cities", "elven-remnant"]) ? 0.5 : 0) : 0; } },
+  /* each people's own forms */
+  { id: "clan-delve", name: "Clan-Delve", ages: [0, 1], families: ["dwarf-hold"], fit: function () { return 2; } },
+  { id: "under-kingdom", name: "Under-Kingdom", ages: [2, 3], families: ["dwarf-hold"], army: 1.1, fit: function () { return 2.4; } },
+  { id: "steam-hold", name: "Steam-Hold", ages: [4, 4], families: ["dwarf-hold"], army: 1.15, fit: function () { return 2.4; } },
+  { id: "elder-court", name: "Elder Court", ages: [0, 2], families: ["elven-remnant"], fit: function () { return 2.2; } },
+  { id: "twilight-court", name: "Twilight Court", ages: [3, 4], families: ["elven-remnant"], army: 0.9, expansion: 0.8,
+    rise: "The elves of {N} were fewer every generation; {aF} once, it was {aT} now.", fit: function () { return 2.2; } },
+  { id: "grove-moot", name: "Grove-Moot", ages: [0, 4], families: ["druidic-circle"], fit: function () { return 2.2; } },
+  { id: "barrow-court", name: "Barrow-Court", ages: [0, 4], families: ["necrocracy"], fit: function () { return 2.2; } },
+  { id: "undying-dominion", name: "Undying Dominion", ages: [2, 4], families: ["necrocracy"], army: 1.2, plunder: 1.3, importance: 4,
+    rise: "The dead of {N} outnumbered its living now, and the realm, until then {aF}, was {aT}.",
+    fit: function (s) { return s.rel >= 1.8 ? 3 : 0; } },
+  { id: "wyrm-fief", name: "Wyrm-Fief", ages: [0, 4], families: ["dragon-fief"], fit: function () { return 2.2; } },
+  { id: "dragon-dominion", name: "Dragon-Dominion", ages: [2, 4], families: ["dragon-fief"], army: 1.2, plunder: 1.6, importance: 4,
+    rise: "The wyrm of {N} claimed every land its shadow had crossed; {aF} no longer, it was {aT}.",
+    fit: function (s) { return s.rel >= 1.8 ? 3 : 0; } },
+  { id: "tower-tyranny", name: "Tower-Tyranny", ages: [1, 2], army: 0.9,
+    fit: function (s) { return s.family === "wizard-tyranny" ? 2.2 : s.curiosity > 0.7 ? 1.6 : 0; } },
+  { id: "magisterium", name: "Magisterium", ages: [3, 4], army: 0.9, shift: { curiosity: 0.03 },
+    rise: "The mages of {N} ruled by examination and licence now; once {aF}, it was {aT}.",
+    fit: function (s) { return s.family === "wizard-tyranny" ? 2.2 : s.curiosity > 0.75 ? 1.6 : 0; } },
+  { id: "market-moot", name: "Market-Moot", ages: [0, 1], families: ["free-cities"], navy: 1.2, fit: function () { return 2.2; } },
+  { id: "guild-republic", name: "Guild Republic", ages: [2, 3], navy: 1.3, army: 0.85,
+    rise: "The guilds of {N} took the keys of the treasury, and the realm, once {aF}, was {aT}.",
+    fit: function (s) { return s.family === "free-cities" ? 2.4 : s.cunning > 0.7 && s.rel < 1.5 ? 1.6 : 0; } },
+  { id: "free-republic", name: "Free Republic", ages: [4, 4], navy: 1.2, army: 0.9,
+    rise: "{N} put its crown in a museum and its laws in print; once {aF}, it was {aT}.",
+    fit: function (s) { return s.family === "free-cities" ? 2.4 : s.stability > 0.6 && s.curiosity > 0.6 ? 1.8 : 0; } },
+  { id: "thanedom", name: "Thanedom", ages: [0, 2], families: ["hill-clans"], army: 1.1, plunder: 1.3, fit: function () { return 2.2; } },
+  { id: "clan-confederacy", name: "Clan Confederacy", ages: [3, 4], families: ["hill-clans"], army: 1.15, plunder: 1.4, fit: function () { return 2.2; } },
+  { id: "shrine-hold", name: "Shrine-Hold", ages: [0, 1], army: 0.9,
+    fit: function (s) { return s.family === "theocracy" ? 2.2 : s.piety > 0.72 ? 1.8 : 0; } },
+  { id: "holy-see", name: "Holy See", ages: [2, 4], army: 0.95, shift: { piety: 0.03 },
+    fit: function (s) { return s.family === "theocracy" ? 2.2 : s.piety > 0.72 ? 1.8 : 0; } },
+];
+
 AEON.registerPack({
   id: "fantasy",
   name: "Age of Myth",
@@ -2563,6 +2634,7 @@ AEON.registerPack({
     { id: "clockwork", name: "The Clockwork Age",   short: "Clockwork", at: 1480 },
   ],
   archetypes: ARCHETYPES,
+  realmTypes: REALM_TYPES,
   names: NAMES,
 
   events: [].concat(SPINE, GODS, PROPHECY, MAGIC, MONSTERS, RELICS, MEMORY, WONDER_EVENTS, ACTION_EVENTS, ARISINGS).map(throttled),

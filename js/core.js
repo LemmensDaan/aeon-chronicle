@@ -730,18 +730,18 @@ function updateEra(world) {
    where every realm starts). `learning` grows by tech x years, so it keeps rising after tech
    saturates and curious, advanced realms pull ahead. Nothing in the simulation reads it, so
    it changes no history. A new realm starts from whoever held its land before it (a
-   successor keeps its parent's age), or, founded on empty land, from half the median of the
-   realms then living. */
+   successor keeps its parent's age, and is marked as its heir in p.heirOf), or, founded on empty
+   land, from half the median of the realms then living. */
 function inheritLearning(world, p, alive) {
   const log = world.ownerLog, want = {};
   let left = 0, best = -1;
   for (const r of p.regions) { want[r] = true; left++; }
   for (let i = log.length - 1, n = 0; i >= 0 && left > 0 && n < 50000; i--, n++) {
     const e = log[i];
-    if (!want[e[1]] || e[2] === p.id) continue;
+    if (!want[e[1]] || e[2] === p.id || e[2] == null) continue;
     want[e[1]] = false; left--;
-    const prev = e[2] != null ? world.polities[e[2]] : null;
-    if (prev && prev.learning != null && prev.learning > best) best = prev.learning;
+    const prev = world.polities[e[2]];
+    if (prev && prev.learning != null && prev.learning > best) { best = prev.learning; p.heirOf = prev.id; }
   }
   if (best >= 0) return best * 0.95;
   const ls = alive.filter(function (q) { return q !== p && q.learning != null; }).map(function (q) { return q.learning; }).sort(function (a, b) { return a - b; });
@@ -767,6 +767,86 @@ function advanceAge(world, p, alive) {
   }
 }
 
+/* --------------------------------------------------------- realm types --
+   The form of state a realm has in its age (pack.realmTypes), which it can grow into and out of:
+   a kingdom grown large becomes an empire, a coastal league with a strong fleet a thalassocracy,
+   the heirs of a broken realm successor or warlord states. Each type is open in a span of ages
+   (`ages: [first, last]`), optionally only to some kinds (`families`: archetype ids; the
+   archetype stays the realm's kind), and scores how well it fits a realm (`fit(s)`, s from
+   typeFacts; 0 or less: not open). Every tick a realm takes the best fit, keeping its current
+   type while that stays close (within 0.5) or for its first 30 years. Types carry `army`,
+   `navy`, `expansion` and `plunder` factors (default 1) and a one-off trait `shift`; a change
+   is logged in p.typeLog and recorded as an event (`rise`: its sentence; {N} the realm, {aF} / {F}
+   the type it was with and without "a", {aT} / {T} the new one). */
+function typeFacts(world, p) {
+  let coast = 0, cities = 0;
+  for (const id of p.regions) {
+    const r = world.regions[id];
+    if (!r) continue;
+    if (onSea(world, r)) coast++;
+    if (r.settlement && r.settlement.tier >= 3) cities++;
+  }
+  const n = Math.max(1, p.regions.length), t = p.traits, years = world.year - p.founded;
+  /* size against the realms of its day: rel (times the median realm) and rank (1: the largest) */
+  let c = world._sizes;
+  if (!c || c.year !== world.year) {
+    const v = living(world).map(function (q) { return q.regions.length; }).sort(function (a, b) { return a - b; });
+    c = world._sizes = { year: world.year, v: v, med: Math.max(1, v.length ? v[v.length >> 1] : 1) };
+  }
+  let rank = 1;
+  for (let i = c.v.length - 1; i >= 0 && c.v[i] > p.regions.length; i--) rank++;
+  return { p: p, age: p.age || 0, family: p.archetypeId, regions: p.regions.length, rel: p.regions.length / c.med, rank: rank,
+    coast: coast / n, cities: cities,
+    navy: fullNavy(world, p), army: fullArmy(world, p), years: years, heir: p.heirOf != null && years <= 80,
+    piety: t.piety, aggression: t.aggression, stability: t.stability, curiosity: t.curiosity, cunning: t.cunning };
+}
+function typeOf(world, p) {
+  const T = world.pack.realmTypes;
+  if (!T || !p.typeId) return null;
+  for (const t of T) if (t.id === p.typeId) return t;
+  return null;
+}
+function anA(s) { return (/^[aeiou]/i.test(s) ? "an " : "a ") + s; }
+function chooseType(world, p) {
+  const T = world.pack.realmTypes;
+  if (!T || !T.length) return;
+  const s = typeFacts(world, p);
+  let best = null, bf = 0, cur = null, cf = 0;
+  for (const t of T) {
+    if (s.age < t.ages[0] || s.age > t.ages[1]) continue;
+    if (t.families && t.families.indexOf(s.family) < 0) continue;
+    const f = t.fit(s);
+    if (t.id === p.typeId) { cur = t; cf = f > 0 ? f : 0; }
+    if (f > 0 && f > bf) { best = t; bf = f; }
+  }
+  /* the type it has is kept while it still fits nearly as well as the best, for its first 30
+     years, and for 50 years after it stops fitting at all (no flickering at a threshold); a
+     type that is no longer open in the realm's age or to its kind goes at once */
+  if (cur && cf > 0) p.typeMiss = null;
+  else if (cur && p.typeMiss == null) p.typeMiss = world.year;
+  if (!best || best === cur) return;
+  if (cur && (cf >= bf - 0.5 || world.year - p.typeSince < 30 || (cf === 0 && world.year - p.typeMiss < 50))) return;
+  const was = typeOf(world, p);
+  p.typeId = best.id; p.typeName = best.name; p.typeSince = world.year; p.typeMiss = null;
+  (p.typeLog || (p.typeLog = [])).push({ year: world.year, type: best.id });
+  if (best.shift) for (const k in best.shift) p.traits[k] = clamp(p.traits[k] + best.shift[k], 0.02, 0.98);
+  if (!was) return;
+  const text = (best.rise || "{N}, until then {aF}, was now {aT}.").replace(/\{N\}/g, p.name.replace(/^The /, "the "))
+    .replace(/\{aF\}/g, anA(was.name.toLowerCase())).replace(/\{F\}/g, was.name.toLowerCase())
+    .replace(/\{aT\}/g, anA(best.name.toLowerCase())).replace(/\{T\}/g, best.name.toLowerCase());
+  recordEvent(world, "realm-transformed", { importance: best.importance || 2, tags: ["transformation", "type:" + best.id],
+    actors: [{ kind: "polity", id: p.id }], regionId: p.capital, text: text.charAt(0).toUpperCase() + text.slice(1) });
+}
+/* the type a realm had in a year: the type object, or null */
+AEON.typeAt = function (world, p, year) {
+  const L = p.typeLog, T = world.pack.realmTypes;
+  if (!L || !L.length || !T) return null;
+  let e = L[0];
+  for (const x of L) { if (x.year <= year) e = x; else break; }
+  for (const t of T) if (t.id === e.type) return t;
+  return null;
+};
+
 /* How a realm's people spread over its land: by habitability, and far more thickly where there is a
    settlement (a capital most of all). Only the map and tooltips read region populations, so this
    shapes no history. */
@@ -787,7 +867,7 @@ AEON.populationAt = function (p, year) {
 /* Armed strength in men and ships. Army: a share of the people under arms (the realm's kind and
    temper set how many), times readiness (stability, a ruler on the throne, war-weariness from the
    pack). Navy: the realm's sea ports, the bigger the town the more hulls (a few boats along open
-   shore too), times wealth, learning and its kind. Kinds carry `army` and `navy` factors in the
+   shore too), times wealth, learning and its kind. Kinds and types (realmTypes) carry `army` and `navy` factors in the
    pack's archetypes (default 1). Men and ships lost in battle are owed (`armyDebt`, `navyDebt`)
    and made good over the following decades. Worked out fresh whenever asked, and logged with the
    size history at the end of every tick. */
@@ -805,10 +885,11 @@ function fullArmy(world, p) {
   const a = archetypeOf(world, p) || {}, t = p.traits;
   const weary = world.pack.warWeariness ? clamp(world.pack.warWeariness(world, p) || 0, 0, 1) : 0;
   const readiness = (0.6 + t.stability * 0.5) * (p.ruler ? 1 : 0.85) * (1 - weary * 0.4);
-  return p.population * 0.012 * (a.army == null ? 1 : a.army) * (0.7 + t.aggression * 0.6) * readiness;
+  const k = typeOf(world, p) || {};
+  return p.population * 0.012 * (a.army == null ? 1 : a.army) * (k.army == null ? 1 : k.army) * (0.7 + t.aggression * 0.6) * readiness;
 }
 function fullNavy(world, p) {
-  const a = archetypeOf(world, p) || {};
+  const a = archetypeOf(world, p) || {}, k = typeOf(world, p) || {};
   let hulls = 0;
   for (const id of p.regions) {
     const r = world.regions[id];
@@ -816,7 +897,7 @@ function fullNavy(world, p) {
     if (r.settlement) hulls += Math.min(4, r.settlement.tier) + (id === p.capital ? 2 : 0);
     else hulls += 0.25;                                  /* fishing boats along an open shore */
   }
-  return hulls * 5 * (0.4 + p.wealth) * (0.5 + p.tech) * (a.navy == null ? 1 : a.navy);
+  return hulls * 5 * (0.4 + p.wealth) * (0.5 + p.tech) * (a.navy == null ? 1 : a.navy) * (k.navy == null ? 1 : k.navy);
 }
 /* what a realm can put in the field and at sea now: never below a tenth of its full strength */
 AEON.armyOf = function (world, p) { const f = fullArmy(world, p); return Math.round(Math.max(f * 0.1, f - (p.armyDebt || 0))); };
@@ -908,6 +989,7 @@ function baselineTick(world) {
 
     p.tech = clamp(p.tech + 0.0016 * (0.4 + p.traits.curiosity * 1.6) * (1 + p.regions.length * 0.015), 0, 1);
     advanceAge(world, p, alive);
+    chooseType(world, p);
     p.wealth = clamp(0.2 + (p.population / cap) * 0.5 + p.tech * 0.4, 0, 1);
     p.military = clamp(0.1 + p.traits.aggression * 0.5 + p.tech * 0.3 + p.regions.length * 0.01, 0, 1);
     p.prestige = clamp(p.prestige * 0.995 + p.regions.length * 0.004 + p.tech * 0.004, 0, 1);
@@ -921,7 +1003,8 @@ function baselineTick(world) {
     }
 
     /* natural expansion into adjacent unclaimed ground */
-    const expansionChance = 0.07 + p.traits.aggression * 0.10 + p.wealth * 0.05;
+    const kind = typeOf(world, p);
+    const expansionChance = (0.07 + p.traits.aggression * 0.10 + p.wealth * 0.05) * (kind && kind.expansion != null ? kind.expansion : 1);
     if (rng.chance(expansionChance)) {
       const open = [];
       for (const r of rs) {

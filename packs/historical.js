@@ -2190,6 +2190,89 @@ const EVENTS = [
  *  THE PACK
  * ====================================================================== */
 
+/* ---------------------------------------------------------------- realm types --- *
+ * The form of state a realm has in its age, which it grows into and out of (core.js chooseType).
+ * Ages: 0 Bronze, 1 Iron, 2 Classical, 3 Medieval, 4 Powder. fit(s) scores a realm (s.rel: times
+ * the median realm's size, s.rank, s.coast: share of its land on the sea, s.navy in ships, s.heir:
+ * a realm broken off another within 80 years, its kind in s.family and its traits); the generic
+ * type of each age scores 1, a kind's own form about 2, empires and successors 3 and up. */
+const SEAFOLK = ["maritime", "citystate"];
+function great(s) { return s.rel >= 3 && s.rank <= 4; }
+const REALM_TYPES = [
+  /* every age: the heirs of a broken realm */
+  { id: "successor-state", name: "Successor State", ages: [0, 4], army: 0.9,
+    fit: function (s) { return s.heir && s.stability >= 0.35 ? 3.6 : 0; } },
+  { id: "warlord-state", name: "Warlord State", ages: [0, 4], army: 1.2, plunder: 1.6,
+    fit: function (s) { return s.heir && s.stability < 0.35 ? 3.8 : 0; } },
+  /* Bronze */
+  { id: "chiefdom", name: "Chiefdom", ages: [0, 0], navy: 0.8, expansion: 1.15, fit: function () { return 1; } },
+  { id: "city-state", name: "City-State", ages: [0, 0], navy: 1.3, expansion: 0.8,
+    fit: function (s) { return SEAFOLK.indexOf(s.family) >= 0 ? 2.2 : s.regions <= 8 && s.cities >= 1 ? 1.6 : 0; } },
+  { id: "river-kingdom", name: "River Kingdom", ages: [0, 0], army: 1.1,
+    fit: function (s) { return s.family === "riverkingdom" ? 2.2 : s.rel >= 1.5 ? 1.5 : 0; } },
+  { id: "temple-state", name: "Temple State", ages: [0, 1], army: 0.9, shift: { piety: 0.03 },
+    fit: function (s) { return s.family === "theocracy" ? 2.2 : s.piety > 0.65 ? 1.8 : 0; } },
+  { id: "nomad-confederacy", name: "Nomad Confederacy", ages: [0, 1], army: 1.2, expansion: 1.3, plunder: 1.6,
+    fit: function (s) { return s.family === "steppe" ? 3 : 0; } },
+  { id: "great-kingdom", name: "Great Kingdom", ages: [0, 1], army: 1.15, expansion: 1.1, importance: 3,
+    rise: "{N} had swallowed its neighbours one by one; no longer {aF} among equals, it was {aT}, and its ruler took the style of king of kings.",
+    fit: function (s) { return great(s) ? 2.8 : 0; } },
+  { id: "highland-confederacy", name: "Highland Confederacy", ages: [0, 2], army: 1.15, plunder: 1.3,
+    fit: function (s) { return s.family === "hillclans" ? 2.2 : 0; } },
+  /* Iron */
+  { id: "kingdom", name: "Kingdom", ages: [0, 2], fit: function (s) { return s.age > 0 ? 1 : s.rel >= 1 ? 1.2 : 0; } },
+  { id: "city-league", name: "City League", ages: [1, 1], navy: 1.3, expansion: 0.85,
+    fit: function (s) { return SEAFOLK.indexOf(s.family) >= 0 ? 2.2 : s.cities >= 3 && s.rel < 1.2 ? 1.6 : 0; } },
+  { id: "thalassocracy", name: "Thalassocracy", ages: [1, 2], navy: 1.5, army: 0.8, importance: 3,
+    rise: "With more ships than any rival on its seas, {N} was by now less {aF} than {aT}, whose power lay in its harbours.",
+    fit: function (s) { return s.coast >= 0.2 && s.navy >= 20 ? 2 + s.coast * 2 + (SEAFOLK.indexOf(s.family) >= 0 ? 0.5 : 0) : 0; } },
+  { id: "satrapy-empire", name: "Satrapy Empire", ages: [1, 1], army: 1.15, expansion: 1.1, shift: { stability: 0.03 }, importance: 4,
+    rise: "{N} had outgrown its old name of {F}: its provinces were now ruled by satraps who answered to a court that styled itself imperial.",
+    fit: function (s) { return great(s) ? 3 : 0; } },
+  /* Classical */
+  { id: "republic", name: "Republic", ages: [2, 2], army: 0.9, navy: 1.1, shift: { stability: 0.02 },
+    rise: "The assembly of {N} took the government from the crown; until then {aF}, it was now {aT}, and dated its years by its magistrates.",
+    fit: function (s) { return SEAFOLK.indexOf(s.family) >= 0 ? 2.2 : s.stability > 0.55 && s.cunning > 0.55 && s.rel < 2 ? 1.8 : 0; } },
+  { id: "hegemony", name: "Hegemony", ages: [2, 2], army: 1.1, expansion: 1.05,
+    rise: "{N} now led a league of lesser states that paid it tribute and called it protection: {aF} no longer, it was {aT}.",
+    fit: function (s) { return s.rel >= 1.8 && s.aggression > 0.5 ? 2.2 : 0; } },
+  { id: "imperial-state", name: "Imperial State", ages: [2, 3], army: 1.2, expansion: 1.1, shift: { stability: 0.03 }, importance: 4,
+    rise: "{N}, until then {aF}, was now an empire in all but the oldest of its titles, ruled through governors, roads and registers.",
+    fit: function (s) { return great(s) ? 3 : 0; } },
+  { id: "tribal-confederation", name: "Tribal Confederation", ages: [2, 2], army: 1.2, plunder: 1.5, expansion: 1.2,
+    fit: function (s) { return s.family === "steppe" ? 2.6 : 0; } },
+  /* Medieval */
+  { id: "feudal-kingdom", name: "Feudal Kingdom", ages: [3, 3], army: 1.05, shift: { stability: -0.02 },
+    rise: "The great lords of {N} now held their lands in return for service, and the realm, once {aF}, was {aT}.",
+    fit: function () { return 1; } },
+  { id: "caliphate", name: "Caliphate", ages: [3, 3], army: 1.1, expansion: 1.15, shift: { piety: 0.03 }, importance: 4,
+    rise: "The ruler of {N} took the title of successor to the prophets, and the realm, until then {aF}, became {aT}.",
+    fit: function (s) { return s.rel >= 2 && (s.family === "theocracy" ? 3.2 : s.piety > 0.6 ? 3 : 0); } },
+  { id: "khanate", name: "Khanate", ages: [3, 4], army: 1.3, expansion: 1.2, plunder: 1.5, importance: 3,
+    rise: "The clans of {N} raised their war-leader on a felt carpet as khan; {aF} no longer, it was {aT}.",
+    fit: function (s) { return s.family === "steppe" ? 3 : 0; } },
+  { id: "merchant-republic", name: "Merchant Republic", ages: [3, 3], navy: 1.6, army: 0.7,
+    rise: "The great trading houses of {N} took the government into their counting-rooms; once {aF}, it was {aT}.",
+    fit: function (s) { return SEAFOLK.indexOf(s.family) >= 0 && s.coast > 0.15 ? 2.5 : s.cunning > 0.65 && s.coast > 0.3 && s.rel < 1.5 ? 1.8 : 0; } },
+  { id: "theocracy", name: "Theocracy", ages: [3, 4], army: 0.95, shift: { piety: 0.03 },
+    fit: function (s) { return s.family === "theocracy" ? 2.2 : s.piety > 0.72 ? 1.8 : 0; } },
+  { id: "principality", name: "Principality", ages: [3, 3], army: 0.9,
+    fit: function (s) { return s.rel < 0.6 ? 1.6 : 0; } },
+  /* Powder */
+  { id: "absolute-monarchy", name: "Absolute Monarchy", ages: [4, 4], army: 1.1, shift: { stability: 0.03 },
+    rise: "The crown of {N} gathered every power of the realm to itself, and the old {F} became {aT}.",
+    fit: function () { return 1; } },
+  { id: "colonial-empire", name: "Colonial Empire", ages: [4, 4], navy: 1.4, expansion: 1.1, importance: 4,
+    rise: "The fleets of {N} carried its flag to shores its founders had never heard of; {aF} at home, it was {aT} abroad.",
+    fit: function (s) { return s.coast >= 0.2 && s.navy >= 100 && s.rel >= 1 ? 3 : 0; } },
+  { id: "gunpowder-empire", name: "Gunpowder Empire", ages: [4, 4], army: 1.25, expansion: 1.1, importance: 4,
+    rise: "With cannon in its arsenals and governors in every province, {N}, until then {aF}, was {aT}.",
+    fit: function (s) { return great(s) ? 3.1 : 0; } },
+  { id: "constitutional-state", name: "Constitutional State", ages: [4, 4], army: 0.95, shift: { stability: 0.02 },
+    rise: "{N} wrote its laws down and bound its rulers by them; once {aF}, it was {aT}.",
+    fit: function (s) { return SEAFOLK.indexOf(s.family) >= 0 ? 2.2 : s.stability > 0.6 && s.curiosity > 0.55 ? 2 : 0; } },
+];
+
 function him2(f) { return gOf(f) === "f" ? "her" : "him"; }
 
 AEON.registerPack({
@@ -2248,6 +2331,7 @@ AEON.registerPack({
 
   /* 0..1: how worn down a realm is by its wars, for core.js musterForces */
   warWeariness: function (w, p) { return w._hist ? (w._hist.fatigue[p.id] || 0) / 0.35 : 0; },
+  realmTypes: REALM_TYPES,
 
   archetypes: [
     { id: "citystate",    name: "City-State League",   army: 0.9, navy: 1.6, traitBias: { curiosity: 0.12, cunning: 0.1, stability: -0.05 }, blurb: "A cluster of walled towns, each jealous of the others and of the league that binds them." },

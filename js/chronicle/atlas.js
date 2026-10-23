@@ -11,8 +11,8 @@ var TIER = C.TIER, PAGE_STEP = C.PAGE_STEP, S = C.S, h = C.h, add = C.add, clear
 
 /* ---------- Atlas / index ---------- */
 function polityLine(p) {
-  var arch = archetype(p.archetypeId), n = (p.regions || []).length;
-  var s = (arch ? arch.name : "Polity") + ", " + yr(p.founded) + " – " + (p.ended != null ? yr(p.ended) : "present") +
+  var arch = archetype(p.archetypeId), n = (p.regions || []).length, form = AEON.typeAt(S.world, p, S.world.year);
+  var s = (form ? form.name : arch ? arch.name : "Polity") + ", " + yr(p.founded) + " – " + (p.ended != null ? yr(p.ended) : "present") +
     " (" + plural(Math.max(0, polityEnd(p) - p.founded), "year") + "), " + (p.ended != null ? "peak " + plural(peakSize(p.id), "region") : plural(n, "region"));
   if (p.ended != null && p.fate) s += ". " + trunc(p.fate, 110);
   return s;

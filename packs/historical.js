@@ -553,10 +553,11 @@ function coastal(ctx, r) { return r.neighbors.some(function (n) { return ctx.wor
 function relate(a, b, v) { a.relations[b.id] = v; b.relations[a.id] = v; }
 function adjustT(p, k, d) { p.traits[k] = clamp(p.traits[k] + d, 0.03, 0.97); }
 function loseFolk(p, frac) { const n = Math.round(p.population * frac); p.population = Math.max(60, p.population - n); return n; }
-function strength(w, p) {
-  const h = H(w);
-  return Math.max(0.05, p.military + (h.bonus[p.id] || 0) - (h.fatigue[p.id] || 0)) * (0.75 + 0.5 * p.tech) * (0.85 + Math.min(p.regions.length, 12) * 0.02);
-}
+/* what a realm brings to a battle besides its men: drill, new weapons and zeal won in events */
+function edge(w, p) { return 1 + (H(w).bonus[p.id] || 0); }
+/* armed strength, for weighing realms against each other: its men (core.js AEON.armyOf, which
+   war-weariness and past losses already thin, as much as reaches one front), their quality and its edge */
+function strength(w, p) { return Math.max(1, AEON.fieldArmy(w, p)) * (0.5 + p.tech) * edge(w, p); }
 function tire(w, p, d) { const h = H(w); h.fatigue[p.id] = clamp((h.fatigue[p.id] || 0) + d, 0, 0.35); }
 function warKey(a, b) { return a.id < b.id ? a.id + "-" + b.id : b.id + "-" + a.id; }
 function wars(ctx, p) {
@@ -741,9 +742,28 @@ function warName(ctx, a, b) {
     "the " + ctx.choice(["Long", "Bitter", "Winter", "Grain", "Hostage"]) + " War between " + a.name + " and " + b.name,
   ]);
 }
-function pickWinner(ctx, a, b, spread) {
-  const sa = strength(ctx.world, a) * ctx.range(1 - spread, 1 + spread), sb = strength(ctx.world, b) * ctx.range(1 - spread, 1 + spread);
-  return sa >= sb ? { W: a, L: b, ratio: sa / sb } : { W: b, L: a, ratio: sb / sa };
+/* a battle between attacker a and defender b at region r (core.js AEON.battle): a realm fighting
+   several wars has only part of its army in each */
+function fight(ctx, a, b, r, frontierLen, extra) {
+  const w = ctx.world, o = { region: r ? r.id : null, bonusA: edge(w, a), bonusD: edge(w, b), frontier: frontierLen || 1,
+    shareA: 1 / Math.max(1, wars(ctx, a).length), shareD: 1 / Math.max(1, wars(ctx, b).length) };
+  if (extra) for (const k in extra) o[k] = extra[k];
+  return AEON.battle(w, a, b, o);
+}
+function bodies(o) { return approx(o.lost.L) + " of " + o.L.name + " and " + approx(o.lost.W) + " of " + o.W.name; }
+function battleLine(ctx, W, L, r) { return fill(ctx.pick(BATTLE_LINES[Math.min(eIdx(ctx), 5)]), { W: W.name, L: L.name, P: provName(r) }); }
+/* the attacker beaten: it withdraws, and a crushing defeat lets the defender follow it home */
+function repelled(ctx, wr, At, D, site, o, lead, extraTags) {
+  const w = ctx.world, h = H(w);
+  if (wr) addWin(wr, D);
+  tire(w, At, 0.06); loseFolk(At, ctx.range(0.005, 0.015)); D.prestige = clamp(D.prestige + 0.03, 0, 1);
+  if (h.defeats[At.id] == null) h.defeats[At.id] = ctx.year;
+  let back = null;
+  if (o.pushBack && At.regions.length > 1) { const b = frontier(ctx, D, At); if (b.length) { back = ctx.pick(b); annex(ctx, back, D); } }
+  const tags = ["war", "battle", "defeat", "repelled"].concat(extraTags || [], back ? ["territory"] : []);
+  return res(back ? 4 : 3, tags, A(ctx, D, At), (back || site || ctx.world.regions[D.capital]).id,
+    lead + " " + battleLine(ctx, D, At, site) + " " + bodies(o) + " were left on the field." +
+    (back ? " " + D.name + " followed the beaten army home and took " + provName(back) + "." : " " + At.name + " withdrew, and the frontier stayed where it was."));
 }
 
 /* ====================================================================== *
@@ -1052,10 +1072,15 @@ const EVENTS = [
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
     const wf = ctx.pick(wars(ctx, p).filter(function (x) { return strength(w, p) > strength(w, x.foe) * 1.3 && frontier(ctx, p, x.foe).length > 0; }));
-    const L = wf.foe, W = p, whole = L.regions.length <= 12;
+    const L = wf.foe, W = p, fr = frontier(ctx, W, L), site = ctx.pick(fr);
+    const o = fight(ctx, W, L, site, fr.length);
+    if (!o.won) return repelled(ctx, wf.war, W, L, site, o, W.name + " marched to end " + (wf.war.name || "the war") + ".");
+    /* the margin sets how far it goes: a crushing win takes a small realm whole, or a third of a
+       large one's land; a clear one a little realm whole; a narrow one a province or two */
+    const whole = L.regions.length <= (o.margin === "crushing" ? 12 : o.margin === "clear" ? 5 : 1);
     let regs;
     if (whole) regs = ctx.regionsOf(L);
-    else { const fr = frontier(ctx, W, L); regs = ctx.shuffle(fr).slice(0, Math.max(2, Math.min(fr.length, Math.round(L.regions.length * 0.3)))); }
+    else regs = [site].concat(ctx.shuffle(fr.filter(function (x) { return x !== site; }))).slice(0, o.margin === "crushing" ? Math.max(2, Math.min(fr.length, Math.round(L.regions.length * 0.3))) : o.take);
     const n = regs.length, first = regs[0], capName = seat(ctx, L), rl = rulerOf(ctx, L);
     if (whole) {
       const oldCap = L.capital;
@@ -1065,9 +1090,10 @@ const EVENTS = [
     endWar(ctx, wf.war); relate(W, L, 0);
     W.prestige = clamp(W.prestige + 0.08, 0, 1); adjustT(L, "stability", -0.1);
     if (h.defeats[L.id] == null) h.defeats[L.id] = ctx.year;
+    const field = battleLine(ctx, W, L, site) + " " + bodies(o) + " were left on the field. ";
     return res(whole ? 5 : 4, whole ? ["conquest", "war", "defeat", "territory", "fall"] : ["conquest", "war", "defeat", "territory"], A(ctx, W, L, first), first.id,
-      whole ? W.name + " completed the conquest of " + L.name + ", taking " + n + " " + (n === 1 ? "province" : "provinces") + " and the capital " + capName + ". " + (rl ? who(rl) + " " + ctx.choice(["was executed on the steps of the palace", "was carried off to the victor's capital and exhibited", "escaped across the frontier and was not heard of again", "was permitted to retire and died, by an administrative error, within the month"]) + ". " : "") + L.name + " thereafter appeared only in the genealogies of the victors and the complaints of its former tax-payers."
-        : W.name + " drove deep into " + L.name + " and annexed " + n + " " + (n === 1 ? "province" : "provinces") + ", among them " + provName(first) + ". " + L.name + " survived, smaller and more cautious, with the conqueror's garrisons visible from its capital.");
+      whole ? field + W.name + " completed the conquest of " + L.name + ", taking " + n + " " + (n === 1 ? "province" : "provinces") + " and the capital " + capName + ". " + (rl ? who(rl) + " " + ctx.choice(["was executed on the steps of the palace", "was carried off to the victor's capital and exhibited", "escaped across the frontier and was not heard of again", "was permitted to retire and died, by an administrative error, within the month"]) + ". " : "") + L.name + " thereafter appeared only in the genealogies of the victors and the complaints of its former tax-payers."
+        : field + W.name + " drove " + (o.margin === "crushing" ? "deep " : "") + "into " + L.name + " and annexed " + n + " " + (n === 1 ? "province" : "provinces") + ", among them " + provName(first) + ". " + L.name + " survived, smaller and more cautious, with the conqueror's garrisons visible from its capital.");
   } },
 
 { id: "ruler-law-code", scope: "figure", weight: 1, cooldown: 120,
@@ -1446,47 +1472,56 @@ const EVENTS = [
 { id: "battle", scope: "polity", weight: 8,
   test: function (ctx) { return wars(ctx, ctx.polity).length > 0; },
   run: function (ctx) {
-    const p = ctx.polity, w = ctx.world, wf = ctx.pick(wars(ctx, p));
-    const o = pickWinner(ctx, p, wf.foe, 0.35), W = o.W, L = o.L;
-    const fr = frontier(ctx, W, L), r = fr.length ? ctx.pick(fr) : null;
-    const place = r ? provName(r) : ctx.name("place", { polity: L });
-    const dead = ctx.int(300, Math.max(400, Math.round(L.population * 0.012)));
-    loseFolk(L, ctx.range(0.01, 0.025)); loseFolk(W, ctx.range(0.005, 0.015));
+    const p = ctx.polity, w = ctx.world, wf = ctx.pick(wars(ctx, p)), foe = wf.foe;
+    const fr = frontier(ctx, p, foe), r = fr.length ? ctx.pick(fr) : null;
+    const o = fight(ctx, p, foe, r, fr.length), W = o.W, L = o.L;
+    const place = r ? provName(r) : ctx.name("place", { polity: foe });
+    loseFolk(L, ctx.range(0.005, 0.015)); loseFolk(W, ctx.range(0.002, 0.008));
     tire(w, L, 0.05); tire(w, W, 0.02); addWin(wf.war, W);
-    return res(2, ["war", "battle"], A(ctx, W, L), r ? r.id : null,
-      fill(ctx.pick(BATTLE_LINES[Math.min(eIdx(ctx), 5)]), { W: W.name, L: L.name, P: place }) + " " + approx(dead) + " of " + L.name + " and " + approx(dead * ctx.range(0.2, 0.7)) + " of " + W.name + " were left on the field.");
+    /* a rout on the defender's own ground costs it the province */
+    const lost = o.won && o.margin === "crushing" && r && r.owner === L.id && L.regions.length > 1;
+    if (lost) annex(ctx, r, W);
+    return res(lost ? 3 : 2, lost ? ["war", "battle", "territory"] : ["war", "battle"], A(ctx, W, L), r ? r.id : null,
+      fill(ctx.pick(BATTLE_LINES[Math.min(eIdx(ctx), 5)]), { W: W.name, L: L.name, P: place }) + " " + bodies(o) + " were left on the field." + (lost ? " " + cap(place) + " passed to " + W.name + "." : ""));
   } },
 
 { id: "decisive-battle", scope: "polity", weight: 5,
-  test: function (ctx) { return wars(ctx, ctx.polity).length > 0; },
+  test: function (ctx) { return wars(ctx, ctx.polity).some(function (x) { return frontier(ctx, ctx.polity, x.foe).length > 0; }); },
   run: function (ctx) {
-    const p = ctx.polity, w = ctx.world, h = H(w), wf = ctx.pick(wars(ctx, p));
-    const o = pickWinner(ctx, p, wf.foe, 0.25), W = o.W, L = o.L;
-    const fr = frontier(ctx, W, L);
-    if (!fr.length) return null;
-    const taken = [ctx.pick(fr)];
-    if (o.ratio > 1.4 && fr.length > 1 && L.regions.length > 2) { const x = ctx.pick(fr.filter(function (z) { return z !== taken[0]; })); if (x) taken.push(x); }
+    const p = ctx.polity, w = ctx.world, h = H(w);
+    const wf = ctx.pick(wars(ctx, p).filter(function (x) { return frontier(ctx, p, x.foe).length > 0; })), foe = wf.foe;
+    const fr = frontier(ctx, p, foe), site = ctx.pick(fr);
+    const o = fight(ctx, p, foe, site, fr.length);
+    if (!o.won) return repelled(ctx, wf.war, p, foe, site, o, "The decisive battle of " + (wf.war.name || "the war") + " was fought at " + provName(site) + ".");
+    const W = p, L = foe;
+    const taken = [site].concat(ctx.shuffle(fr.filter(function (z) { return z !== site; }))).slice(0, o.take);
     const last = L.regions.length === taken.length;
     const names = taken.map(provName);
     for (const t of taken) { if (t.owner === L.id) annex(ctx, t, W); }
-    loseFolk(L, ctx.range(0.02, 0.05)); tire(w, L, 0.1); tire(w, W, 0.03); addWin(wf.war, W); addWin(wf.war, W);
+    loseFolk(L, ctx.range(0.01, 0.03)); tire(w, L, 0.1); tire(w, W, 0.03); addWin(wf.war, W); addWin(wf.war, W);
     adjustT(L, "stability", -0.03); W.prestige = clamp(W.prestige + 0.04, 0, 1);
     if (h.defeats[L.id] == null) h.defeats[L.id] = ctx.year;
     const tags = ["war", "battle", "defeat", "territory"];
     if (last) tags.push("fall");
-    const line = fill(ctx.pick(BATTLE_LINES[Math.min(eIdx(ctx), 5)]), { W: W.name, L: L.name, P: names[0] });
+    const list = names.length > 2 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names.join(" and ");
     return res(4, tags, A(ctx, W, L), taken[0].id,
-      "The decisive battle of " + (wf.war.name || "the war") + " was fought at " + names[0] + ". " + line + " In the settlement that followed, " + names.join(" and ") + " passed to " + W.name + "." + (last ? " " + L.name + " did not survive the loss." : ""));
+      "The decisive battle of " + (wf.war.name || "the war") + " was fought at " + names[0] + ". " + battleLine(ctx, W, L, site) + " " + bodies(o) + " were left on the field. In the settlement that followed, " + list + " passed to " + W.name + "." + (last ? " " + L.name + " did not survive the loss." : ""));
   } },
 
-{ id: "siege-succeeds", scope: "polity", weight: 5,
-  test: function (ctx) { return wars(ctx, ctx.polity).length > 0; },
+{ id: "siege", scope: "polity", weight: 9,
+  test: function (ctx) { const p = ctx.polity; return wars(ctx, p).some(function (x) { return frontier(ctx, p, x.foe).some(function (r) { return r.settlement; }); }); },
   run: function (ctx) {
-    const p = ctx.polity, w = ctx.world, h = H(w), wf = ctx.pick(wars(ctx, p));
-    const o = pickWinner(ctx, p, wf.foe, 0.3), W = o.W, L = o.L;
+    const p = ctx.polity, w = ctx.world, h = H(w);
+    const wf = ctx.pick(wars(ctx, p).filter(function (x) { return frontier(ctx, p, x.foe).some(function (r) { return r.settlement; }); })), L = wf.foe, W = p;
     const targets = frontier(ctx, W, L).filter(function (r) { return r.settlement; });
-    if (!targets.length) return null;
     const r = ctx.rng.weighted(targets, function (x) { return x.settlement.tier; });
+    const o = fight(ctx, W, L, r, 1);
+    if (!o.won) {
+      tire(w, W, 0.05); loseFolk(W, 0.01); addWin(wf.war, L);
+      const why = ctx.choice(["when plague broke out in the besiegers' camp", "when the autumn rains flooded the siege lines", "after the garrison burned the besiegers' engines in a night sortie", "when the besiegers' allies went home for the harvest", "when a relieving army was reported on the road, which turned out to be a rumour but was believed"]);
+      return res(2, ["war", "siege", "repelled"], A(ctx, W, L), r.id,
+        "The siege of " + locName(r) + " by " + W.name + " was raised after " + ctx.int(3, 20) + " months " + why + ". About " + approx(o.lost.L) + " of the besiegers did not go home. " + L.name + " held the city, and the besiegers, who had expected otherwise, went home by a different road.");
+    }
     const name = locName(r), isCap = L.capital === r.id, last = L.regions.length === 1;
     const razed = ctx.chance(0.22 + (r.settlement.tier >= 3 ? 0.1 : 0));
     const method = ctx.pick(SIEGE_METHODS[Math.min(eIdx(ctx), 5)]), yrs = ctx.int(1, 3);
@@ -1504,19 +1539,6 @@ const EVENTS = [
       (razed ? " The city was then razed, and the plough was driven over the site according to custom; the walls are still visible in dry summers." : " The garrison was spared, which surprised the garrison.") + (last ? " With it, " + L.name + " ceased to exist." : ""));
   } },
 
-{ id: "siege-fails", scope: "polity", weight: 4,
-  test: function (ctx) { return wars(ctx, ctx.polity).length > 0; },
-  run: function (ctx) {
-    const p = ctx.polity, w = ctx.world, wf = ctx.pick(wars(ctx, p));
-    const o = pickWinner(ctx, p, wf.foe, 0.3), D = o.W, At = o.L;
-    const targets = frontier(ctx, At, D).filter(function (r) { return r.settlement; });
-    if (!targets.length) return null;
-    const r = ctx.pick(targets);
-    tire(w, At, 0.05); loseFolk(At, 0.015); addWin(wf.war, D);
-    const why = ctx.choice(["when plague broke out in the besiegers' camp", "when the autumn rains flooded the siege lines", "after the garrison burned the besiegers' engines in a night sortie", "when the besiegers' allies went home for the harvest", "when a relieving army was reported on the road, which turned out to be a rumour but was believed"]);
-    return res(2, ["war", "siege"], A(ctx, At, D), r.id,
-      "The siege of " + locName(r) + " by " + At.name + " was raised after " + ctx.int(3, 20) + " months " + why + ". " + D.name + " held the city, and the besiegers, who had expected otherwise, went home by a different road.");
-  } },
 
 { id: "naval-raid", scope: "polity", weight: 3,
   test: function (ctx) {
@@ -1525,15 +1547,22 @@ const EVENTS = [
       ctx.rivals().some(function (q) { return ctx.regionsOf(q).some(function (r) { return coastal(ctx, r); }); });
   },
   run: function (ctx) {
-    const p = ctx.polity;
+    const p = ctx.polity, w = ctx.world;
     const foes = ctx.rivals().filter(function (q) { return ctx.regionsOf(q).some(function (r) { return coastal(ctx, r); }); });
     const foe = ctx.pick(foes), r = ctx.pick(ctx.regionsOf(foe).filter(function (x) { return coastal(ctx, x); }));
+    relate(p, foe, clamp((p.relations[foe.id] || 0) - 0.3, -1, 1));
+    const ships = Math.max(3, Math.round(AEON.navyOf(w, p) * 0.4));
+    /* a defender with a fleet of its own puts out to meet the raiders */
+    if (AEON.navyOf(w, foe) >= 3) {
+      const o = AEON.battle(w, p, foe, { sea: true, shareA: 0.4 });
+      if (!o.won) return res(2, ["raid", "war", "naval", "repelled"], A(ctx, foe, p, r), r.id,
+        "A fleet of " + ships + " " + NAVAL[Math.min(eIdx(ctx), 5)] + " out of " + p.name + " making for " + locName(r) + " was met at sea by the ships of " + foe.name + " and driven off. " + p.name + " lost " + o.lost.L + " " + (o.lost.L === 1 ? "ship" : "ships") + ", " + foe.name + " " + o.lost.W + ".");
+    }
     let tail = " The raiders were gone by the time the militia assembled.";
     if (r.settlement && r.settlement.tier > 1 && ctx.chance(0.3)) { r.settlement.tier--; tail = " The harbour quarter was burned and not rebuilt for a generation."; }
     const n = loseFolk(foe, 0.01);
-    relate(p, foe, clamp((p.relations[foe.id] || 0) - 0.3, -1, 1));
     return res(2, ["raid", "war"], A(ctx, p, foe, r), r.id,
-      "A fleet of " + ctx.int(8, 60) + " " + NAVAL[Math.min(eIdx(ctx), 5)] + " out of " + p.name + " raided " + locName(r) + " in " + foe.name + ", carrying off " + ctx.choice(["grain", "bullion", "temple plate", "cattle", "the harbour dues", "a great many people"]) + ". About " + approx(n) + " were killed or taken." + tail);
+      "A fleet of " + ships + " " + NAVAL[Math.min(eIdx(ctx), 5)] + " out of " + p.name + " raided " + locName(r) + " in " + foe.name + ", carrying off " + ctx.choice(["grain", "bullion", "temple plate", "cattle", "the harbour dues", "a great many people"]) + ". About " + approx(n) + " were killed or taken." + tail);
   } },
 
 { id: "steppe-invasion", scope: "polity", weight: 1.2, cooldown: 40,
@@ -1545,9 +1574,10 @@ const EVENTS = [
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
     const q = ctx.pick(ctx.rivals().filter(function (x) { return x.archetypeId !== "steppe" && frontier(ctx, p, x).length > 0; }));
-    const fr = frontier(ctx, p, q);
-    const taken = [ctx.pick(fr)];
-    if (fr.length > 1 && q.regions.length > 2 && ctx.chance(0.5)) { const x = ctx.pick(fr.filter(function (z) { return z !== taken[0]; })); if (x) taken.push(x); }
+    const fr = frontier(ctx, p, q), site = ctx.pick(fr);
+    const o = fight(ctx, p, q, site, fr.length);
+    if (!o.won) return repelled(ctx, warBetween(ctx, p, q), p, q, site, o, "The horsemen of " + p.name + " came out of the grassland in the spring and were brought to battle at " + provName(site) + ".", ["invasion"]);
+    const taken = [site].concat(ctx.shuffle(fr.filter(function (z) { return z !== site; }))).slice(0, o.take);
     const last = q.regions.length === taken.length;
     const names = taken.map(provName);
     let ruin = false;
@@ -1561,9 +1591,10 @@ const EVENTS = [
     const tags = ["invasion", "war", "defeat", "territory"];
     if (ruin) tags.push("ruin-made");
     if (last) tags.push("fall");
+    const list = names.length > 2 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names.join(" and ");
     return res(4, tags, A(ctx, p, q), taken[0].id,
-      "The horsemen of " + p.name + " came out of the grassland in the spring, moving faster than any message could, and took " + names.join(" and ") + " from " + q.name + ". " +
-      (ruin ? "A town that resisted was destroyed so thoroughly that its name is known from one other source only. " : "") + "The garrisons were not defeated so much as bypassed, and learned of it from the smoke." + (last ? " " + q.name + " ended there." : ""));
+      "The horsemen of " + p.name + " came out of the grassland in the spring, moving faster than any message could, and took " + list + " from " + q.name + ". " +
+      (ruin ? "A town that resisted was destroyed so thoroughly that its name is known from one other source only. " : "") + "The garrisons were not defeated so much as bypassed, and learned of it from the smoke; " + bodies(o) + " died." + (last ? " " + q.name + " ended there." : ""));
   } },
 
 /* ---------------------------------------------- consolidation, overseas, capitals --- */
@@ -1600,14 +1631,26 @@ const EVENTS = [
     const p = ctx.polity, w = ctx.world, t = invasionTarget(ctx, p);
     if (!t) return null;
     const q = t.foe, land = t.region, from = t.port;
-    const take = [land].concat(ctx.regionsOf(q).filter(function (r) { return r !== land && coastal(ctx, r) && dist(r, land) <= 3; }).slice(0, 2));
-    if (!warBetween(ctx, p, q)) startWar(ctx, p, q, "the crossing to " + provName(land));
+    const wr = warBetween(ctx, p, q) || startWar(ctx, p, q, "the crossing to " + provName(land));
+    /* the crossing: a defender with a fleet meets it at sea first */
+    if (AEON.navyOf(w, q) >= 3) {
+      const s = AEON.battle(w, p, q, { sea: true });
+      if (!s.won) {
+        addWin(wr, q); tire(w, p, 0.05);
+        return res(3, ["war", "invasion", "naval", "repelled"], A(ctx, q, p, land), land.id,
+          "A fleet from " + locName(from) + " carrying the army of " + p.name + " to " + provName(land) + " was met at sea by the ships of " + q.name + ". " + s.lost.L + " of the " + p.adjective + " ships were sunk or taken and the rest turned for home, " + q.name + " losing " + s.lost.W + ".");
+      }
+    }
+    /* the landing: only part of the army can be carried over */
+    const o = fight(ctx, p, q, land, 3, { shareA: 0.4 / Math.max(1, wars(ctx, p).length) });
+    if (!o.won) return repelled(ctx, wr, p, q, land, o, "The army of " + p.name + " crossed the sea from " + locName(from) + " and landed at " + provName(land) + ".", ["invasion", "naval"]);
+    const take = [land].concat(ctx.regionsOf(q).filter(function (r) { return r !== land && coastal(ctx, r) && dist(r, land) <= 3; }).slice(0, Math.min(2, o.take - 1)));
     for (const r of take) if (!q.ended) annex(ctx, r, p, "Its last coast was taken by a fleet from " + p.name + ".");
-    p.prestige = clamp(p.prestige + 0.05, 0, 1);
+    p.prestige = clamp(p.prestige + 0.05, 0, 1); addWin(wr, p);
     return res(4, ["war", "invasion", "naval", "conquest", "territory"], A(ctx, p, q, land), land.id,
       "A fleet from " + locName(from) + " carried the army of " + p.name + " across the sea to " + provName(land) + ". " +
-      ctx.choice(["The levies of " + q.name + " met it on the beach and did not stay there long.", "It landed unopposed, which the commanders took for luck and the chroniclers for treason.", "The landing cost a third of the ships; the rest of the campaign cost less."]) +
-      " " + (take.length > 1 ? take.length + " coastal provinces" : provName(land)) + " passed to " + p.name + ".");
+      (o.margin === "narrow" ? "The levies of " + q.name + " met it on the beach and held it there for a day before giving way." : ctx.choice(["The levies of " + q.name + " met it on the beach and did not stay there long.", "It landed unopposed, which the commanders took for luck and the chroniclers for treason.", "The landing cost a third of the ships; the rest of the campaign cost less."])) +
+      " " + (take.length > 1 ? take.length + " coastal provinces" : cap(provName(land))) + " passed to " + p.name + ".");
   } },
 
 /* a realm moves its seat: to a greater city of its own, or because a faction there won at court */
@@ -2209,10 +2252,10 @@ AEON.registerPack({
   archetypes: [
     { id: "citystate",    name: "City-State League",   army: 0.9, navy: 1.6, traitBias: { curiosity: 0.12, cunning: 0.1, stability: -0.05 }, blurb: "A cluster of walled towns, each jealous of the others and of the league that binds them." },
     { id: "riverkingdom", name: "River Kingdom",       army: 1,   navy: 0.6, traitBias: { stability: 0.2, piety: 0.15, aggression: -0.1 }, blurb: "A flood-plain state ruled by whoever can predict the river and keep the granaries." },
-    { id: "steppe",       name: "Steppe Confederacy",  army: 2,   navy: 0.1, traitBias: { aggression: 0.25, stability: -0.15, curiosity: -0.1 }, blurb: "Herding clans who are very good at war and very bad at agreeing about the next one." },
+    { id: "steppe",       name: "Steppe Confederacy",  army: 2,   navy: 0.1, ground: ["grassland", "savanna", "desert"], traitBias: { aggression: 0.25, stability: -0.15, curiosity: -0.1 }, blurb: "Herding clans who are very good at war and very bad at agreeing about the next one." },
     { id: "maritime",     name: "Maritime Republic",   army: 0.6, navy: 3,   traitBias: { cunning: 0.2, curiosity: 0.1, aggression: -0.1 }, blurb: "Merchant houses, a magistrate elected for a year, and ships." },
     { id: "theocracy",    name: "Theocracy",           army: 1,   navy: 0.8, traitBias: { piety: 0.3, curiosity: -0.05 }, blurb: "A realm governed by the keepers of the shrine, the calendar and the granary." },
-    { id: "hillclans",    name: "Hill Clans",          army: 1.4, navy: 0.3, traitBias: { aggression: 0.1, stability: -0.1, cunning: 0.05 }, blurb: "Highland lineages held together by feud, hospitality and a common dislike of taxes." },
+    { id: "hillclans",    name: "Hill Clans",          army: 1.4, navy: 0.3, ground: ["mountain"], traitBias: { aggression: 0.1, stability: -0.1, cunning: 0.05 }, blurb: "Highland lineages held together by feud, hospitality and a common dislike of taxes." },
     { id: "empire",       name: "Bureaucratic Empire", army: 1.2, navy: 1,   traitBias: { stability: 0.25, curiosity: 0.05, aggression: 0.1 }, blurb: "A realm of registers, roads and examinations, held together by paper and a standing army." },
     { id: "successor",    name: "Successor State",     army: 1.1, navy: 0.9, traitBias: { cunning: 0.15, stability: -0.05, aggression: 0.1 }, blurb: "The heirs, or claimed heirs, of an older order that no longer exists." },
   ],

@@ -235,8 +235,19 @@ archetypes: [
 ]
 ```
 
+Optional `ground` lists the biomes a kind fights better on (x1.3 in battles there), e.g.
+`ground: ["grassland", "savanna"]` for steppe riders.
+
 Optional `warWeariness(world, p)` returns 0..1, how worn down a realm is by its wars; it lowers
 the army's readiness by up to 40%.
+
+Battles: `AEON.battle(world, attacker, defender, { region, sea, bonusA, bonusD, shareA, shareD,
+frontier })` decides a fight by strength plus chance (odds go with the square of the strength
+ratio) and returns `{ won, W, L, margin: "narrow"|"clear"|"crushing", take, pushBack, men, lost }`.
+`take` is how many regions a winning attacker should take; `pushBack` means the defender routed
+the attack and may take land back. Losses are owed by both sides and rebuilt over decades.
+`AEON.armyOf`, `AEON.navyOf` (now, after losses) and `AEON.fieldArmy` (what reaches one front)
+are for weighing realms; every battle is logged in `world.battleLog` for the map.
 
 ### 3.4 `names`
 

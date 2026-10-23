@@ -445,6 +445,20 @@ function artList(w) { return Object.keys(w.artifacts).map(function (k) { return 
 function held(w, p) { return artList(w).filter(function (a) { return a.holder === p.id && !a.destroyed; }); }
 function lostRelics(w) { return artList(w).filter(function (a) { return !a.destroyed && !a.holder && !a.beyond && a.location != null; }); }
 function relicMight(w, p) { return held(w, p).reduce(function (s, a) { return s + a.power; }, 0); }
+/* what a realm brings to a battle besides its men: the relics it holds */
+function edge(w, p) { return 1 + relicMight(w, p) * 0.5; }
+/* armed strength, for weighing realms against each other: its men at one front (core.js
+   AEON.fieldArmy), their quality and its relics */
+function might(w, p) { return Math.max(1, AEON.fieldArmy(w, p)) * (0.5 + p.tech) * edge(w, p); }
+/* a battle between attacker a and defender b at region r (core.js AEON.battle): a realm with
+   several foes on its borders has only part of its host facing each */
+function fight(c, a, b, r, frontierLen, extra) {
+  const w = c.world, foes = function (p) { return Math.max(1, c.neighbors(p).filter(function (o) { return (p.relations[o.id] || 0) < -0.25; }).length); };
+  const o = { region: r ? r.id : null, bonusA: edge(w, a), bonusD: edge(w, b), frontier: frontierLen || 1, shareA: 1 / foes(a), shareD: 1 / foes(b) };
+  if (extra) for (const k in extra) o[k] = extra[k];
+  return AEON.battle(w, a, b, o);
+}
+function fallen(o) { return o.lost.L.toLocaleString() + " of the " + o.L.adjective + " and " + o.lost.W.toLocaleString() + " of the " + o.W.adjective; }
 function give(w, art, p, how) {
   art.holder = p ? p.id : null;
   if (p) art.location = p.capital;
@@ -550,15 +564,15 @@ const ERAS = [
 const ARCHETYPES = [
   { id: "theocracy", name: "God-Touched Theocracy", army: 1, navy: 0.7, traitBias: { piety: 0.3, stability: 0.1, curiosity: -0.1 },
     blurb: "A realm ruled in the name of a god that sometimes answers." },
-  { id: "elven-remnant", name: "Elvish Remnant", army: 0.8, navy: 1.3, traitBias: { curiosity: 0.2, stability: 0.15, aggression: -0.15, piety: 0.05 },
+  { id: "elven-remnant", name: "Elvish Remnant", army: 0.8, navy: 1.3, ground: ["forest", "jungle"], traitBias: { curiosity: 0.2, stability: 0.15, aggression: -0.15, piety: 0.05 },
     blurb: "The long-lived remains of a people who remember when the world was younger." },
-  { id: "dwarf-hold", name: "Dwarf-Hold", army: 1.2, navy: 0.2, traitBias: { stability: 0.25, cunning: 0.05, curiosity: 0.1, aggression: -0.05 },
+  { id: "dwarf-hold", name: "Dwarf-Hold", army: 1.2, navy: 0.2, ground: ["mountain"], traitBias: { stability: 0.25, cunning: 0.05, curiosity: 0.1, aggression: -0.05 },
     blurb: "A kingdom under a mountain, run like a ledger and defended like a vow." },
   { id: "mortal-kingdom", name: "Mortal Kingdom", army: 1.1, navy: 1, traitBias: { aggression: 0.1, stability: 0.0 },
     blurb: "A hereditary crown, a standing levy, and a long memory for slights." },
   { id: "necrocracy", name: "Necrocracy", army: 1.8, navy: 0.4, traitBias: { cunning: 0.2, piety: -0.25, stability: 0.2, aggression: 0.05 },
     blurb: "A court of the dead, governed by a ruler who declined to stop." },
-  { id: "druidic-circle", name: "Druidic Circle", army: 0.7, navy: 0.3, traitBias: { piety: 0.2, curiosity: 0.05, aggression: -0.2, stability: 0.15 },
+  { id: "druidic-circle", name: "Druidic Circle", army: 0.7, navy: 0.3, ground: ["forest", "swamp"], traitBias: { piety: 0.2, curiosity: 0.05, aggression: -0.2, stability: 0.15 },
     blurb: "A moot of groves and stone circles, answering to seasons rather than kings." },
   { id: "dragon-fief", name: "Dragon-Fief", army: 1.3, navy: 0.3, traitBias: { aggression: 0.35, cunning: 0.2, curiosity: -0.2, stability: 0.1 },
     blurb: "A province held in fee by a wyrm, who collects the rent in kind." },
@@ -566,7 +580,7 @@ const ARCHETYPES = [
     blurb: "A state of towers and licensed spellcraft, governed by the best-read." },
   { id: "free-cities", name: "League of Free Cities", army: 0.8, navy: 1.8, traitBias: { cunning: 0.15, curiosity: 0.1, aggression: -0.1, stability: 0.05 },
     blurb: "Merchant-lords who vote on everything except the price of grain." },
-  { id: "hill-clans", name: "Hill-Clans", army: 1.4, navy: 0.3, traitBias: { aggression: 0.25, stability: -0.1, cunning: 0.05 },
+  { id: "hill-clans", name: "Hill-Clans", army: 1.4, navy: 0.3, ground: ["mountain"], traitBias: { aggression: 0.25, stability: -0.1, cunning: 0.05 },
     blurb: "Kin-bands under a thane, bound by oath and the cattle-feud." }
 ];
 
@@ -829,20 +843,31 @@ const SPINE = [
     test: function (c) { return hostileNeighbors(c).length > 0; },
     run: function (c) {
       const w = c.world, a = c.polity, b = c.pick(hostileNeighbors(c));
-      const sa = a.military + relicMight(w, a) * 0.25 + c.range(0, 0.3);
-      const sb = b.military + relicMight(w, b) * 0.25 + c.range(0, 0.3);
-      const win = sa >= sb ? a : b, lose = win === a ? b : a;
-      const bs = borderRegions(w, lose, win);
-      if (!bs.length) return null;
-      const r = c.pick(bs);
-      const name = sn(c, r, lose);
-      const sole = lose.regions.length === 1;
-      const loot = annex(c, win, lose, r, "Its last province, " + name + ", fell to " + pn(win) + ", and the " + lose.adjective + " name was struck from the rolls.");
-      stock(lose, "population", 0.93); win.prestige = clamp(win.prestige + 0.05, 0, 1);
-      return mk(sole ? 4 : 3, ["war", "conquest"], [c.actor(win), c.actor(lose), c.actor(r)].concat(loot.map(function (a2) { return c.actor(a2); })), r.id,
-        "At " + name + " the host of " + pn(win) + " broke the " + lose.adjective + " levy and took the province. " +
+      const fr = borderRegions(w, b, a);
+      if (!fr.length) return null;
+      const site = c.pick(fr), name = sn(c, site, b), o = fight(c, a, b, site, fr.length);
+      if (!o.won) {
+        /* the attack broken; a rout lets the defenders follow it home */
+        stock(a, "population", 0.97); b.prestige = clamp(b.prestige + 0.03, 0, 1);
+        let back = null;
+        if (o.pushBack && a.regions.length > 1) { const bk = borderRegions(w, a, b); if (bk.length) { back = c.pick(bk); annex(c, b, a, back); } }
+        return mk(back ? 3 : 2, back ? ["war", "battle", "repelled", "conquest"] : ["war", "battle", "repelled"], [c.actor(b), c.actor(a), c.actor(back || site)], (back || site).id,
+          "At " + name + " the " + b.adjective + " levy stood against the host of " + pn(a) + " and broke it. " + cap(fallen(o)) + " were left on the field." +
+          (back ? " The " + b.adjective + " followed the beaten host home and took " + sn(c, back, a) + "." : " " + pn(a) + " went home with its wounded."));
+      }
+      const taken = [site].concat(c.shuffle(fr.filter(function (x) { return x !== site; }))).slice(0, o.take);
+      let loot = [], n = 0, sole = false;
+      for (const r of taken) {
+        if (b.ended || r.owner !== b.id) continue;
+        if (b.regions.length === 1) sole = true;
+        loot = loot.concat(annex(c, a, b, r, "Its last province, " + sn(c, r, b) + ", fell to " + pn(a) + ", and the " + b.adjective + " name was struck from the rolls."));
+        n++;
+      }
+      stock(b, "population", 0.93); a.prestige = clamp(a.prestige + 0.05, 0, 1);
+      return mk(sole ? 4 : 3, ["war", "conquest"], [c.actor(a), c.actor(b), c.actor(site)].concat(loot.map(function (a2) { return c.actor(a2); })), site.id,
+        "At " + name + " the host of " + pn(a) + " broke the " + b.adjective + " levy and took " + (n > 1 ? n + " provinces" : "the province") + ". " + cap(fallen(o)) + " were left on the field. " +
         (loot.length ? "Among the spoil was " + loot[0].name + ", which was carried home in a cart under a tarpaulin." : "The garrison was permitted to leave, without its horses.") +
-        (sole ? " Thereafter no one was left to call themselves " + lose.adjective + "." : ""));
+        (sole ? " Thereafter no one was left to call themselves " + b.adjective + "." : ""));
     }
   },
   {
@@ -858,6 +883,13 @@ const SPINE = [
       const rs = lose.regions.map(function (i) { return w.regions[i]; }).filter(function (r) { return r.settlement && r.settlement.tier >= 2; });
       const r = c.pick(rs);
       const name = r.settlement.name;
+      const o = fight(c, a, lose, r, 1);
+      if (!o.won) {
+        stock(a, "population", 0.97); lose.prestige = clamp(lose.prestige + 0.03, 0, 1);
+        return mk(3, ["war", "siege", "repelled"], [c.actor(lose), c.actor(a), c.actor(r)], r.id,
+          "The army of " + pn(a) + " sat down before " + name + " and rose again " + c.int(2, 14) + " months later with less than it came with: " + o.lost.L.toLocaleString() + " dead under the walls, which held. " +
+          "The " + lose.adjective + " rang the bells for a week.");
+      }
       const held2 = r.id === lose.capital ? held(w, lose) : [];
       ruinify(r);
       stock(lose, "population", 0.88); stab(lose, -0.05);
@@ -2011,22 +2043,21 @@ const RELICS = [
       const w = c.world, p = c.polity;
       const foe = c.pick(hostileNeighbors(c).filter(function (o) { return held(w, o).some(function (a) { return a.power > 0.4; }); }));
       const art = c.pick(held(w, foe).filter(function (a) { return a.power > 0.4; }));
-      const sp = p.military + relicMight(w, p) * 0.25 + c.range(0, 0.3);
-      const sf = foe.military + relicMight(w, foe) * 0.25 + c.range(0, 0.3);
+      const o = fight(c, p, foe, w.regions[foe.capital], 1);
       w.stats.wars++;
-      if (sp >= sf) {
+      if (o.won) {
         give(w, art, p, "won by arms from " + foe.name);
         stock(foe, "population", 0.92); p.prestige = clamp(p.prestige + 0.08, 0, 1);
         const bs = borderRegions(w, foe, p);
         let tail = "";
         if (bs.length && foe.regions.length > 1) { const r = c.pick(bs); c.transfer(r, p); F(w).conquests.push({ win: p.id, lose: foe.id, region: r.id, year: c.year }); tail = " " + cap(sn(c, r, p)) + " was ceded with it."; }
         return mk(4, ["war", "relic", "conquest"], [c.actor(p), c.actor(foe), c.actor(art)], foe.capital,
-          "The army of " + pn(p) + " marched on " + sn(c, w.regions[foe.capital], foe) + " in " + yl(c.year) + " to take " + art.name + ", which they did after a battle that the " + foe.adjective + " scribes dated a week earlier than anyone else." + tail + provText(w, art));
+          "The army of " + pn(p) + " marched on " + sn(c, w.regions[foe.capital], foe) + " in " + yl(c.year) + " to take " + art.name + ", which they did after a battle that the " + foe.adjective + " scribes dated a week earlier than anyone else; " + fallen(o) + " fell." + tail + provText(w, art));
       }
       stock(p, "population", 0.9); p.prestige = clamp(p.prestige - 0.06, 0, 1);
       setRel(p, foe, -0.7);
       return mk(3, ["war", "relic", "failure"], [c.actor(p), c.actor(foe), c.actor(art)], foe.capital,
-        pn(p) + " marched on " + pn(foe) + " for the sake of " + art.name + " and was turned back at " + sn(c, w.regions[foe.capital], foe) + ", where the relic was carried before the line and did, by all accounts, its work.");
+        pn(p) + " marched on " + pn(foe) + " for the sake of " + art.name + " and was turned back at " + sn(c, w.regions[foe.capital], foe) + ", where the relic was carried before the line and did, by all accounts, its work; " + fallen(o) + " fell.");
     }
   },
   {
@@ -2291,7 +2322,7 @@ function greatWorks(w) { return Object.keys(w.artifacts).map(function (k) { retu
 /* ------------------------------------------------------------ consolidation, seas, seats */
 function minorOf(c, p) {
   const w = c.world, lim = Math.max(4, Math.round(p.regions.length / 3));
-  return c.neighbors(p).filter(function (q) { return !q.ended && q.regions.length <= lim && q.regions.length < p.regions.length && q.military + relicMight(w, q) * 0.25 < (p.military + relicMight(w, p) * 0.25) * 0.8; });
+  return c.neighbors(p).filter(function (q) { return !q.ended && q.regions.length <= lim && q.regions.length < p.regions.length && might(w, q) < might(w, p) * 0.8; });
 }
 function coast(w, r) { return r.neighbors.some(function (n) { const q = w.regions[n]; return q && q.barren && !q.lake; }); }
 function overSea(c, p, wantOwner) {
@@ -2302,7 +2333,7 @@ function overSea(c, p, wantOwner) {
   for (const r of w.regions) {
     if (r.barren || !coast(w, r)) continue;
     if (wantOwner ? (r.owner == null || r.owner === p.id) : (r.owner != null || r.habitability < 0.25)) continue;
-    if (wantOwner) { const q = w.polities[r.owner]; if (!q || q.ended || c.neighbors(p).indexOf(q) >= 0 || q.military >= p.military * 0.85) continue; }
+    if (wantOwner) { const q = w.polities[r.owner]; if (!q || q.ended || c.neighbors(p).indexOf(q) >= 0 || might(w, q) >= might(w, p) * 0.85) continue; }
     for (const port of ports) { const d = dist(r, port); if (d > 4 && d < 30 && d < bd) { bd = d; best = { region: r, port: port }; } }
   }
   return best;
@@ -2332,6 +2363,15 @@ const ACTION_EVENTS = [
       if (!t) return null;
       const r = t.region, q = w.polities[r.owner], name = sn(c, r, q);
       setRel(p, q, -1);
+      /* a defender with ships meets the fleet at sea; then only part of the host can land */
+      if (AEON.navyOf(w, q) >= 3) {
+        const s = AEON.battle(w, p, q, { sea: true });
+        if (!s.won) return mk(3, ["war", "invasion", "naval", "repelled"], [c.actor(q), c.actor(p), c.actor(r)], r.id,
+          "Longships out of " + sn(c, t.port, p) + " bound for " + name + " were met on the grey water by the ships of " + pn(q) + ". " + s.lost.L + " of them went down or were taken, and the rest put about; " + pn(q) + " lost " + s.lost.W + ".");
+      }
+      const o = fight(c, p, q, r, 1, { shareA: 0.4 });
+      if (!o.won) return mk(3, ["war", "invasion", "naval", "repelled"], [c.actor(q), c.actor(p), c.actor(r)], r.id,
+        "The host of " + pn(p) + " came ashore at " + name + " at dawn and was driven back into the sea by noon. " + cap(fallen(o)) + " were left on the strand.");
       annex(c, p, q, r, "Its last shore was taken by a fleet out of " + pn(p) + ".");
       return mk(4, ["war", "invasion", "naval", "conquest"], [c.actor(p), c.actor(q), c.actor(r)], r.id,
         "Longships out of " + sn(c, t.port, p) + " crossed the grey water to " + name + " and put the host of " + pn(p) + " ashore at dawn. " +

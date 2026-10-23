@@ -61,6 +61,7 @@ AEON.createWorld = function (opts) {
     chronicle: [],
     ownerLog: [],             // [year, regionId, ownerId|null] — lets any year be reconstructed
     settleLog: [],            // [year, regionId, tier] whenever a settlement appears, changes size or goes (0)
+    battleLog: [],            // [year, attackerId, defenderId, attackerMen, defenderMen, regionId|null, attackerWon, atSea]
     rng: rng,
     _ids: { polity: 1, figure: 1, artifact: 1, event: 1 },
     _cooldowns: {},
@@ -783,12 +784,13 @@ AEON.populationAt = function (p, year) {
   return h[lo].pop;
 };
 
-/* Armed strength in men and ships, mustered at the end of every tick and logged with the size
-   history. Army: a share of the people under arms (the realm's kind and temper set how many),
-   times readiness (stability, a ruler on the throne, war-weariness from the pack). Navy: the
-   realm's sea ports, the bigger the town the more hulls (a few boats along open shore too), times wealth, learning and its kind.
-   Kinds carry `army` and `navy` factors in the pack's archetypes (default 1). Nothing in the
-   history reads these yet. */
+/* Armed strength in men and ships. Army: a share of the people under arms (the realm's kind and
+   temper set how many), times readiness (stability, a ruler on the throne, war-weariness from the
+   pack). Navy: the realm's sea ports, the bigger the town the more hulls (a few boats along open
+   shore too), times wealth, learning and its kind. Kinds carry `army` and `navy` factors in the
+   pack's archetypes (default 1). Men and ships lost in battle are owed (`armyDebt`, `navyDebt`)
+   and made good over the following decades. Worked out fresh whenever asked, and logged with the
+   size history at the end of every tick. */
 function archetypeOf(world, p) {
   const list = world.pack.archetypes || [];
   for (const a of list) if (a.id === p.archetypeId) return a;
@@ -799,22 +801,93 @@ function onSea(world, r) {
   return false;
 }
 function roundForce(n) { return n >= 1000 ? Math.round(n / 100) * 100 : n >= 100 ? Math.round(n / 10) * 10 : Math.round(n); }
-function musterForces(world, p) {
+function fullArmy(world, p) {
   const a = archetypeOf(world, p) || {}, t = p.traits;
   const weary = world.pack.warWeariness ? clamp(world.pack.warWeariness(world, p) || 0, 0, 1) : 0;
   const readiness = (0.6 + t.stability * 0.5) * (p.ruler ? 1 : 0.85) * (1 - weary * 0.4);
-  const share = 0.012 * (a.army == null ? 1 : a.army) * (0.7 + t.aggression * 0.6);
-  p.army = roundForce(p.population * share * readiness);
-  let hulls = 0, ports = 0;
+  return p.population * 0.012 * (a.army == null ? 1 : a.army) * (0.7 + t.aggression * 0.6) * readiness;
+}
+function fullNavy(world, p) {
+  const a = archetypeOf(world, p) || {};
+  let hulls = 0;
   for (const id of p.regions) {
     const r = world.regions[id];
     if (!r || !onSea(world, r)) continue;
-    if (r.settlement) { ports++; hulls += Math.min(4, r.settlement.tier) + (id === p.capital ? 2 : 0); }
+    if (r.settlement) hulls += Math.min(4, r.settlement.tier) + (id === p.capital ? 2 : 0);
     else hulls += 0.25;                                  /* fishing boats along an open shore */
   }
-  p.ports = ports;
-  p.navy = Math.round(hulls * 5 * (0.4 + p.wealth) * (0.5 + p.tech) * (a.navy == null ? 1 : a.navy));
+  return hulls * 5 * (0.4 + p.wealth) * (0.5 + p.tech) * (a.navy == null ? 1 : a.navy);
 }
+/* what a realm can put in the field and at sea now: never below a tenth of its full strength */
+AEON.armyOf = function (world, p) { const f = fullArmy(world, p); return Math.round(Math.max(f * 0.1, f - (p.armyDebt || 0))); };
+AEON.navyOf = function (world, p) { const f = fullNavy(world, p); return Math.round(Math.max(f * 0.1, f - (p.navyDebt || 0))); };
+/* the army a realm can bring to any one front: a great realm's is spread along all its borders,
+   so past two dozen regions only part of it reaches (fleets gather where they are needed) */
+AEON.fieldArmy = function (world, p) { return Math.round(AEON.armyOf(world, p) * Math.min(1, Math.sqrt(24 / Math.max(1, p.regions.length)))); };
+function musterForces(world, p) {
+  /* losses are made good at about a fifth every five years */
+  const heal = Math.pow(0.8, world.timeStep / 5);
+  if (p.armyDebt) p.armyDebt = p.armyDebt * heal < 1 ? 0 : p.armyDebt * heal;
+  if (p.navyDebt) p.navyDebt = p.navyDebt * heal < 1 ? 0 : p.navyDebt * heal;
+  p.army = roundForce(AEON.armyOf(world, p));
+  p.navy = AEON.navyOf(world, p);
+  let ports = 0;
+  for (const id of p.regions) { const r = world.regions[id]; if (r && r.settlement && onSea(world, r)) ports++; }
+  p.ports = ports;
+}
+
+/* A battle between two realms, on land at a region or at sea, decided by strength plus chance.
+   Strength: the men (or ships) each side brings, times quality (learning), times the ground: a
+   defender gains from mountains, hills, forest and marsh, a river line, walls and its capital, and
+   a realm whose kind is at home on that ground (archetype `ground`: biomes) fights better there.
+   Packs add their own edges as multipliers (`bonusA`, `bonusD`) and say what share of each side's
+   force is there (`shareA`, `shareD`, default 1). The odds go with the square of the strength
+   ratio (2:1 wins four times in five). The margin sets the outcome: "narrow", "clear" or
+   "crushing", with `take` the regions a winning attacker should take (1, 1-2, or a block of up to
+   six), and `pushBack` when a defender crushes the attack. Both sides lose men, which are owed
+   and rebuilt. Every battle goes into world.battleLog for the map. */
+function groundFactor(world, p, r) {
+  const g = (archetypeOf(world, p) || {}).ground;
+  return g && r && g.indexOf(r.biome) >= 0 ? 1.3 : 1;
+}
+function defenceOf(world, def, r) {
+  if (!r) return 1;
+  let f = 1;
+  if (r.biome === "mountain") f *= 1.5;
+  else if (r.elevation > 0.75) f *= 1.2;
+  if (r.biome === "forest" || r.biome === "jungle" || r.biome === "swamp" || r.biome === "taiga") f *= 1.15;
+  if (r.river) f *= 1.15;
+  if (r.settlement && r.settlement.tier >= 3) f *= 1.25;
+  if (r.id === def.capital) f *= 1.15;
+  return f;
+}
+AEON.battle = function (world, att, def, opts) {
+  opts = opts || {};
+  const rng = world.rng, sea = !!opts.sea, r = opts.region == null ? null : world.regions[opts.region];
+  const men = sea ? AEON.navyOf : AEON.fieldArmy;
+  const ea = Math.max(1, Math.round(men(world, att) * (opts.shareA == null ? 1 : opts.shareA)));
+  const ed = Math.max(1, Math.round(men(world, def) * (opts.shareD == null ? 1 : opts.shareD)));
+  let sa = ea * (0.5 + att.tech) * (opts.bonusA || 1);
+  let sd = ed * (0.5 + def.tech) * (opts.bonusD || 1);
+  if (!sea) { sa *= groundFactor(world, att, r); sd *= groundFactor(world, def, r) * defenceOf(world, def, r); }
+  const odds = (sa * sa) / (sa * sa + sd * sd);
+  const won = rng.chance(odds);
+  const ratio = (won ? sa / sd : sd / sa) * rng.range(0.7, 1.3);
+  const margin = ratio < 1.3 ? "narrow" : ratio < 2.5 ? "clear" : "crushing";
+  const LOSS = { narrow: [0.08, 0.15, 0.06, 0.12], clear: [0.15, 0.25, 0.05, 0.1], crushing: [0.3, 0.45, 0.02, 0.06] }[margin];
+  /* the fighting is as big as the smaller side lets it be */
+  const fought = Math.min(ea, ed) * 1.5;
+  const lostL = Math.round(Math.min(won ? ed : ea, fought) * rng.range(LOSS[0], LOSS[1]));
+  const lostW = Math.round(Math.min(won ? ea : ed, fought) * rng.range(LOSS[2], LOSS[3]));
+  const W = won ? att : def, L = won ? def : att, debt = sea ? "navyDebt" : "armyDebt";
+  W[debt] = (W[debt] || 0) + lostW;
+  L[debt] = (L[debt] || 0) + lostL;
+  let take = 0;
+  if (won) take = margin === "narrow" ? 1 : margin === "clear" ? (rng.chance(0.5) ? 2 : 1) : Math.max(2, Math.min(6, Math.round((opts.frontier || 2) * 0.35)));
+  (world.battleLog || (world.battleLog = [])).push([world.year, att.id, def.id, ea, ed, r ? r.id : null, won, sea]);
+  return { won: won, W: W, L: L, margin: margin, odds: odds, ratio: ratio, take: take, pushBack: !won && margin === "crushing",
+           men: { att: ea, def: ed }, lost: { W: lostW, L: lostL } };
+};
 /* a polity's army and fleet in a year, from its size history (null before it was founded) */
 AEON.forcesAt = function (p, year) {
   const h = p.sizeHistory;

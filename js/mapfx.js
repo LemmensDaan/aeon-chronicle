@@ -68,6 +68,19 @@ function after(list, y, yearOf) {
   return lo;
 }
 const Y0 = function (e) { return e[0]; }, YK = function (e) { return e.year; };
+/* how many soldiers march for each side when `to` takes land from `from` in (y0, y1]: one to
+   five by their share of the men in the battle that won it (world.battleLog), or three against
+   two when no battle is logged */
+function bands(w, y0, y1, to, from) {
+  const B = w.battleLog || [];
+  for (let k = after(B, y0, Y0); k < B.length && B[k][0] <= y1; k++) {
+    const b = B[k];
+    if (b[7] || !((b[6] && b[1] === to && b[2] === from) || (!b[6] && b[1] === from && b[2] === to))) continue;
+    const mt = b[1] === to ? b[3] : b[4], mf = b[1] === to ? b[4] : b[3], s = mt + mf || 1;
+    return [Math.max(1, Math.min(5, Math.round(6 * mt / s))), Math.max(1, Math.min(5, Math.round(6 * mf / s)))];
+  }
+  return [3, 2];
+}
 
 /* the owner each ownerLog entry replaced, kept up to date as the log grows */
 const prevs = new WeakMap();
@@ -106,9 +119,9 @@ function changes(w, y0, y1) {
         for (const nb of w.regions[rid].neighbors) if (view.regions[nb].owner === g.to && g.cells.indexOf(nb) < 0) { origin = nb; break; }
         if (origin != null) { at = rid; break; }
       }
-      const m = origin != null ? MARCH : 0;
+      const m = origin != null ? MARCH : 0, men = bands(w, y0, y1, g.to, g.from);
       out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), alt: flash, fx: { kind: "take", cells: g.cells, from: g.from, to: g.to, at: at, origin: origin, delay: delay,
-        march: m, dur: m + 3300, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color } });
+        march: m, dur: m + 3300, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color, nTo: men[0], nFrom: men[1] } });
     }
   }
   for (const id in P) {
@@ -286,8 +299,10 @@ function sailings(w, y0, y1, out) {
     const list = ix[type];
     if (!list) continue;
     for (let k = after(list, y0, YK); k < list.length && list[k].year <= y1; k++) {
-      const ev = list[k], kind = SEA[type], pol = ev.actors.filter(function (a) { return a.kind === "polity"; });
-      const p = pol[0] && P[pol[0].id], target = ev.regionId;
+      /* a crossing beaten back plays as a fight at sea that the attacker loses; those events
+         name the defender first */
+      const ev = list[k], rep = ev.tags.indexOf("repelled") >= 0, kind = rep ? "raid" : SEA[type], pol = ev.actors.filter(function (a) { return a.kind === "polity"; });
+      const p = pol[rep ? 1 : 0] && P[pol[rep ? 1 : 0].id], target = ev.regionId;
       if (!p || target == null) continue;
       /* not from land taken in this same crossing */
       const skip = {};
@@ -312,10 +327,10 @@ function sailings(w, y0, y1, out) {
       }
       /* a raid: the defenders sail out from their nearest port, and the fleets meet in open water
          off the raided coast, each stopping a little short of the other */
-      const q = pol[1] && P[pol[1].id], homes = q ? portsFor(w, view, q.id, target, null) : [];
+      const q = pol[rep ? 0 : 1] && P[pol[rep ? 0 : 1].id], homes = q ? portsFor(w, view, q.id, target, null) : [];
       const deep = toOpenSea(c, seaOf(c), target, 6), spot = deep && deep[deep.length - 1];
       const alane = spot != null && laneFrom(c, ports, null, spot), dlane = spot != null && homes.length && laneFrom(c, homes, null, spot);
-      const loser = hash(k, 5) < 0.5 ? 0 : 1;
+      const loser = rep ? 0 : hash(k, 5) < 0.5 ? 0 : 1;
       if (alane && dlane && alane.length > 4 && dlane.length > 4) {
         const sa = Math.max(0.3, (alane.length - 4) / (alane.length - 1)), sd = Math.max(0.3, (dlane.length - 4) / (dlane.length - 1));
         out.push({ prio: 6, fx: { kind: "battle", dur: 6000, loser: loser, fleets: [
@@ -548,8 +563,8 @@ function drawOver(g, env, f, a) {
     const meet = [B[0] - dx * 2 * u, B[1] - dy * 2 * u], dir = dx >= 0 ? 1 : -1;
     if (f.march && t < f.march) {
       const q = ease(t / f.march), back = 26 * u * (1 - q) + 5 * u, d = 14 * u * (1 - ease((t - f.march * 0.3) / (f.march * 0.7))) + 5 * u;
-      band(g, env, meet[0] - dx * back, meet[1] - dy * back, 3, f.colTo, dir, t, true, true);
-      band(g, env, meet[0] + dx * d, meet[1] + dy * d, 2, f.colFrom, -dir, t + 80, t > f.march * 0.3, false);
+      band(g, env, meet[0] - dx * back, meet[1] - dy * back, f.nTo || 3, f.colTo, dir, t, true, true);
+      band(g, env, meet[0] + dx * d, meet[1] + dy * d, f.nFrom || 2, f.colFrom, -dir, t + 80, t > f.march * 0.3, false);
     } else if (t < f.march + 1000) {
       frameAt(g, env, meet[0], meet[1] - 3 * u, function () { brawl(g, t, 6); });
     }
@@ -706,6 +721,6 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, asTown: asTown, contested: contested, draw: draw };
+AEON.mapfx = { collect: collect, moment: moment, clear: clear, live: isLive, hides: hides, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
 
 })();

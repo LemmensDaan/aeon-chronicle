@@ -48,7 +48,7 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   1000 + 700 ms). Most takes are a single region (fantasy: every border battle; historical: 58 of
   99), which is the engine, not the animation; Daan does not want bigger conquests yet.
 - **Military plan (agreed 2026-10-23), one step at a time:** (1) army and fleet per realm, logged
-  and shown — **done**; (2) battles by strength plus chance, the margin sets how much land changes
+  and shown — **done**; (2) battles by strength plus chance — **done**, the margin sets how much land changes
   hands, both sides lose men, war-band sizes follow the strengths, same model at sea; (3) realm
   types that change through the ages (by age + size + events: kingdom -> empire, collapse ->
   successor/warlord states, coastal city-state with a fleet -> thalassocracy), one shared mechanic
@@ -63,8 +63,23 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   of sea ports (tier, capital +2; 0.25 per open shore region) x 5 x wealth x tech x archetype `navy`.
   Factors are in each pack's archetypes (steppe army 2 navy 0.1, maritime 0.6 / 3, etc.). Shown in
   the statistics sheet (Armies, Fleets tabs), the realm page (Army, Fleet replace the 0-1
-  Military) and the map tooltip. Nothing in the history reads them yet; `p.military` still drives
-  the packs' wars.
+  Military) and the map tooltip.
+- **Step 2, battles (2026-10-23, changes every history):** core.js `AEON.battle()`: the men each
+  side brings (`AEON.fieldArmy`: past 24 regions only sqrt(24/regions) of the army reaches a
+  front; a realm at several wars splits it) x quality (0.5 + tech) x pack edge (historical:
+  event bonuses; fantasy: relics) x ground (archetype `ground` x1.3; defender: mountain 1.5, high
+  ground 1.2, forest/jungle/swamp/taiga 1.15, river 1.15, city walls 1.25, capital 1.15). Odds =
+  sa^2 / (sa^2 + sd^2). Margin narrow / clear / crushing sets land taken (1, 1-2, a block up to 6)
+  and losses; a crushing defence pushes back one region. Losses are owed (`armyDebt`,
+  `navyDebt`) and healed 20% per 5 years. Historical: `strength()` and `fight()`, `repelled()`;
+  conquest, battle, decisive-battle, siege (merged siege-succeeds/fails), steppe-invasion,
+  overseas-invasion (sea battle, then a landing with 40% of the army), naval-raid all fight.
+  Fantasy: `might()`, `fight()`; border-battle, siege-and-sack, relic-war, sea-crossing fight.
+  Failed attacks are tagged "repelled". `p.military` still gates some event tests.
+  Results (seeds 7/42/3): historical ends with 10-12 realms (was 20; pack realmsAtEnd is 10),
+  attackers win ~62-67% on land; fantasy ends with 17-20, attackers win ~42-51% (defender
+  terrain). Map: war bands follow the battle's men (1-5 a side, mapfx `bands()` reads
+  world.battleLog), and a repelled crossing plays as a sea fight the attacker loses.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

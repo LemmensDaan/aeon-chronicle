@@ -24,6 +24,13 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   with a ship burning and sinking, a settlement destroyed, a wonder destroyed. He disliked the age
   pennant and the obelisk wonder: round 2 offers four of each (sun / hourglass / laurels / book;
   ziggurat / lighthouse / domed hall / temple). He liked the split and the capital move.
+  Round 3: the split has its round-one flicker back (he found the cell blinking jarring), and the
+  invasions use it too. He dislikes the keep as the capital sprite: four capital designs to pick
+  from (domed palace, citadel tower, great hall, crowned city). Five Greek / Roman wonders added
+  (colosseum, triumphal arch, aqueduct, colossus, victory column). Every settlement kind has its own
+  burn and ruin; ruins should stay on the map. His idea for the engine (changes histories): a
+  collapse leaves empty land with no new capital, some settlements in it are destroyed and stay as
+  ruins (named in the tooltip), and new settlements may be founded on ruins.
   Engine follow-up he asked for (changes histories): naval invasions and colonies only from coastal
   cities (maybe a distinct port sprite), landing as a small beachhead, then reinforcements to take
   more. After he picks, wire the animations into the map: play events as playback passes them, at

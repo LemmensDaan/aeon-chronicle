@@ -2599,6 +2599,33 @@ function throttled(def) {
   return def;
 }
 
+/* ---------------------------------------------------------------- technologies --- *
+ * Named discoveries by age (core.js techTick): 0 Hearths, 1 Runes, 2 Towers, 3 Charters, 4
+ * Clockwork. effects multiply: army / navy (quality in battle), growth (people the land feeds),
+ * wealth (what people make). verb completes "the first realm in the record to ...". */
+const TECHNOLOGIES = [
+  { id: "smithing", name: "Bronze-and-bone smithing", age: 0, effects: { army: 1.1 }, verb: "forge blades of bronze set in bone" },
+  { id: "hearth-runes", name: "Hearth-runes", age: 0, effects: { wealth: 1.05 }, verb: "keep its tallies in hearth-runes" },
+  { id: "longboats", name: "Longboats", age: 0, effects: { navy: 1.2 }, verb: "build longboats for the open water" },
+  { id: "terraces", name: "Terrace farming", age: 0, effects: { growth: 1.12 }, verb: "farm its hillsides in terraces" },
+  { id: "rune-carving", name: "Rune-carving", age: 1, needs: ["hearth-runes"], effects: { army: 1.05, wealth: 1.05 }, verb: "carve runes that held their charge" },
+  { id: "star-iron", name: "Star-iron forging", age: 1, needs: ["smithing"], effects: { army: 1.15 }, verb: "forge the iron that falls from the sky" },
+  { id: "minting", name: "Coin-minting", age: 1, effects: { wealth: 1.1 }, verb: "mint coins stamped with a seal" },
+  { id: "ley-lore", name: "Ley-lore", age: 1, effects: { growth: 1.05, wealth: 1.03 }, verb: "follow the ley-lines when it sowed and built" },
+  { id: "tower-sorcery", name: "Tower-sorcery", age: 2, needs: ["rune-carving"], effects: { army: 1.1 }, verb: "send its sorcerers to war" },
+  { id: "wardstones", name: "Wardstones", age: 2, effects: { army: 1.05, growth: 1.05 }, verb: "ring its fields and towns with wardstones" },
+  { id: "sea-charts", name: "Sea-charts", age: 2, needs: ["longboats"], effects: { navy: 1.2 }, verb: "sail by charts of the coasts and currents" },
+  { id: "golems", name: "Golem-labour", age: 2, needs: ["rune-carving"], effects: { wealth: 1.1 }, verb: "set golems to its heavy labour" },
+  { id: "guilds", name: "Chartered guilds", age: 3, needs: ["minting"], effects: { wealth: 1.12 }, verb: "charter guilds with their own courts" },
+  { id: "spell-print", name: "Spell-printing", age: 3, needs: ["rune-carving"], effects: { wealth: 1.05 }, verb: "print spells by the hundred" },
+  { id: "alchemy-fire", name: "Alchemical fire", age: 3, effects: { army: 1.15 }, verb: "throw alchemical fire at its enemies" },
+  { id: "galleons", name: "Great galleons", age: 3, needs: ["sea-charts"], effects: { navy: 1.25 }, verb: "launch galleons that could cross any sea" },
+  { id: "black-powder", name: "Black powder", age: 4, needs: ["alchemy-fire"], effects: { army: 1.2 }, verb: "fight with black powder" },
+  { id: "clockwork", name: "Clockwork engines", age: 4, effects: { growth: 1.1, wealth: 1.1 }, verb: "drive its mills and pumps with clockwork" },
+  { id: "steam-ships", name: "Steam-ships", age: 4, needs: ["galleons"], effects: { navy: 1.3 }, verb: "send ships to sea without sails" },
+  { id: "reckoners", name: "Reckoning engines", age: 4, needs: ["clockwork"], effects: { wealth: 1.1 }, verb: "do its sums with reckoning engines" },
+];
+
 /* ---------------------------------------------------------------- realm types --- *
  * The form of state a realm has in its age, which it grows into and out of (core.js chooseType).
  * Ages: 0 Hearths, 1 Runes, 2 Towers, 3 Charters, 4 Clockwork. fit(s) scores a realm (s.rel: times
@@ -2701,6 +2728,7 @@ AEON.registerPack({
   ],
   archetypes: ARCHETYPES,
   realmTypes: REALM_TYPES,
+  technologies: TECHNOLOGIES,
   /* the money of the economy (core.js) */
   currency: { one: "crown", many: "crowns" },
   /* core.js joins a realm to a war (an ally's call to arms, a coalition) */

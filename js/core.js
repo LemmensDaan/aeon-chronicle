@@ -212,7 +212,7 @@ function capacity(world, polity) {
   for (const r of regionsOf(world, polity)) {
     cap += r.habitability * 9000 * (1 + polity.tech * 2.2);
   }
-  return Math.max(500, cap);
+  return Math.max(500, cap * techFactor(world, polity, "growth"));
 }
 
 function recordEvent(world, type, payload) {
@@ -1363,6 +1363,62 @@ function driftRelations(world, alive) {
    a third of its army leaves, its stability falls and its debts are written down. The treasury
    colours p.wealth (0..1, which the packs read): a full one adds up to 0.15, debt takes up to 0.15
    away. Income, upkeep and treasury are logged with the size history. */
+/* ------------------------------------------------------------ technologies --
+   Named discoveries (pack.technologies: { id, name, age, needs: [ids], effects: { army, navy,
+   growth, wealth }, verb }). A realm can take up one once it has reached the technology's age and
+   knows what it needs. Most are learned from others: each neighbour, trade partner, ally, marriage
+   partner, lord or vassal that knows it adds 12% a tick (at most 60%); the first realm to find one
+   does so alone, at about 1.5% a tick for a curious realm. The first discovery is a chronicle entry;
+   the rest spread quietly (p.techs: id -> year, p.techLog). Effects multiply: army and navy the
+   quality of its men and ships in battle, growth the people its land can feed, wealth what its
+   people make. Each one also nudges p.tech up a little. */
+function contactsOf(world, p) {
+  const out = neighborPolities(world, p);
+  for (const t of world.treaties || []) {
+    if (t.end != null || t.kind === "war" || (t.a !== p.id && t.b !== p.id)) continue;
+    const o = world.polities[t.a === p.id ? t.b : t.a];
+    if (o && !o.ended && out.indexOf(o) < 0) out.push(o);
+  }
+  return out;
+}
+function techTick(world, alive) {
+  const T = world.pack.technologies;
+  if (!T || !T.length) return;
+  const rng = world.rng, known = {};
+  for (const t of T) known[t.id] = false;
+  for (const id in world.polities) { const q = world.polities[id]; if (q.techs) for (const k in q.techs) known[k] = true; }
+  for (const p of alive) {
+    if (p.ended) continue;
+    const mine = p.techs || (p.techs = {});
+    let contacts = null;
+    for (const t of T) {
+      if (mine[t.id] != null || (p.age || 0) < t.age) continue;
+      if (t.needs && t.needs.some(function (n) { return mine[n] == null; })) continue;
+      let chance;
+      if (!known[t.id]) chance = 0.004 + 0.02 * p.traits.curiosity * p.tech;
+      else {
+        contacts = contacts || contactsOf(world, p);
+        let n = 0;
+        for (const o of contacts) if (o.techs && o.techs[t.id] != null) n++;
+        chance = Math.min(0.6, 0.12 * n) + 0.01;
+      }
+      if (!rng.chance(chance)) continue;
+      mine[t.id] = world.year;
+      (p.techLog || (p.techLog = [])).push({ year: world.year, tech: t.id, first: !known[t.id] });
+      p.tech = clamp(p.tech + 0.01, 0, 1);
+      if (!known[t.id]) {
+        known[t.id] = true;
+        recordEvent(world, "discovery", { importance: 3, tags: ["technology", "discovery", "tech:" + t.id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
+          text: p.name + " was the first realm in the record to " + (t.verb || "master " + t.name.toLowerCase()) + ". Within a few generations its neighbours had learned it too." });
+      }
+    }
+  }
+}
+AEON.techsOf = function (world, p, year) {
+  const T = world.pack.technologies || [], out = [];
+  for (const t of T) if (p.techs && p.techs[t.id] != null && (year == null || p.techs[t.id] <= year)) out.push(t);
+  return out;
+};
 function techFactor(world, p, key) {
   if (!p.techs || !world.pack.technologies) return 1;
   let f = 1;
@@ -1524,8 +1580,9 @@ AEON.battle = function (world, att, def, opts) {
   const men = sea ? AEON.navyOf : AEON.fieldArmy;
   const ea = Math.max(1, Math.round(men(world, att) * (opts.shareA == null ? 1 : opts.shareA)));
   const ed = Math.max(1, Math.round(men(world, def) * (opts.shareD == null ? 1 : opts.shareD)));
-  let sa = ea * (0.5 + att.tech) * (opts.bonusA || 1);
-  let sd = ed * (0.5 + def.tech) * (opts.bonusD || 1);
+  const arm = sea ? "navy" : "army";
+  let sa = ea * (0.5 + att.tech) * techFactor(world, att, arm) * (opts.bonusA || 1);
+  let sd = ed * (0.5 + def.tech) * techFactor(world, def, arm) * (opts.bonusD || 1);
   if (!sea) { sa *= groundFactor(world, att, r); sd *= groundFactor(world, def, r) * defenceOf(world, def, r); }
   const odds = (sa * sa) / (sa * sa + sd * sd);
   const won = rng.chance(odds);
@@ -1626,6 +1683,7 @@ function baselineTick(world) {
   }
 
   driftRelations(world, alive);
+  techTick(world, alive);
   economyTick(world, alive);
 
   /* record territory size occasionally for sparklines */

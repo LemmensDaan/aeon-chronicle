@@ -145,6 +145,22 @@ function pagePolity(id) {
     s.appendChild(au);
   }
 
+  /* what it knew, in the order it learned it (core.js techTick); the ones it found first marked */
+  var techs = p.techLog ? p.techLog.filter(function (e) { return e.year <= w.year; }) : [];
+  if (techs.length) {
+    s = section(pg, "Technologies");
+    var TT = {}; (S.world.pack.technologies || []).forEach(function (t) { TT[t.id] = t; });
+    var tu = h("ul", "ch-ul");
+    techs.forEach(function (e) {
+      var t = TT[e.tech];
+      if (!t) return;
+      var li = h("li");
+      add(li, h("b", null, t.name), " — " + (e.first ? "first in the world, " : "learned ") + yr(e.year));
+      tu.appendChild(li);
+    });
+    s.appendChild(tu);
+  }
+
   /* the forms of state it took, from the realm types of its pack */
   if (p.typeLog && p.typeLog.length > 1) {
     s = section(pg, "Forms of state");

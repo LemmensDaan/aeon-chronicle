@@ -2242,6 +2242,35 @@ const EVENTS = [
  *  THE PACK
  * ====================================================================== */
 
+/* ---------------------------------------------------------------- technologies --- *
+ * Named discoveries by age (core.js techTick): 0 Bronze, 1 Iron, 2 Classical, 3 Medieval, 4 Powder.
+ * effects multiply: army / navy (quality in battle), growth (people the land feeds), wealth (what
+ * people make). verb completes "the first realm in the record to ...". */
+const TECHNOLOGIES = [
+  { id: "bronze", name: "Bronze-working", age: 0, effects: { army: 1.1 }, verb: "cast bronze for blades and spear-points" },
+  { id: "writing", name: "Writing", age: 0, effects: { wealth: 1.05 }, verb: "keep its accounts in writing" },
+  { id: "wheel", name: "The wheel", age: 0, effects: { wealth: 1.03 }, verb: "put its loads on wheels" },
+  { id: "chariot", name: "The war chariot", age: 0, needs: ["wheel", "bronze"], effects: { army: 1.1 }, verb: "take chariots into battle" },
+  { id: "sail", name: "The sail", age: 0, effects: { navy: 1.2 }, verb: "rig its boats with sails" },
+  { id: "irrigation", name: "Irrigation", age: 0, effects: { growth: 1.12 }, verb: "water its fields by canal" },
+  { id: "iron", name: "Iron-working", age: 1, needs: ["bronze"], effects: { army: 1.15 }, verb: "smelt iron" },
+  { id: "alphabet", name: "The alphabet", age: 1, needs: ["writing"], effects: { wealth: 1.05 }, verb: "write with an alphabet anyone could learn" },
+  { id: "coinage", name: "Coinage", age: 1, effects: { wealth: 1.1 }, verb: "strike coins of a guaranteed weight" },
+  { id: "trireme", name: "The oared warship", age: 1, needs: ["sail"], effects: { navy: 1.25 }, verb: "build oared warships with a ram" },
+  { id: "cement", name: "Cement and the arch", age: 2, effects: { growth: 1.05, wealth: 1.05 }, verb: "build with cement and the arch" },
+  { id: "roads", name: "Paved roads", age: 2, effects: { army: 1.05, wealth: 1.05 }, verb: "join its provinces with paved roads" },
+  { id: "siege", name: "Siege engines", age: 2, needs: ["iron"], effects: { army: 1.1 }, verb: "batter walls with torsion engines" },
+  { id: "astronomy", name: "Astronomy", age: 2, needs: ["alphabet"], effects: { navy: 1.1 }, verb: "steer by tables of the stars" },
+  { id: "plough", name: "The heavy plough", age: 3, needs: ["iron"], effects: { growth: 1.15 }, verb: "turn heavy soils with a wheeled plough" },
+  { id: "stirrup", name: "The stirrup", age: 3, effects: { army: 1.1 }, verb: "fight from the saddle with stirrups" },
+  { id: "compass", name: "The compass", age: 3, needs: ["astronomy"], effects: { navy: 1.15 }, verb: "steer by a lodestone needle" },
+  { id: "banking", name: "Banking", age: 3, needs: ["coinage"], effects: { wealth: 1.12 }, verb: "move money by letters of credit" },
+  { id: "gunpowder", name: "Gunpowder", age: 4, effects: { army: 1.2 }, verb: "fight with powder and shot" },
+  { id: "printing", name: "Printing", age: 4, needs: ["alphabet"], effects: { wealth: 1.05 }, verb: "print books with movable type" },
+  { id: "galleon", name: "The ocean-going ship", age: 4, needs: ["compass"], effects: { navy: 1.3 }, verb: "build ships that could cross an ocean" },
+  { id: "jointstock", name: "The joint-stock company", age: 4, needs: ["banking"], effects: { wealth: 1.12 }, verb: "found companies owned by shares" },
+];
+
 /* ---------------------------------------------------------------- realm types --- *
  * The form of state a realm has in its age, which it grows into and out of (core.js chooseType).
  * Ages: 0 Bronze, 1 Iron, 2 Classical, 3 Medieval, 4 Powder. fit(s) scores a realm (s.rel: times
@@ -2397,6 +2426,7 @@ AEON.registerPack({
   /* 0..1: how worn down a realm is by its wars, for core.js musterForces */
   warWeariness: function (w, p) { return w._hist ? (w._hist.fatigue[p.id] || 0) / 0.35 : 0; },
   realmTypes: REALM_TYPES,
+  technologies: TECHNOLOGIES,
 
   archetypes: [
     { id: "citystate",    name: "City-State League",   army: 0.9, navy: 1.6, traitBias: { curiosity: 0.12, cunning: 0.1, stability: -0.05 }, blurb: "A cluster of walled towns, each jealous of the others and of the league that binds them." },

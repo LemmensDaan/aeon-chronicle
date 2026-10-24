@@ -221,6 +221,14 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   fantasy crowns). Shown: statistics tab Wealth (share of income), realm page Income / Treasury
   (replacing the broken 0/1 Wealth), tooltip. `techFactor(world, p, key)` reads
   pack.technologies (next step).
+- **Technology step 1 (2026-10-24, changes every history):** pack.technologies ({ id, name, age,
+  needs, effects: { army, navy, growth, wealth }, verb }; historical 22, fantasy 20). core.js
+  `techTick()` each tick (before economyTick): a realm of the technology's age that knows its needs
+  learns it from contacts (`contactsOf`: neighbours and every non-war treaty partner; 12% each, max
+  60%, +1%) or, if no one knows it, alone (0.4% + 2% x curiosity x tech); p.techs (id -> year),
+  p.techLog ({ year, tech, first }); first in the world is an event "discovery"; each one +0.01
+  tech. `techFactor(world, p, key)` multiplies: battle quality (army / navy, AEON.battle), capacity
+  (growth), economy (wealth). `AEON.techsOf(world, p, year)`. Realm page: "Technologies".
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

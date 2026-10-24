@@ -90,3 +90,23 @@ choice marked **(went with)** for each, so nothing is blocked; tell me where you
     fleets, bribes). Next steps I'd propose: spending (armies and fleets bought from the treasury,
     wonders that cost), trade routes drawn on the map, and economic events (booms, debasement, crashes)
     reading the real numbers. **(went with: not done yet)**
+
+## Technology (no plan was agreed; I went ahead with this)
+
+20. **Named technologies:** 22 historical (bronze, writing, wheel, war chariot, sail, irrigation; iron,
+    alphabet, coinage, oared warship; cement and the arch, paved roads, siege engines, astronomy;
+    heavy plough, stirrup, compass, banking; gunpowder, printing, ocean-going ship, joint-stock
+    company) and 20 fantasy (bronze-and-bone smithing ... reckoning engines), each opening at an age.
+    Different lists, more or fewer? **(went with: those lists)**
+21. **How they spread:** found alone rarely (about 1.5% a step for a curious, learned realm), learned
+    from contacts often (12% a step per neighbour, trade partner, ally, marriage partner, lord or
+    vassal that knows it, at most 60%). Only the first discovery is a chronicle entry. Historical
+    seed 7: iron first in 1455 BC, the heavy plough 385 AD, gunpowder 1010 AD.
+    **(went with: that)**
+22. **What they do:** multiply battle strength (army or navy), the people the land can feed, or what
+    people make; and nudge the old 0-1 tech number up a little. They don't yet change the map,
+    the sprites (e.g. cannon, galleons) or unlock events. Should technologies show (new unit sprites
+    per age, ships changing shape)? Can knowledge be lost when a realm falls? **(went with: not yet)**
+23. **The old flavour events** (historical "invention", "printing-press", "gunpowder-adopted"; fantasy
+    schools) still fire on their own and are not tied to the named technologies. Tie them together?
+    **(went with: left as they are)**

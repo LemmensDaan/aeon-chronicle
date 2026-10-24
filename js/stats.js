@@ -1,7 +1,7 @@
 /* Aeon - the statistics sheet: how the world's people and land were shared out over time.
 
    A parchment sheet laid over the map. One 100%-stacked chart per measure (population,
-   territory, cities, wonders, armies, fleets): the eight greatest realms of the record as named bands, every other realm
+   territory, cities, wonders, armies, fleets, wealth): the eight greatest realms of the record as named bands, every other realm
    folded into one "Other realms" band at the bottom. Great battles are marked on the band
    of the realm that fought them. The chart follows the map's year (a red line) and setting
    the year is a click on the chart.
@@ -34,8 +34,12 @@ const MEASURES = [
   { id: "wonders", tab: "Wonders", title: "Share of the world's wonders", unit: "wonders", one: "wonder", key: "wonders" },
   { id: "army", tab: "Armies", title: "Share of the world's soldiers", unit: "soldiers", one: "soldier", key: "army" },
   { id: "navy", tab: "Fleets", title: "Share of the world's ships", unit: "ships", one: "ship", key: "navy" },
+  { id: "income", tab: "Wealth", title: "Share of the world's income", unit: "a year", key: "income" },
 ];
-function units(m, n) { return fmt(n) + " " + (Math.round(n) === 1 && m.one ? m.one : m.unit); }
+function units(m, n) {
+  if (m.id === "income" && S && AEON.currency) return fmt(n) + " " + AEON.currency(S.world).many + "/yr";
+  return fmt(n) + " " + (Math.round(n) === 1 && m.one ? m.one : m.unit);
+}
 
 /* ------------------------------------------------------------ colour distance */
 /* sRGB hex -> OKLab, and colour-blindness simulation (Machado et al. 2009, severity 1) */
@@ -124,14 +128,14 @@ function buildData(world) {
   const per = {}, cities = cityCounts(world, y0, step, T), wonders = wonderReplay(world, y0, step, T);
   for (const p of pols) {
     const v = { pop: new Float64Array(T), size: new Float64Array(T), cities: cities[p.id] || new Float64Array(T),
-                wonders: wonders.counts[p.id] || new Float64Array(T), army: new Float64Array(T), navy: new Float64Array(T) };
+                wonders: wonders.counts[p.id] || new Float64Array(T), army: new Float64Array(T), navy: new Float64Array(T), income: new Float64Array(T) };
     for (let t = 0; t < T; t++) { series.cities.total[t] += v.cities[t]; series.wonders.total[t] += v.wonders[t]; }
     let popYears = 0;
     for (const s of p.sizeHistory) {
       const t = Math.round((s.year - y0) / step);
-      v.pop[t] = s.pop; v.size[t] = s.size; v.army[t] = s.army || 0; v.navy[t] = s.navy || 0;
+      v.pop[t] = s.pop; v.size[t] = s.size; v.army[t] = s.army || 0; v.navy[t] = s.navy || 0; v.income[t] = s.income || 0;
       series.pop.total[t] += s.pop; series.size.total[t] += s.size;
-      series.army.total[t] += v.army[t]; series.navy.total[t] += v.navy[t];
+      series.army.total[t] += v.army[t]; series.navy.total[t] += v.navy[t]; series.income.total[t] += v.income[t];
       popYears += s.pop;
     }
     per[p.id] = { p: p, v: v, weight: popYears };
@@ -729,7 +733,7 @@ function table() {
   const d = S.data, pack = S.world.pack, key = S.measure.key, unit = S.measure.unit;
   const wrap = h("div", "st-tablewrap"), tb = h("table", "st-table"), hr = h("tr");
   const ages = S.world.pack.ages;
-  ["Realm", "Lived", "Peak " + unit, "Peak share", "Peak year"].concat(ages ? ["Furthest age"] : []).forEach(function (c) { hr.appendChild(h("th", null, c)); });
+  ["Realm", "Lived", "Peak " + (S.measure.id === "income" ? "income" : unit), "Peak share", "Peak year"].concat(ages ? ["Furthest age"] : []).forEach(function (c) { hr.appendChild(h("th", null, c)); });
   tb.appendChild(hr);
   d.bands.forEach(function (b) {
     let pk = 0, pt = 0, ps = 0;

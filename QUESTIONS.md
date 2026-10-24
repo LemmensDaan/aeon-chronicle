@@ -70,3 +70,23 @@ choice marked **(went with)** for each, so nothing is blocked; tell me where you
 15. **"Wars and treaties" on a realm's page** (newest first, at most 40, with links to the entries that
     began and ended each) instead of a page per war. A real war page (sides, battles, score, terms)
     would need a new kind of encyclopedia entry; worth it? **(went with: the list, no war pages yet)**
+
+## Economy (no plan was agreed; I went ahead with this)
+
+16. **Money in real units:** each realm has a yearly income and a treasury in the pack's currency
+    (historical: talents, about 26 kg of silver; fantasy: crowns). A late great empire makes 40-100
+    thousand talents a year, a small kingdom 2-5 thousand. Other currencies (per culture, per age)?
+    **(went with: one currency per pack)**
+17. **Where income comes from:** people (0.0015 a head a year x (0.4 + tech)), mines and luxuries
+    (metal and exotic resources of its land), ports, trade treaties (each adds 5% of what its people
+    make, at most four), vassals' tribute (15% of their income), loot from sacks.
+    **Where it goes:** soldiers 0.05 and ships 0.8 a year, half again at war. Surplus fills a treasury
+    holding at most three years' income. **(went with: that)**
+18. **Bankruptcy:** debt beyond twice the income means unpaid soldiers: a third of the army leaves,
+    stability falls, debts are written down, one chronicle entry per realm per 50 years (about 25
+    in a historical history, 5 in fantasy, mostly huge steppe armies). **(went with: that)**
+19. **What money does to history so far:** the treasury moves the old 0-1 wealth score by up to
+    0.15 either way, and bankruptcy shrinks armies. Nothing yet buys things (wonders, mercenaries,
+    fleets, bribes). Next steps I'd propose: spending (armies and fleets bought from the treasury,
+    wonders that cost), trade routes drawn on the map, and economic events (booms, debasement, crashes)
+    reading the real numbers. **(went with: not done yet)**

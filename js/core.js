@@ -592,6 +592,8 @@ AEON.logSack = logSack;
 function logSack(world, region, att, kind) {
   (world.sackLog || (world.sackLog = [])).push([world.year, region.id, att ? att.id : null, region.owner || null, kind]);
   const victim = region.owner && world.polities[region.owner];
+  /* the loot: a year's worth of what the place's people make, into the attacker's treasury */
+  if (att) att.treasury = (att.treasury || 0) + Math.round((region.population || 0) * 0.0015 * (0.4 + (victim ? victim.tech : att.tech)) * (kind === "razed" ? 2 : 1) + (region.settlement ? region.settlement.tier * 20 : 0));
   if (victim && att) AEON.remember(world, victim, att, kind === "razed" ? -0.4 : -0.25, kind + " " + ((region.settlement && region.settlement.name) || region.name || "a province"));
 }
 /* a place plundered: its settlement shrinks a size (a village is burned out and left a ruin),
@@ -1238,8 +1240,8 @@ function allianceTick(world, alive) {
 }
 
 /* ---- vassals ----
-   A "tribute" treaty (a pays b) makes a the vassal of b: it pays (its wealth -0.1, the lord's
-   +0.03 a vassal, at most +0.15), sends its levies to its lord's wars and is defended by it (see
+   A "tribute" treaty (a pays b) makes a the vassal of b: it pays a share of its income (see the
+   economy), sends its levies to its lord's wars and is defended by it (see
    callToArms). After 30 years a vassal a third of its lord's size or less may be absorbed, its land
    passing to the lord without a fight, most readily while the world holds more realms than it is
    heading for. A vassal grown nearly as strong as its lord (0.8 of its field army) after 20 years,
@@ -1258,17 +1260,7 @@ AEON.makeVassal = function (world, v, lord, extra) {
   if (old) AEON.endTreaty(world, AEON.treatyBetween(world, v, old, "tribute"), "new lord");
   return AEON.treaty(world, "tribute", v, lord, extra);
 };
-function tributeTick(world) {
-  const paid = {};
-  for (const t of world.treaties || []) {
-    if (t.end != null || t.kind !== "tribute") continue;
-    const v = world.polities[t.a], l = world.polities[t.b];
-    if (!v || !l || v.ended || l.ended) continue;
-    v.wealth = clamp(v.wealth - 0.1, 0, 1);
-    paid[l.id] = Math.min(0.15, (paid[l.id] || 0) + 0.03);
-  }
-  for (const id in paid) world.polities[id].wealth = clamp(world.polities[id].wealth + paid[id], 0, 1);
-}
+
 function vassalTick(world) {
   const rng = world.rng, over = living(world).length > AEON.realmCap(world);
   const open = (world.treaties || []).filter(function (t) { return t.end == null && t.kind === "tribute"; });
@@ -1356,6 +1348,71 @@ function driftRelations(world, alive) {
       const v = Math.round((p.relations[qid] + (base - p.relations[qid]) * k) * 1000) / 1000;
       p.relations[qid] = v; q.relations[p.id] = v;
     }
+  }
+}
+
+/* --------------------------------------------------------------- economy --
+   Every realm's yearly income and its treasury, in the pack's currency (pack.currency: { one,
+   many }, default talents). Income: what its people make (0.0015 a head a year, times 0.4 + tech,
+   times its technologies' wealth factor), its mines and luxuries (the metal and exotic resources
+   of its land), its ports (by the size of the town), its trade (each trade treaty adds a twentieth
+   of what its people make, at most four), and its vassals' tribute (each pays its lord 15% of its
+   income). Upkeep: 0.05 a soldier and 0.8 a ship a year, half again while at war. The balance goes
+   into the treasury every tick (which holds at most three years' income: the rest is spent on the
+   court and its building). A realm may run into debt up to twice its income; beyond that it cannot pay its soldiers:
+   a third of its army leaves, its stability falls and its debts are written down. The treasury
+   colours p.wealth (0..1, which the packs read): a full one adds up to 0.15, debt takes up to 0.15
+   away. Income, upkeep and treasury are logged with the size history. */
+function techFactor(world, p, key) {
+  if (!p.techs || !world.pack.technologies) return 1;
+  let f = 1;
+  for (const t of world.pack.technologies) if (p.techs[t.id] && t.effects && t.effects[key]) f *= t.effects[key];
+  return f;
+}
+AEON.techFactor = function (world, p, key) { return techFactor(world, p, key); };
+AEON.currency = function (world) { return world.pack.currency || { one: "talent", many: "talents" }; };
+function economyTick(world, alive) {
+  const live = alive.filter(function (p) { return !p.ended; }), base = {}, make = {}, trade = {}, paid = {}, war = {};
+  for (const p of live) {
+    const people = p.population * 0.0015 * (0.4 + p.tech) * techFactor(world, p, "wealth");
+    let land = 0, ports = 0;
+    for (const id of p.regions) {
+      const r = world.regions[id];
+      if (!r) continue;
+      if (r.resources) land += (r.resources.metal || 0) * 4 + (r.resources.exotic || 0) * 8;
+      if (r.settlement && onSea(world, r)) ports += Math.min(4, r.settlement.tier);
+    }
+    make[p.id] = people;
+    base[p.id] = people + (land + ports * 6) * (0.5 + p.tech);
+  }
+  for (const t of world.treaties || []) {
+    if (t.end != null) continue;
+    if (t.kind === "trade") {
+      if (make[t.a] != null && (trade[t.a] || 0) < 4 * 0.05 * make[t.a]) trade[t.a] = (trade[t.a] || 0) + 0.05 * make[t.a];
+      if (make[t.b] != null && (trade[t.b] || 0) < 4 * 0.05 * make[t.b]) trade[t.b] = (trade[t.b] || 0) + 0.05 * make[t.b];
+    } else if (t.kind === "tribute" && base[t.a] != null && base[t.b] != null) {
+      const due = 0.15 * (base[t.a] + (trade[t.a] || 0));
+      paid[t.a] = (paid[t.a] || 0) - due; paid[t.b] = (paid[t.b] || 0) + due;
+    } else if (t.kind === "war") { war[t.a] = true; war[t.b] = true; }
+  }
+  for (const p of live) {
+    const income = Math.max(1, Math.round(base[p.id] + (trade[p.id] || 0) + (paid[p.id] || 0)));
+    const upkeep = Math.round(((p.army || 0) * 0.05 + (p.navy || 0) * 0.8) * (war[p.id] ? 1.5 : 1));
+    p.income = income; p.upkeep = upkeep; p.trade = Math.round(trade[p.id] || 0); p.tributeNet = Math.round(paid[p.id] || 0);
+    p.treasury = Math.min(income * 3, Math.round((p.treasury || 0) + (income - upkeep) * world.timeStep));
+    if (p.treasury < -2 * income) {
+      p.armyDebt = (p.armyDebt || 0) + fullArmy(world, p) * 0.33;
+      p.traits.stability = clamp(p.traits.stability - 0.08, 0.02, 0.98);
+      p.treasury = -income;
+      if (p.bankrupt == null || world.year - p.bankrupt >= 50) {
+        const cur = AEON.currency(world);
+        recordEvent(world, "bankruptcy", { importance: 3, tags: ["economy", "bankruptcy"], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
+          text: p.name + " could no longer pay its soldiers: it owed more than twice its yearly income of " + income.toLocaleString("en") + " " + cur.many +
+            ", a third of its army went home unpaid, and its creditors were made to take a fraction of what they were owed." });
+      }
+      p.bankrupt = world.year;
+    }
+    p.wealth = clamp(p.wealth + clamp(p.treasury / (income * 3), -1, 1) * 0.15, 0, 1);
   }
 }
 
@@ -1494,7 +1551,7 @@ AEON.forcesAt = function (p, year) {
   if (!h || !h.length || year < h[0].year) return null;
   let lo = 0, hi = h.length - 1;
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (h[mid].year <= year) lo = mid; else hi = mid - 1; }
-  return { army: h[lo].army || 0, navy: h[lo].navy || 0 };
+  return { army: h[lo].army || 0, navy: h[lo].navy || 0, income: h[lo].income || 0, treasury: h[lo].treasury || 0 };
 };
 
 function baselineTick(world) {
@@ -1569,14 +1626,14 @@ function baselineTick(world) {
   }
 
   driftRelations(world, alive);
-  tributeTick(world);
+  economyTick(world, alive);
 
   /* record territory size occasionally for sparklines */
   if (world.chronicle.length % 1 === 0) {
     for (const p of alive) {
       if (p.ended) continue;
       musterForces(world, p);
-      p.sizeHistory.push({ year: world.year, size: p.regions.length, pop: p.population, army: p.army, navy: p.navy });
+      p.sizeHistory.push({ year: world.year, size: p.regions.length, pop: p.population, army: p.army, navy: p.navy, income: p.income || 0, treasury: p.treasury || 0 });
     }
   }
 }

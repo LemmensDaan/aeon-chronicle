@@ -208,6 +208,19 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   page: "Wars and treaties" (all its treaties, newest first, 40 at most, dates from the events,
   war length, joined / levy / coalition, how it ended, links "how it began" / "how it ended"). No
   war pages yet (QUESTIONS.md 15).
+- **Economy step 1 (2026-10-24, changes every history):** core.js `economyTick()` each tick (after
+  driftRelations; it replaced the step-4 tributeTick): income = people (0.0015 a head x (0.4 + tech)
+  x techFactor wealth) + (metal x 4 + exotic x 8 + port tiers x 6) x (0.5 + tech) + trade treaties
+  (5% of people's make each, at most 4) +- vassal tribute (15% of the vassal's income); upkeep =
+  army x 0.05 + navy x 0.8, x1.5 at war; treasury += (income - upkeep) x 5, capped at 3x income;
+  below -2x income: bankruptcy (armyDebt += a third of full army, stability -0.08, treasury =
+  -income, event "bankruptcy" at most once per 50 years). p.wealth +- 0.15 by treasury / (3 x
+  income). Loot: logSack adds a year of the place's make (x2 razed) + tier x 20 to the attacker's
+  treasury. p.income, p.upkeep, p.trade, p.tributeNet, p.treasury; income and treasury in
+  sizeHistory and `AEON.forcesAt`. `AEON.currency(world)` (pack.currency: historical talents,
+  fantasy crowns). Shown: statistics tab Wealth (share of income), realm page Income / Treasury
+  (replacing the broken 0/1 Wealth), tooltip. `techFactor(world, p, key)` reads
+  pack.technologies (next step).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

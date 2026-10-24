@@ -710,7 +710,8 @@ function fillTip(view, r) {
       if (say.length) tipEl.appendChild(el("div", { class: "dim", text: say.join(" · ") }));
     }
     const forces = AEON.forcesAt(owner, year);
-    if (forces) tipEl.appendChild(el("div", { class: "dim", text: forces.army.toLocaleString() + " soldiers · " + forces.navy.toLocaleString() + (forces.navy === 1 ? " ship" : " ships") }));
+    if (forces) tipEl.appendChild(el("div", { class: "dim", text: forces.army.toLocaleString() + " soldiers · " + forces.navy.toLocaleString() + (forces.navy === 1 ? " ship" : " ships") +
+      (forces.income ? " · " + forces.income.toLocaleString() + " " + AEON.currency(world).many + " a year" : "") }));
     const age = AEON.ageAt ? AEON.ageAt(world, owner.id, year) : null;
     if (age && age.age) tipEl.appendChild(el("div", { class: "dim", text: age.age.name }));
     tipEl.appendChild(el("div", { class: "ae-tip-rule" }));

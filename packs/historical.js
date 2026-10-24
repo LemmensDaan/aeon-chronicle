@@ -2381,6 +2381,9 @@ AEON.registerPack({
     { id: "powder",    name: "The Age of Powder", short: "Powder",    at: 3400 },
   ],
 
+  /* the money of the economy (core.js): a talent, about 26 kg of silver */
+  currency: { one: "talent", many: "talents" },
+
   /* core.js joins a realm to a war (an ally's call to arms, a coalition): a war of the pack's own */
   joinWar: function (ctx, ally, enemy, extra) { startWar(ctx, ally, enemy, extra.cause || "an alliance", extra); },
 

@@ -2701,6 +2701,8 @@ AEON.registerPack({
   ],
   archetypes: ARCHETYPES,
   realmTypes: REALM_TYPES,
+  /* the money of the economy (core.js) */
+  currency: { one: "crown", many: "crowns" },
   /* core.js joins a realm to a war (an ally's call to arms, a coalition) */
   joinWar: function (c, ally, enemy, extra) { war(c, ally, enemy, extra.cause, extra); c.world.stats.wars++; },
   names: NAMES,

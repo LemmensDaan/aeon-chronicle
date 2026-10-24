@@ -304,6 +304,9 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   in a capital on the open sea. Tooltip: "Wonder: <name>, raised <year>"; the "ruins" feature is not
   listed under a standing settlement. Wonders still have one sprite (the obelisk); the designs of
   samples/animations.html round 2 are not wired in (Daan: not now).
+- **Diplomacy focus look (2026-10-24, Daan's pick):** the realm in focus is a pale cream wash (STANCE.self
+  #f4ecd8) inside a two-pixel ink border (compose: edge and edge2 pixels of the self realm in INK), with
+  its province lines; the legend leads with a cream chip and its name.
 - **Next for another agent:** technology shown on the map, knowledge lost, old invention events tied
   to the named technologies: see `docs/TECH_VISUALS_BRIEF.md`.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,

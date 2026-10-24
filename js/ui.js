@@ -381,7 +381,7 @@ function updateLegend() {
     L.textContent = "";
     const S = AEON.stanceColors, item = function (k, t) { const i = el("i", { class: "ae-legend-chip" }); i.style.background = S[k]; L.appendChild(i); L.appendChild(el("span", { text: t })); };
     if (f) {
-      L.appendChild(el("b", { text: world.polities[f].name }));
+      item("self", ""); L.appendChild(el("b", { text: world.polities[f].name }));
       item("war", "at war"); item("alliance", "allied"); item("lord", "its lord"); item("vassal", "vassal"); item("truce", "truce"); item("friend", "trade, marriage");
     } else L.appendChild(el("b", { text: "Point at a realm to see how the others stand with it" }));
     L.classList.remove("hidden");

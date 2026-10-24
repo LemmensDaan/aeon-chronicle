@@ -27,13 +27,14 @@
 </head>
 <body>
 <main>
-<h1>Settlement sprites, round 4</h1>
-<p class="lede">After Daan's notes on round 3. Roofs stay in the realm's colour. The settlement panels show three
-bands: a blue realm on plain ground (the biome map), the same realm under its political wash, and a red realm under
-its wash. The water panels now use the gabled row as the town and the walled hill city as the city. Harbour ships
-bob as the fleets do on the map. One map pixel is 3 screen pixels and one sprite pixel 2, as at the usual zoom; each
-panel is shown twice as large, then a close-up, then true size. <code>?only=N</code> shows panel N large,
-<code>?t=ms</code> freezes the bobbing.</p>
+<h1>Settlement sprites, round 5</h1>
+<p class="lede">After Daan's notes on round 4: houses behind a wall now show their plastered fronts between the
+merlons (no ground showing through), the capital's keep is wider with the banner hung down its stone face, the
+hill city gets a brown gate in its wall, the belfry city a smaller wall, the stockade town its plaster and a new
+watchtower. The cathedral, the gabled row and the windmill are shelved as extra designs at the end. The settlement
+panels show three bands: a blue realm on plain ground, the same realm under its political wash, a red realm under
+its wash. One map pixel is 3 screen pixels and one sprite pixel 2, as at the usual zoom. <code>?only=N</code> shows
+panel N large, <code>?t=ms</code> freezes the bobbing.</p>
 <div id="host"></div>
 </main>
 <script>
@@ -117,71 +118,69 @@ function keep(w, h) {
   rows.push(rep("k", w));
   return sprite(rows);
 }
-/* only the roof of a house, for houses that stand behind a wall: their roofs show over it */
-const ROOF5 = sprite(["..k..", ".kfk.", "kffFk"]);
-const ROOF7 = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk"]);
+/* a house standing behind a wall: its roof and plastered front, down to the wall's merlons (the
+   last row sits behind them, so plaster, not ground, shows between the merlons) */
+const BEHIND5 = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwwwk"]);
+const BEHIND7 = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwwwwwk", "kwwwwwk"]);
+/* a low wall, w wide: merlons, coping, a stone face with a brown dot for its gate, a foot */
+function lowWall(w) {
+  const face = "k" + rep("g", w - 2) + "k", c = w >> 1;
+  return sprite([alt(w, "k", "."), rep("k", w), face.slice(0, c) + "b" + face.slice(c + 1), rep("k", w)]);
+}
 
 /* ------------------------------------------------------------ the capital: keep and bailey */
-/* three ways to fly the realm's colour without hiding the keep's battlements */
-const FLAG = sprite(["kff", "kfF", "k.."]);
-const PENNANT = sprite(["kf", "k."]);
-const HUNG = sprite(["kkk", "fff", "fFf", "f.f"]);
-function capital(flag) {
-  const parts = [[ROOF5, 0, 4], [ROOF5, 10, 4], [keep(5, 10), 5, 1]];
-  if (flag === "pole") parts.push([FLAG, 7, -1]);
-  if (flag === "pennant") parts.push([PENNANT, 5, -1]);
-  if (flag === "hung") parts.push([HUNG, 6, 3]);
-  parts.push([wall(15, 5, true), 0, 7]);
-  return compose(parts);
+/* the keep 7 wide, so its stone shows either side of a banner hung down its face; thin ink lines */
+function keep7(banner) {
+  const rows = [alt(7, "k", "."), rep("k", 7), "kgggggk", "kgkgkgk", "kgggggk", "kgggggk", "kgggggk", "kgggggk", "kgggggk", "kkkkkkk"];
+  if (banner) { rows[2] = "kgkkkgk"; rows[3] = "kgfffgk"; rows[4] = "kgfffgk"; rows[5] = "kgfFfgk"; rows[6] = "kgf.fgk".replace(".", "g"); }
+  return sprite(rows);
 }
+const FLAG = sprite(["kff", "kfF", "k.."]);
 const CAPITALS = [
-  { name: "Keep, flag on a pole", note: "Only the houses' roofs show over the wall now. The flag stands on a pole over the keep's middle merlon.", sp: capital("pole") },
-  { name: "Keep, banner hung down its face", note: "The battlements stay clear: the realm's banner hangs from a bar down the front of the keep, under its windows' row.", sp: capital("hung") },
-  { name: "Keep, small pennant", note: "A small pennant on the keep's left merlon only, so the other merlons read.", sp: capital("pennant") },
+  { name: "Keep, flag on a pole", note: "Houses behind the wall show roof and plaster. The flag flies over the keep's middle merlon.",
+    sp: compose([[BEHIND5, 0, 3], [BEHIND5, 10, 3], [keep(5, 10), 5, 1], [FLAG, 7, -1], [wall(15, 5, true), 0, 7]]) },
+  { name: "Wide keep, banner on its face", note: "The keep is 7 wide, stone either side of the realm's banner hung from a bar under the merlons; the merlons stay clear.",
+    sp: compose([[BEHIND5, 0, 3], [BEHIND5, 11, 3], [keep7(true), 4, 1], [wall(16, 5, true), 0, 7]]) },
 ];
 const CAPITAL = CAPITALS[1].sp;
 
 /* ------------------------------------------------------------ cities */
-const LOWWALL = sprite([alt(13, "k", "."), rep("k", 13), "k" + rep("g", 11) + "k", rep("k", 13)]);
 const BELFRY = sprite([".k.", "kfk", "kFk", "kkk", "kyk", "kkk", "kgk", "kgk", "kgk", "kkk"]);
-const CATHEDRAL = sprite([".k.....k.", "kfk...kfk", "kFk...kFk", "kgk.k.kgk", "kgkkgkkgk", "kgkgwgkgk", "kgkgggkgk", "kgkkbkkgk", "kgkkbkkgk", "kkkkkkkkk"]);
-const GABLED = compose([[HOUSE5, 0, 3], [HOUSE5, 6, 3], [TALL5, 3, 0]]);
-const HILL = compose([[SPIRE, 5, 0], [HOUSE5, 2, 1], [HOUSE5, 6, 1], [ROOF5, 0, 3], [ROOF5, 4, 3], [ROOF5, 8, 3], [wall(13, 5, true), 0, 6]]);
 const CITIES = [
-  { name: "Hill city, as in round 3", note: "For comparison: houses climb to a tower, a low wall at the foot.",
-    sp: compose([[SPIRE, 5, 0], [HOUSE5, 2, 1], [HOUSE5, 6, 1], [HOUSE5, 0, 3], [HOUSE5, 4, 3], [HOUSE5, 8, 3], [LOWWALL, 0, 6]]) },
-  { name: "Hill city, walled like the capital", note: "The capital's wall with its gate; the front row shows only roofs over it, the back row and the tower climb above.",
-    sp: HILL },
-  { name: "Hill city, no wall", note: "The tiers of houses alone, down to the ground, the tower on top.",
-    sp: compose([[SPIRE, 5, 0], [HOUSE5, 2, 1], [HOUSE5, 6, 1], [HOUSE5, 0, 4], [HOUSE5, 4, 4], [HOUSE5, 8, 4]]) },
-  { name: "Cathedral city, bolder", note: "A larger church front: two towers with spires in the realm's colour, a stone gable with a round window, a tall door; a house either side.",
-    sp: compose([[HOUSE5, 0, 4], [HOUSE5, 8, 4], [CATHEDRAL, 2, 0]]) },
-  { name: "Belfry and gabled row", note: "The belfry with its golden bell beside the gabled row of houses, no wall.",
-    sp: compose([[BELFRY, 0, 0], [GABLED, 2, 1]]) },
-  { name: "Belfry over the wall", note: "The belfry rising over a wall like the capital's, roofs either side of it.",
-    sp: compose([[ROOF7, 0, 3], [ROOF5, 8, 4], [BELFRY, 5, 0], [wall(13, 5, true), 0, 7]]) },
+  { name: "Hill city", note: "Houses climb to a tower, a low wall at the foot of the hill with a brown dot for its gate.",
+    sp: compose([[SPIRE, 5, 0], [HOUSE5, 2, 1], [HOUSE5, 6, 1], [HOUSE5, 0, 3], [HOUSE5, 4, 3], [HOUSE5, 8, 3], [lowWall(13), 0, 6]]) },
+  { name: "Belfry over a low wall", note: "The belfry with its golden bell over houses behind a low wall, smaller than the capital's, so a city never looks like a capital.",
+    sp: compose([[BEHIND7, 0, 2], [BEHIND5, 6, 3], [BELFRY, 5, 0], [lowWall(11), 0, 6]]) },
 ];
 
 /* ------------------------------------------------------------ towns */
-/* a stockade of stakes in two woods (h light, b dark) with a gate; a wooden watchtower; a ring
-   of stakes seen a little from above */
+/* a stockade of stakes in two woods (h light, b dark) with a gate */
 const STOCKADE = sprite([alt(11, "k", "."), "hbhbkkkbhbh", "hbhbkBkbhbh", rep("k", 11)]);
-const WATCH = sprite(["..k..", ".kfk.", "kffFk", "kkkkk", ".khk.", ".kbk.", ".khk.", ".kbk.", ".kkk."]);
-const RING_FAR = sprite(["..k.k.k.k..", ".khbhbhbhk.", "kbk.....kbk", "kbk.....kbk"]);
-const RING_NEAR = sprite(["kbk.....kbk", "kkkkkkkkkkk", "khbhbkhbhbk", ".khbkBkhbk.", "..kkkkkkk.."]);
-const WINDMILL = sprite(["kc.....ck", ".kc...ck.", "..kkfkk..", "...kfk...", "..ckgkc..", ".ckkgkkc.", "kc.kgk.ck", "..kgggk..", "..kgbgk..", "..kkkkk.."]);
+/* watchtowers: a roofed lookout on a wooden frame, standing behind the stockade; a gate tower
+   over the stockade's gate */
+const WATCH = sprite(["..k..", ".kfk.", "kffFk", "k.k.k", "khhhk", "kkkkk", ".b.b.", ".bkb.", ".b.b.", "b...b", "b...b"]);
+const GATETOWER = sprite(["..k..", ".kfk.", "kffFk", "kkkkk", "khkhk", "khhhk", "kkkkk", "kkBkk", "kkkkk"]);
 const TOWNS = [
-  { name: "Stockade, roofs over it", note: "Pointed stakes in two woods with a gate, only the roofs showing over them, as the capital's houses over its wall.",
-    sp: compose([[ROOF5, 0, 2], [ROOF7, 4, 1], [STOCKADE, 0, 5]]) },
-  { name: "Stockade and watchtower", note: "The same stockade with a wooden watchtower roofed in the realm's colour at one end.",
-    sp: compose([[ROOF5, 0, 2], [ROOF5, 3, 3], [STOCKADE, 0, 5], [WATCH, 6, 0]]) },
-  { name: "Ring of stakes", note: "A round stockade seen a little from above, a house inside, the gate in front (the ring wall idea, in wood).",
-    sp: compose([[RING_FAR, 0, 0], [HOUSE5, 3, 1], [RING_NEAR, 0, 4]]) },
-  { name: "Gabled row (liked)", note: "A street front of three narrow houses, the middle one tallest.", sp: GABLED },
-  { name: "Windmill (liked)", note: "A house and a windmill. For later (Daan): with the economy, a windmill could be added to a place that grows grain or prospers, rather than being a town design of its own.",
+  { name: "Stockade, houses behind it", note: "Pointed stakes in two woods with a gate; the houses behind show roof and plaster over the stakes.",
+    sp: compose([[BEHIND5, 0, 1], [BEHIND7, 4, 0], [STOCKADE, 0, 5]]) },
+  { name: "Stockade and lookout", note: "An open lookout under a roof in the realm's colour, on wooden legs with a cross brace, rising behind the stockade at one end.",
+    sp: compose([[BEHIND7, 0, 1], [WATCH, 6, -2], [STOCKADE, 0, 5]]) },
+  { name: "Stockade and gate tower", note: "A wooden gate tower roofed in the realm's colour stands over the stockade's gate, houses either side.",
+    sp: compose([[BEHIND5, 0, 2], [BEHIND5, 6, 2], [STOCKADE, 0, 5], [GATETOWER, 3, 0]]) },
+];
+
+/* ------------------------------------------------------------ extras, shelved for later */
+const CATHEDRAL = sprite([".k.....k.", "kfk...kfk", "kFk...kFk", "kgk.k.kgk", "kgkkgkkgk", "kgkgwgkgk", "kgkgggkgk", "kgkkbkkgk", "kgkkbkkgk", "kkkkkkkkk"]);
+const GABLED = compose([[HOUSE5, 0, 3], [HOUSE5, 6, 3], [TALL5, 3, 0]]);
+const WINDMILL = sprite(["kc.....ck", ".kc...ck.", "..kkfkk..", "...kfk...", "..ckgkc..", ".ckkgkkc.", "kc.kgk.ck", "..kgggk..", "..kgbgk..", "..kkkkk.."]);
+const EXTRAS = [
+  { name: "Cathedral city (extra)", note: "Shelved as an extra design: a church front with two spired towers, a round window and a tall door, a house either side.",
+    sp: compose([[HOUSE5, 0, 4], [HOUSE5, 8, 4], [CATHEDRAL, 2, 0]]) },
+  { name: "Gabled row (extra)", note: "Shelved as an extra design: a street front of three narrow houses, the middle one tallest.", sp: GABLED },
+  { name: "Windmill (extra)", note: "Shelved as an extra design. For later: with the economy, a windmill could be added to a place that grows grain or prospers, rather than being a town design of its own.",
     sp: compose([[WINDMILL, 2, 0], [HOUSE5, 0, 4]]) },
 ];
-const TOWN_W = GABLED, CITY_W = HILL;    /* the picks so far, used by the water panels */
+const TOWN_W = TOWNS[0].sp, CITY_W = CITIES[0].sp;    /* the picks so far, used by the water panels */
 
 /* ------------------------------------------------------------ by the water */
 /* the map's own ships (js/mapfx.js SHIPS), bow to the right, sail or stripe in the realm's colour */
@@ -214,12 +213,14 @@ function quay(n, stone) { return sprite(stone ? [rep("k", n), rep("g", n), alt(n
    bob (0 or 1) lowers the ship a pixel, as mapfx.js bobs its fleets */
 function harbour(base, shipKind, light, stone, bob) {
   const sh = SHIPS[shipKind], qx = base.w, q = quay(sh.w + 1 + light.w, stone), qy = base.h - q.h + 1;
-  return compose([[sh, qx + 1, qy + 2 - sh.h + (bob || 0)], [base, 0, 0], [q, qx, qy], [light, qx + q.w - light.w, qy + 1 - light.h]], qx);
+  return compose([[DOT, qx + 1, qy + 2 - sh.h], [sh, qx + 1, qy + 2 - sh.h + (bob || 0)], [base, 0, 0], [q, qx, qy], [light, qx + q.w - light.w, qy + 1 - light.h]], qx);
 }
+/* an empty pixel: it only holds a sprite's frame in place while a part of it moves */
+const DOT = sprite(["."]);
 function bobAt(t, k) { return Math.sin(t / 300 + k * 1.7) > 0.4 ? 1 : 0; }
 const COAST = [
   { name: "Quay, light at its tip, bobbing ship", note: "A rowing boat at the village; the town and the city moor the realm's own ship at a quay with a light at its tip. The ship bobs, so it reads as afloat behind the quay, not standing on it.",
-    at: function (t) { return [compose([[VILLAGE, 0, 0], [ROWBOAT, 8, 3 + bobAt(t, 0)]], 7), harbour(TOWN_W, "sail", LIGHT_S, false, bobAt(t, 1)), harbour(CITY_W, "galleon", LIGHT_L, true, bobAt(t, 2))]; } },
+    at: function (t) { return [compose([[VILLAGE, 0, 0], [ROWBOAT, 8, 2 + bobAt(t, 0)]], 7), harbour(TOWN_W, "sail", LIGHT_S, false, bobAt(t, 1)), harbour(CITY_W, "galleon", LIGHT_L, true, bobAt(t, 2))]; } },
 ];
 /* the ship at the quay follows what the realm knows, as its fleets do */
 const AGE_KINDS = ["oared", "sail", "galleon", "steam"];
@@ -320,6 +321,7 @@ function settlementPanel(group, title, note, row, close) {
 CAPITALS.forEach(function (c) { settlementPanel("The capital", c.name, c.note, [VILLAGE, TOWN_W, CITY_W, c.sp], [c.sp]); });
 CITIES.forEach(function (c) { settlementPanel("The city", c.name, c.note, [VILLAGE, TOWN_W, c.sp, CAPITAL], [TOWN_W, c.sp, CAPITAL]); });
 TOWNS.forEach(function (c) { settlementPanel("The town", c.name, c.note, [VILLAGE, c.sp, CITY_W, CAPITAL], [VILLAGE, c.sp, CITY_W]); });
+EXTRAS.forEach(function (c) { settlementPanel("Extra designs, for later", c.name, c.note, [VILLAGE, TOWN_W, c.sp, CAPITAL], [c.sp]); });
 
 function place(g, sp, kind, edge, yb, over) {
   const x = Math.round((edge(yb - (kind === "river" ? 1 : 2)) + (kind === "river" ? 0 : 1)) * MP) - sp.ax * U;
@@ -350,6 +352,7 @@ panels.push({ group: "On the coast", title: "The ship follows the age", note: "T
 } });
 waterPanels("By a river", "river", RIVER, riverX);
 waterPanels("On a lake shore", "lake", LAKE, lakeX);
+panels.push.apply(panels, panels.splice(panels.findIndex(function (p) { return p.group === "Extra designs, for later"; }), EXTRAS.length));
 
 /* a close-up under each panel: the sprites larger, on the ground they stand on (water from their
    water column on) */

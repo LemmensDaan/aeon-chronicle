@@ -38,6 +38,10 @@ let playLast = 0, playOwed = 0;
 let fxFrozen = false;
 /* how often great moments slow history down (mapfx.js setPace), and the realm being followed */
 let pace = "some", followed = null;
+/* the camera follows the action: while a great moment holds the year, the map zooms in (to at
+   least CAM_P device pixels a map pixel) and glides over to it */
+let camera = true;
+const CAM_P = 3;
 let rafId = 0;
 let mapMode = "political";
 let view = { zoom: 1, panX: 0, panY: 0 };
@@ -226,6 +230,17 @@ function setPlaybackYear(y, how) {
   if (how !== "play") runFx();
 }
 
+function cameraStep(dt) {
+  const rid = AEON.mapfx && AEON.mapfx.focusPoint();
+  if (rid == null || !dom.canvas || !AEON.render.pixelScale) return;
+  const ps = AEON.render.pixelScale(dom.canvas, world, view.zoom);
+  if (ps.P < CAM_P) view.zoom = ps.zoomFor(CAM_P);
+  const r = world.regions[rid], cell = cellSize(), w = dom.canvas.clientWidth, h = dom.canvas.clientHeight;
+  const tx = w / 2 - (r.x + 0.5) * cell, ty = h / 2 - (r.y + 0.5) * cell, k = Math.min(1, dt / 350);
+  view.panX += (tx - view.panX) * k; view.panY += (ty - view.panY) * k;
+  clampView();
+}
+
 /* a moment jumped to while playback is not running plays out: its animations move on and are
    redrawn every frame until they end, unless playback is paused again */
 let fxRaf = 0;
@@ -315,6 +330,7 @@ function loop(now) {
   /* the animations move on with the frame; the years owed since the last frame (at most a
      quarter second's worth after a stall) only while no great moment holds the year still */
   if (AEON.mapfx) AEON.mapfx.advance(dt);
+  if (camera) cameraStep(dt);
   if (!(AEON.mapfx && AEON.mapfx.holding())) playOwed += Math.min(0.25, dt / 1000) * playSpeed;
   const ticks = Math.floor(playOwed / world.timeStep);
   if (ticks > 0) {
@@ -472,11 +488,13 @@ function buildApp() {
   });
   if (AEON.mapfx) AEON.mapfx.setPace(pace);
   dom.follow = el("div", { class: "ae-follow hidden" });
+  const camBtn = el("button", { class: "ae-btn on", text: "◎", title: "The map follows the action (great moments)",
+    onclick: function () { camera = !camera; camBtn.classList.toggle("on", camera); } });
 
   dom.status = el("div", { class: "ae-status" });
 
   const transport = el("div", { class: "ae-transport" },
-    dom.playBtn, dom.scrub, dom.follow, speedSel, paceSel,
+    dom.playBtn, dom.scrub, dom.follow, speedSel, paceSel, camBtn,
     el("button", { class: "ae-btn", text: "‹", title: "Previous great moment", onclick: function () { jumpMoment(-1); } }),
     el("button", { class: "ae-btn", text: "›", title: "Next great moment", onclick: function () { jumpMoment(1); } }),
     el("button", { class: "ae-btn", text: "⏮", title: "Back to the beginning",

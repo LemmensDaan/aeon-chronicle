@@ -242,6 +242,10 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   ruler-builds-wonder and great-library, fantasy great-work-raised). Destruction rarer: historical
   wonder-destroyed and fantasy great-work-falls weight 0.5, only for one at least 150 years old.
   Seed 7: historical 51 wonders (was 198), median life 275 years; fantasy 14 (was 29), 710 years.
+- **Camera (2026-10-24, view only):** ui.js `cameraStep(dt)` in the playback loop while the ◎ button
+  is on (default on): when a great moment holds the year (mapfx `focusPoint()`: the newest held
+  animation's region), the map zooms in to at least CAM_P = 3 device pixels a map pixel and glides
+  to it (a third of the way every 350 ms). Not seen in a real browser yet (no rAF headless).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

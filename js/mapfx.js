@@ -74,6 +74,17 @@ const MAJOR = 5, HOLD_RATE = 0.02, HOLD_MAX = 8;
 let pace = "some", followed = null, bank = HOLD_MAX;
 function setPace(p) { pace = p; }
 function follow(pid) { followed = pid || null; }
+/* where the newest great moment that holds the year is happening (a region id), for the camera */
+function focusPoint() {
+  const t = now();
+  for (let i = live.length - 1; i >= 0; i--) {
+    const f = live[i];
+    if (!f.hold || t >= f.start + f.dur) continue;
+    const at = f.at != null ? f.at : f.cells ? f.cells[0] : f.to != null && f.kind === "crown" ? f.to : null;
+    if (at != null) return at;
+  }
+  return null;
+}
 function holding() {
   const t = now();
   prune(t);
@@ -760,6 +771,6 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
+AEON.mapfx = { collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
 
 })();

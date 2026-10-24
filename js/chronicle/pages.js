@@ -127,7 +127,7 @@ function pagePolity(id) {
   var s = section(pg, "Character");
   s.appendChild(bars(p.traits, ["aggression", "piety", "curiosity", "stability", "cunning"]));
 
-  /* the ages it advanced through; the first is where it began, inherited from its land */
+  /* the ages it advanced through (and fell back from); the first is where it began, inherited from its land */
   if (ages && p.ageLog && p.ageLog.length) {
     s = section(pg, "Ages");
     var au = h("ul", "ch-ul");
@@ -135,7 +135,8 @@ function pagePolity(id) {
       var a = ages[e.age];
       if (!a) return;
       var li = h("li");
-      add(li, h("b", null, a.name), " — " + (i === 0 ? (e.inherited && e.age > 0 ? "inherited at its founding, " : "at its founding, ") : "reached in ") + yr(e.year));
+      var before = p.ageLog.slice(0, i).some(function (x) { return x.age === e.age; });
+      add(li, h("b", null, a.name), " — " + (i === 0 ? (e.inherited && e.age > 0 ? "inherited at its founding, " : "at its founding, ") : e.fell ? "fell back into it in " : before ? "regained in " : "reached in ") + yr(e.year));
       au.appendChild(li);
     });
     if (p.age + 1 < ages.length) {
@@ -146,7 +147,7 @@ function pagePolity(id) {
     s.appendChild(au);
   }
 
-  /* what it knew, in the order it learned it (core.js techTick); the ones it found first marked */
+  /* what it knew, in the order it learned (or forgot) it (core.js techTick, forgetTick); the ones it found first marked */
   var techs = p.techLog ? p.techLog.filter(function (e) { return e.year <= w.year; }) : [];
   if (techs.length) {
     s = section(pg, "Technologies");
@@ -156,7 +157,8 @@ function pagePolity(id) {
       var t = TT[e.tech];
       if (!t) return;
       var li = h("li");
-      add(li, h("b", null, t.name), " — " + (e.first ? "first in the world, " : "learned ") + yr(e.year));
+      var again = techs.slice(0, techs.indexOf(e)).some(function (x) { return x.tech === e.tech && x.lost; });
+      add(li, h("b", null, t.name), " — " + (e.lost ? "forgotten " : e.again ? "rediscovered, the first since it was lost to the world, " : e.first ? "first in the world, " : again ? "learned again " : "learned ") + yr(e.year));
       tu.appendChild(li);
     });
     s.appendChild(tu);

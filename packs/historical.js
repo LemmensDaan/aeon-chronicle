@@ -1198,7 +1198,7 @@ const EVENTS = [
     const cause = ctx.choice(["a fire that began in a neighbouring bakery", "an army that had been told there was nothing of value inside", "a mob incited by a preacher who had read one book and disliked it", "the slow indifference of three successive treasurers, and then a fire", "an earthquake, followed by looters, followed by rain"]);
     lib.destroyed = ctx.year;
     const tech = ctx.choice(pickEra(TECH_LOST, ctx));
-    if (owner) { owner.tech = clamp(owner.tech - 0.05, 0, 1); adjustT(owner, "curiosity", -0.05); }
+    if (owner) { owner.tech = clamp(owner.tech - 0.05, 0, 1); adjustT(owner, "curiosity", -0.05); AEON.techShock(w, owner, 0.5, "when " + lib.name + " burned"); }
     H(w).lostTech++;
     return res(4, ["destruction", "library", "lost-technique", "lost:" + tech], A(ctx, lib, owner), r ? r.id : null,
       lib.name + " was destroyed by " + cause + ". The loss was not noticed at once, being a loss of things nobody was reading; it was noticed within a generation, when " + tech + " could no longer be done by anyone alive.");
@@ -1961,6 +1961,7 @@ const EVENTS = [
     const p = ctx.polity, h = H(ctx.world);
     const loss = ctx.range(0.06, 0.18), lost = ctx.choice(pickEra(TECH_LOST, ctx));
     p.tech = clamp(p.tech - loss, 0, 1); adjustT(p, "curiosity", -0.08); adjustT(p, "stability", 0.1);
+    AEON.techShock(ctx.world, p, 0.6, "in its dark age");
     h.lostTech++;
     return res(4, ["dark-age", "lost-technique", "lost:" + lost], A(ctx, p), p.capital,
       "For about " + ctx.int(2, 6) + " generations after the troubles, no one in " + p.name + " could manage " + lost + ". The last masters of the craft had died in the famine or the wars, and their apprentices, who had been conscripted, did not return. The people continued to use the buildings and the tools of the earlier age and to attribute them, with increasing confidence, to giants.");

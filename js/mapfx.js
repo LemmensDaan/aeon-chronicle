@@ -167,11 +167,11 @@ function changes(w, y0, y1) {
     const cl = p.capitalLog || [];
     for (let k = Math.max(1, after(cl, y0, YK)); k < cl.length && cl[k].year <= y1; k++)
       out.push({ prio: 5, fx: { kind: "crown", pid: id, from: cl[k - 1].capital, to: cl[k].capital } });
-    /* ages: the one a realm is founded in, and each it reaches */
+    /* ages: the one a realm is founded in, and each it reaches (not one it falls back into) */
     const al = p.ageLog || [];
     if (!w.pack.ages || !al.length) continue;
     for (let k = after(al, y0, YK); k < al.length && al[k].year <= y1; k++) {
-      if (al[k].inherited && !born(p)) continue;
+      if ((al[k].inherited && !born(p)) || al[k].fell) continue;
       out.push({ prio: al[k].inherited ? 3 : 4.5, fx: { kind: "age", pid: id, age: al[k].age, year: al[k].year } });
     }
   }

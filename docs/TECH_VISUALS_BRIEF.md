@@ -75,6 +75,6 @@ agreement and "Verification"), then this.
 1. The sample page of tech sprites (war bands by age or technology; ships by technology).
 2. **Done (2026-10-24).** After his picks: draw a realm's band and fleet by what it knew that year (`AEON.techsOf(world,
    p, year)` from the view's year).
-3. Lost knowledge in the engine (a technology held by few realms can die with them; rediscovery as
+3. **Done (2026-10-24, see HANDOFF).** Lost knowledge in the engine (a technology held by few realms can die with them; rediscovery as
    for a first discovery), with chronicle entries.
 4. The old events tied to the named technologies.

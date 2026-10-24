@@ -661,6 +661,11 @@ function logSack(world, region, att, kind) {
   /* the loot: a year's worth of what the place's people make, into the attacker's treasury */
   if (att) att.treasury = (att.treasury || 0) + Math.round((region.population || 0) * 0.0015 * (0.4 + (victim ? victim.tech : att.tech)) * (kind === "razed" ? 2 : 1) + (region.settlement ? region.settlement.tier * 20 : 0));
   if (victim && att) AEON.remember(world, victim, att, kind === "razed" ? -0.4 : -0.25, kind + " " + ((region.settlement && region.settlement.name) || region.name || "a province"));
+  /* and shakes what the victim knows (lost knowledge, see forgetTick): the capital or a great city most */
+  if (victim) {
+    const big = region.id === victim.capital ? 0.25 : region.settlement && region.settlement.tier >= 3 ? 0.1 : 0;
+    AEON.techShock(world, victim, (kind === "razed" ? 0.12 : 0.06) + big, "after " + ((region.settlement && region.settlement.name) || region.name || "its towns") + " was " + kind);
+  }
 }
 /* a place plundered: its settlement shrinks a size (a village is burned out and left a ruin),
    and a share of its people are killed or carried off; returns how many */
@@ -925,6 +930,7 @@ function advanceAge(world, p, alive) {
   while (ages && p.age + 1 < ages.length && p.learning >= ages[p.age + 1].at) {
     p.age++;
     p.ageLog.push({ age: p.age, year: world.year });
+    p.lostSinceAge = 0;
   }
 }
 
@@ -1520,7 +1526,8 @@ function driftRelations(world, alive) {
    growth, wealth }, verb }). A realm can take up one once it has reached the technology's age and
    knows what it needs. Most are learned from others: each neighbour, trade partner, ally, marriage
    partner, lord or vassal that knows it adds 12% a tick (at most 60%); the first realm to find one
-   does so alone, at about 1.5% a tick for a curious realm. The first discovery is a chronicle entry;
+   does so alone, at about 1.5% a tick for a curious realm (only living realms count: what only fallen
+   realms knew is found again this way, see lost knowledge below). The first discovery is a chronicle entry;
    the rest spread quietly (p.techs: id -> year, p.techLog). Effects multiply: army and navy the
    quality of its men and ships in battle, growth the people its land can feed, wealth what its
    people make. Each one also nudges p.tech up a little. */
@@ -1536,9 +1543,8 @@ function contactsOf(world, p) {
 function techTick(world, alive) {
   const T = world.pack.technologies;
   if (!T || !T.length) return;
-  const rng = world.rng, known = {};
-  for (const t of T) known[t.id] = false;
-  for (const id in world.polities) { const q = world.polities[id]; if (q.techs) for (const k in q.techs) known[k] = true; }
+  forgetTick(world, alive, T);
+  const rng = world.rng, known = knownBy(alive, T), lost = world.techLost || (world.techLost = {});
   for (const p of alive) {
     if (p.ended) continue;
     const mine = p.techs || (p.techs = {});
@@ -1546,6 +1552,8 @@ function techTick(world, alive) {
     for (const t of T) {
       if (mine[t.id] != null || (p.age || 0) < t.age) continue;
       if (t.needs && t.needs.some(function (n) { return mine[n] == null; })) continue;
+      if (p.forgot && p.forgot[t.id] != null && world.year - p.forgot[t.id] < RELEARN_AFTER) continue;
+      if (!known[t.id] && lost[t.id] != null && world.year - lost[t.id] < RELEARN_AFTER) continue;
       let chance;
       if (!known[t.id]) chance = 0.004 + 0.02 * p.traits.curiosity * p.tech;
       else {
@@ -1556,19 +1564,127 @@ function techTick(world, alive) {
       }
       if (!rng.chance(chance)) continue;
       mine[t.id] = world.year;
-      (p.techLog || (p.techLog = [])).push({ year: world.year, tech: t.id, first: !known[t.id] });
+      const again = !known[t.id] && lost[t.id] != null;
+      (p.techLog || (p.techLog = [])).push(again ? { year: world.year, tech: t.id, first: true, again: true } : { year: world.year, tech: t.id, first: !known[t.id] });
       p.tech = clamp(p.tech + 0.01, 0, 1);
-      if (!known[t.id]) {
-        known[t.id] = true;
+      if (again) {
+        recordEvent(world, "rediscovery", { importance: 3, tags: ["technology", "rediscovery", "tech:" + t.id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
+          text: p.name + " learned again to " + (t.verb || "master " + t.name.toLowerCase()) + ", which no realm had known how to do since " + (world.pack.yearLabel ? world.pack.yearLabel(lost[t.id]) : lost[t.id]) + ". Its neighbours were soon learning it from " + p.name + "." });
+        delete lost[t.id];
+      } else if (!known[t.id]) {
         recordEvent(world, "discovery", { importance: 3, tags: ["technology", "discovery", "tech:" + t.id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
           text: p.name + " was the first realm in the record to " + (t.verb || "master " + t.name.toLowerCase()) + ". Within a few generations its neighbours had learned it too." });
       }
+      known[t.id] = true;
     }
   }
+  world._techHolders = holdersOf(alive, T);
 }
+/* which technologies some living realm knows */
+function knownBy(alive, T) {
+  const known = {};
+  for (const t of T) known[t.id] = false;
+  for (const q of alive) if (!q.ended && q.techs) for (const k in q.techs) known[k] = true;
+  return known;
+}
+function holdersOf(alive, T) {
+  const out = {};
+  for (const q of alive) if (!q.ended && q.techs) for (const k in q.techs) (out[k] || (out[k] = [])).push(q.id);
+  return out;
+}
+
+/* ------------------------------------------------------------ lost knowledge --
+   What a realm knows can be forgotten when it is shaken: its towns plundered or razed (the
+   capital most of all), a large share of its land lost in a few years, its library burned, a dark
+   age (packs call AEON.techShock). The shock (p.techShock, 0..1.5) fades by more than half each
+   tick (land counts only for a realm of four regions or more that loses a fifth of them in a tick).
+   While it lasts, each technology the realm knows that nothing else it knows depends on (the
+   most advanced first) may be forgotten, at most two a tick: the more of its neighbours and
+   partners still know it, the less likely, since the craft survives next door. A realm that forgets
+   four technologies within one age falls back an age (its learning set just short of the age it
+   lost, so it climbs back in a few generations) and forgets everything beyond the age it fell to.
+   Forgotten technologies are logged in p.techLog ({ lost: true }) and can be learned again like any
+   other, after a generation (RELEARN_AFTER years; a technology lost to the world, too). When no living realm knows one any more, by forgetting or because the last realms that
+   knew it fell, it is lost to the world (world.techLost: id -> year, a chronicle entry), and the
+   next realm to find it alone rediscovers it. */
+AEON.techShock = function (world, p, amount, cause) {
+  if (!p || p.ended || !(amount > 0)) return;
+  p.techShock = Math.min(1.5, (p.techShock || 0) + amount);
+  if (cause && (!p.techCause || amount >= (p.techCauseAt || 0))) { p.techCause = cause; p.techCauseAt = amount; }
+};
+const FORGET_PER_TICK = 2, FALL_AFTER = 4, RELEARN_AFTER = 25;
+function forgetTick(world, alive, T) {
+  const rng = world.rng, ages = world.pack.ages, byId = {};
+  for (const t of T) byId[t.id] = t;
+  for (const p of alive) {
+    if (p.ended) continue;
+    /* land lost since the last tick shakes it too */
+    const n = p.regions.length, before = p.techSize || n;
+    p.techSize = n;
+    if (before >= 4 && n < before && (before - n) / before > 0.2) AEON.techShock(world, p, (before - n) / before, "as its provinces fell away");
+    const s = p.techShock || 0, cause = p.techCause;
+    p.techShock = s < 0.05 ? 0 : s * 0.4;
+    if (s < 0.05) { p.techCause = null; p.techCauseAt = 0; continue; }
+    const mine = p.techs;
+    if (!mine) continue;
+    const ids = Object.keys(mine);
+    if (!ids.length) continue;
+    const needed = {};
+    for (const id of ids) for (const nd of (byId[id] && byId[id].needs) || []) needed[nd] = true;
+    const leaves = ids.filter(function (id) { return byId[id] && !needed[id]; }).sort(function (a, b) { return byId[b].age - byId[a].age || (a < b ? -1 : 1); });
+    const contacts = contactsOf(world, p), gone = [];
+    for (const id of leaves) {
+      if (gone.length >= FORGET_PER_TICK) break;
+      let k = 0;
+      for (const o of contacts) if (o.techs && o.techs[id] != null) k++;
+      if (rng.chance(Math.min(0.7, s * 0.6) / (1 + 0.5 * k))) gone.push(id);
+    }
+    if (!gone.length) continue;
+    for (const id of gone) forget(world, p, id);
+    p.lostSinceAge = (p.lostSinceAge || 0) + gone.length;
+    const names = gone.map(function (id) { return byId[id].verb || "master " + byId[id].name.toLowerCase(); });
+    recordEvent(world, "technology-lost", { importance: 2, tags: ["technology", "lost-knowledge"].concat(gone.map(function (id) { return "tech:" + id; })), actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
+      text: p.name + ", " + (cause || "in its troubles") + ", lost the last of the people who knew how to " + names.join(", or to ") + ", and within a generation no one there could." });
+    /* too much forgotten: back an age */
+    if (ages && (p.age || 0) > 0 && p.lostSinceAge >= FALL_AFTER) {
+      const from = p.age, to = from - 1, lo = ages[to].at, hi = ages[from].at;
+      p.age = to;
+      p.learning = Math.round((hi - 0.15 * (hi - lo)) * 1000) / 1000;
+      p.ageLog.push({ age: to, year: world.year, fell: true });
+      p.lostSinceAge = 0;
+      const beyond = Object.keys(mine).filter(function (id) { return byId[id] && byId[id].age > to; });
+      for (const id of beyond) forget(world, p, id);
+      recordEvent(world, "age-lost", { importance: 4, tags: ["technology", "lost-knowledge", "age-lost", "age:" + ages[to].id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
+        text: p.name + " fell back from " + ages[from].name + " into " + ages[to].name + ". So much had been forgotten that what was left was the learning of an earlier time" +
+          (beyond.length ? "; " + beyond.length + " more of the newer arts went with it" : "") + ", and the buildings of its grandfathers were looked at as the work of another people." });
+    }
+  }
+  /* lost to the world: known by some living realm last tick, by none now */
+  const was = world._techHolders || {}, known = knownBy(alive, T), lost = world.techLost || (world.techLost = {});
+  for (const t of T) {
+    if (known[t.id] || !was[t.id] || !was[t.id].length) continue;
+    lost[t.id] = world.year;
+    const last = was[t.id].map(function (id) { return world.polities[id]; }).filter(Boolean);
+    recordEvent(world, "lost-to-world", { importance: 4, tags: ["technology", "lost-knowledge", "lost-to-world", "tech:" + t.id], actors: last.slice(0, 3).map(function (q) { return { kind: "polity", id: q.id }; }), regionId: last[0] ? last[0].capital : null,
+      text: "No realm then living knew how to " + (t.verb || "master " + t.name.toLowerCase()) + " any longer. The last to have done it " + (last.length > 1 ? "were " + last.map(function (q) { return q.name; }).join(" and ") : last.length ? "was " + last[0].name : "are forgotten") + "; what " + (last.length > 1 ? "they" : "it") + " had made was still in use, and no one could make more." });
+  }
+}
+function forget(world, p, id) {
+  delete p.techs[id];
+  (p.forgot || (p.forgot = {}))[id] = world.year;
+  (p.techLog || (p.techLog = [])).push({ year: world.year, tech: id, lost: true });
+  p.tech = clamp(p.tech - 0.01, 0, 1);
+}
+/* the technologies p knew in a year (the current ones without a year) */
 AEON.techsOf = function (world, p, year) {
   const T = world.pack.technologies || [], out = [];
-  for (const t of T) if (p.techs && p.techs[t.id] != null && (year == null || p.techs[t.id] <= year)) out.push(t);
+  if (year == null || year >= world.year) {
+    for (const t of T) if (p.techs && p.techs[t.id] != null) out.push(t);
+    return out;
+  }
+  const have = {};
+  for (const e of p.techLog || []) { if (e.year > year) break; have[e.tech] = !e.lost; }
+  for (const t of T) if (have[t.id]) out.push(t);
   return out;
 };
 function techFactor(world, p, key) {

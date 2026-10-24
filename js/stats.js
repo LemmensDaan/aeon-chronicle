@@ -557,7 +557,7 @@ function markers(ctx, dpr, H) {
   const ages = S.world.pack.ages;
   if (ages) d.bands.forEach(function (b, bi) {
     for (const e of b.p.ageLog || []) {
-      if (e.inherited) continue;
+      if (e.inherited || e.fell) continue;
       const t = Math.round((e.year - d.y0) / d.step);
       if (t < 0 || t >= d.T) continue;
       const r = stackAt(t, H).rows[bi];

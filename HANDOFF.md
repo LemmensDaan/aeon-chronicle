@@ -317,7 +317,24 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   eagle, flag with a cross, regimental colour) trailing behind him; standing musketeers fire in turn.
   Ships face the way they sail. Looks are read when the change is found (changes()), so a realm keeps
   its look for the whole animation. Historical realms learn the sail early (age 0), so their oared
-  boat is rare. Next in `docs/TECH_VISUALS_BRIEF.md`: knowledge that can be lost, then the old events.
+  boat is rare.
+- **Lost knowledge (2026-10-24, engine, changes every history):** core.js `forgetTick()` (start of
+  `techTick`). A shaken realm can forget technologies: `AEON.techShock(world, p, amount, cause)`
+  from sacks (logSack: plundered 0.06, razed 0.12, +0.25 the capital, +0.1 a city), from losing a
+  fifth of its land in a tick (realms of 4+ regions), and in historical from library-destroyed
+  (0.5) and dark-age (0.6). The shock fades to 40% a tick. Each tick it may forget up to two
+  technologies nothing else it knows depends on (newest age first), chance min(0.7, 0.6 x shock) /
+  (1 + 0.5 x contacts that still know it); relearning waits 25 years. Four forgotten within one
+  age: it falls back an age (ageLog `{ fell: true }`, learning set to 85% of the way back up, every
+  technology beyond the new age forgotten). Known now counts living realms only: a technology no
+  living realm knows is lost to the world (`world.techLost`), and the next lone discovery is a
+  rediscovery. Chronicle types: technology-lost (2), age-lost (4), lost-to-world (4), rediscovery
+  (3). `p.techLog` has `{ lost: true }` entries and `AEON.techsOf(world, p, year)` replays it, so the
+  map's band and fleet looks follow. Realm page: "fell back into it", "regained", "forgotten",
+  "learned again"; no laurels or statistics pennant for a fall. Seeds 7/42/3: historical 40-50
+  forgetting entries, 0-3 falls (great realms in collapse, e.g. 1551 regions in 480 AD, back up in
+  110 years), 0-1 lost to the world; fantasy about 10 forgetting entries, 0-1 falls. Next in
+  `docs/TECH_VISUALS_BRIEF.md`: the old invention events tied to the named technologies.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

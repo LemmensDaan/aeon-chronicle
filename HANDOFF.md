@@ -363,6 +363,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   something lost to the world and about one in seven relearnings as the scholar who "found out again
   how to ..." (6-9 a history). Seeds 7/42/3: every technology entry, forgetting included, matches
   the realm's techLog. `AEON.newFigure` is exposed for pack hooks.
+- **Worldgen realism review (2026-10-24, report only, nothing changed):** `docs/WORLDGEN_REALISM.md`,
+  measured by `node tools/worldgen-report.js` (terrain only, 18 seeds, both packs; PNGs and
+  metrics in gitignored `tools/out/`). Headlines: rain stops ~2 cells inland (84% of land under a
+  tenth of the coasts' rain), hidden by the rank-forced moisture; tropical biomes from 12 °C; no
+  seasons; no vertical scale (mountains are a quantile). A prioritised plan of 10 fixes is at the
+  end; Daan picks, one at a time, each changing every seed's history.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

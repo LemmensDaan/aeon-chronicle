@@ -61,7 +61,11 @@ agreement and "Verification"), then this.
   like a bronze sword; pikes could be better; muskets do not read at this scale. No helmets, not
   panel 4's whole-band formations. Ships: the oared boat with stroking oars (panel 8), the sail ship
   with a coloured sail (panel 6), the galleon and the steam-ship with pale sails (panel 7); every
-  ship bobs and leaves a wake; the steam-ship smokes and turns its wheel.
+  ship bobs and leaves a wake; the steam-ship smokes (round 2: no turning wheel, just the smoke).
+- **Round 2 (2026-10-24).** Pikes: sloped forward (all at one angle). Muskets: shouldered, stock down
+  (firing from the levelled pose with a flash and smoke). Bronze: none of the four yet. The standard
+  bearer must march at the back of the band, facing the enemy (the map's `band()` puts him in front,
+  facing backwards: fix that when wiring in).
 
 ## Suggested order
 

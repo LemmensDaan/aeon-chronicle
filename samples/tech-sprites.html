@@ -13,10 +13,10 @@
   h1 { color: var(--red); font-weight: 600; margin: 0 0 4px; }
   h2 { color: var(--red); font-weight: 600; margin: 22px 0 8px; font-size: 19px; }
   p.lede { margin: 4px 0 16px; color: var(--soft); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 22px 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(450px, 1fr)); gap: 22px 18px; }
   figure { margin: 0; }
-  canvas { display: block; image-rendering: pixelated; outline: 2px solid var(--ink); width: 360px; height: 210px; }
-  .stages { display: grid; grid-template-columns: repeat(4, 1fr); width: 360px; font-size: 12px; color: var(--soft); text-align: center; margin-top: 3px; }
+  canvas { display: block; image-rendering: pixelated; outline: 2px solid var(--ink); width: 450px; height: 210px; }
+  .stages { display: grid; grid-template-columns: repeat(4, 1fr); width: 450px; font-size: 12px; color: var(--soft); text-align: center; margin-top: 3px; }
   figcaption b { display: block; color: var(--red); font-weight: 600; margin-top: 4px; }
   figcaption span { color: var(--soft); font-size: 13px; }
 </style>
@@ -24,10 +24,10 @@
 <body>
 <main>
 <h1>Technology on the map</h1>
-<p class="lede">Second round. From the first: today's soldier without helmets, the standards of the age, the iron sword; and the ships as picked.
-Now four tries each at the bronze sword, the pike and the musket (columns A to D), each band under its age's standard; the top row
-marches right, the bottom row stands facing left (the musketeers fire in turn). <code>?t=ms</code> freezes a frame and
-<code>?only=3</code> shows one panel large.</p>
+<p class="lede">Third round. Picked so far: today's soldier without helmets, the standards of the age, the iron sword, the pike
+sloped forward, the musket shouldered with the stock down, and the ships. New: four more tries at bronze, and the standard bearer at the
+back of the band facing the enemy (panels 2 and 3: his flag trailing or flying forward). The top row marches right, the bottom row stands
+facing left (the musketeers fire in turn). <code>?t=ms</code> freezes a frame and <code>?only=2</code> shows one panel large.</p>
 <div id="out"></div>
 </main>
 <script>
@@ -36,7 +36,7 @@ marches right, the bottom row stands facing left (the musketeers fire in turn). 
 const INK = "#2a1a0e", GOLD = "#e0b84f";
 const SEA = ["#16295f", "#1f4294", "#3570c4"], FOAM = "#a6dbff", GRASS = ["#7da84a", "#6c9640"], TREE = "#2f6e45";
 const REALM = { a: "#c0504d", b: "#4f81bd" };
-const W = 120, H = 70;                                    /* map pixels per panel */
+const W = 150, H = 70;                                    /* map pixels per panel */
 
 const PAL = { k: INK, w: "#e8c9a0", f: "#888", F: "#555", s: "#c9ced6", i: "#8f969e", e: "#c08a3a", E: "#8a5a22", q: "#e3a94f",
               b: "#7a4a22", B: "#4e2f16", y: GOLD, r: "#b5452e", c: "#efe6d6", d: "#c9bc9a", n: "#3b3236", o: "#e8742a", O: "#ffd27a" };
@@ -74,43 +74,38 @@ function kind(name, top, gap, fire) { return { name: name, frames: [man(top, STA
 
 /* the iron sword, as picked */
 const IRON = kind("iron sword", ["....s", "....s", ".kk.s", ".kwks", "kffiii", ".ffkk"], 6);
-/* bronze swords to choose from (q: bright bronze, E: its dark edge and hilt) */
+/* bronze, third round (q: bright bronze, E: its dark guard and edge, y: a gold pommel) */
 const BRONZE = [
-  kind("leaf blade", ["....q", "....qE", ".kk.qE", ".kwkq", "kffkE", ".ffkk"], 6),
-  kind("sickle sword", ["....q.", ".....q", ".kk..q", ".kwkqq", "kffkE", ".ffkk"], 6),
-  kind("thrust forward", [".kk....", ".kwk...", "kffkEqq", ".ffk..."], 6),
-  kind("raised high", [".....q", "....qE", ".kk.q", ".kwy", "kffk", ".ffk"], 6),
+  kind("iron's shape in bronze", ["....q", "....q", ".kk.q", ".kwkq", "kffEEE", ".ffkk"], 6),
+  kind("longer, gold pommel", ["....q", "....q", "....q", ".kk.q", ".kwkq", "kffEqE", ".ffky"], 6),
+  kind("held out at an angle", [".....q", "....q", ".kkq", ".kwE", "kffy", ".ffk"], 6),
+  kind("a bronze axe instead", ["....bq", "....bqq", ".kk.bq", ".kwkb", "kffkb", ".ffk."], 6),
 ];
-/* pikes to choose from (b: the ash shaft, s: the steel head) */
-const PIKES = [
-  kind("as before", ["....s", "....b", "....b", "....b", ".kk.b", ".kwkb", "kffkb", ".ffkb"], 5),
-  kind("broad head", ["....s", "...sss", "....s", "....b", "....b", ".kk.b", ".kwkb", "kffkb", ".ffkb"], 5),
-  kind("sloped forward", [".........s", "........b", ".......b", "......b", ".kk..b", ".kwkb", "kffk", ".ffk"], 4),
-  kind("levelled", [".kk.......", ".kwk......", "kffbbbbbbs", ".ffk......"], 4),
-];
-/* muskets to choose from (n: the dark barrel, B: the stock); all fire from the same levelled pose */
+/* pikes and muskets, as picked: sloped forward; shouldered with the stock down (n: the dark barrel,
+   B: the stock), firing from a levelled pose */
+const PIKE = kind("sloped forward", [".........s", "........b", ".......b", "......b", ".kk..b", ".kwkb", "kffk", ".ffk"], 4);
 const AIM = man([".kk.....", ".kwk....", "kffBnnnk", ".ffk...."]);
-const FIRE = { frame: AIM, muzzle: [8, 5] };
-const MUSKETS = [
-  kind("shouldered, stock down", ["....k", "....n", "....n", ".kk.n", ".kwkn", "kffkB", ".ffBB"], 5, FIRE),
-  kind("with a bayonet", ["....s", "....k", "....n", ".kk.n", ".kwkn", "kffkB", ".ffBB"], 5, FIRE),
-  kind("carried across", ["......k", ".....n", ".kk.n", ".kwB", "kffB", ".ffk"], 5, FIRE),
-  kind("always levelled", [".kk.....", ".kwk....", "kffBnnnk", ".ffk...."], 8, FIRE),
-];
+const MUSKET = kind("shouldered, stock down", ["....k", "....n", "....n", ".kk.n", ".kwkn", "kffkB", ".ffBB"], 5, { frame: AIM, muzzle: [8, 5] });
 
-/* standards, by age (as picked): the top of the pole (anchor: the pole's column) over the bearer */
-const BEARER = sprite(["k...", "kkk.", "kwk.", "kff.", "kk..", "k.k."]);
+/* standards, by age (as picked): the top of the pole (anchor: the pole's column) */
 const STANDARDS = [
   { sp: sprite(["e...e", "ee.ee", ".eye.", "..e..", "..k..", "..k.."]), at: 2 },          /* bronze: horned bull's head */
   { sp: sprite(["..y..", ".y.y.", "..k..", "kkkkk", ".fff.", ".fFf.", ".fff.", "..k..", "..k.."]), at: 2 },  /* iron: eagle over a hanging cloth */
   { sp: sprite(["kffff", "kfFff", "kFFFF", "kfFff", "kffff", "k...."]), at: 0 },           /* pikes: a large flag with a cross */
   { sp: sprite(["y.....", "kffFFf", "kfFFff", "kFFfff", "kffffF", "k....."]), at: 0 },     /* muskets: a regimental colour */
 ];
+/* the bearer: a soldier facing the enemy with the pole on his back side (column 0); two frames */
+const BEARER = [man(["k...", "kkk.", "kkwk", "kffk", "kff."], ["kkk..", "kk.k.", "k...k"]),
+                man(["k...", "kkk.", "kkwk", "kffk", "kff."], ["kkk..", "k.k..", "kkk.."])];
 const SMOKE = "rgba(232,226,214,";
 
-function standard(g, x, y, dir, st, over) {
-  blit(g, BEARER, x, y, dir, over);
-  blit(g, st.sp, dir < 0 ? x + st.at : x - st.at, y - BEARER.h, dir, over);
+/* the bearer and his standard; trail: the flag flies back over his head instead of forward */
+function standard(g, x, y, dir, st, over, step, trail) {
+  const b = BEARER[step];
+  blit(g, b, x, y, dir, over);
+  const sd = trail ? -dir : dir;
+  const sx = sd === dir ? (dir > 0 ? x - st.at : x + st.at) : (dir > 0 ? x + st.at + 1 : x - st.at - 1);
+  blit(g, st.sp, sx, y - b.h, sd, over);
 }
 /* a puff of musket smoke drifting off from (x, y), a (0-1) along its life */
 function puff(g, x, y, a, dir) {
@@ -123,13 +118,14 @@ function puff(g, x, y, a, dir) {
   }
 }
 
-/* three soldiers of a kind under a standard; (x, y) the bearer's feet. The men behind are drawn
-   first, so the man in front covers their weapons. Standing musketeers fire in turn. */
-function band(g, k, st, x, y, dir, t, over, walking) {
+/* three soldiers of a kind, the bearer with the standard marching behind them; (x, y) the
+   leader's feet, dir the way they face. Drawn back to front, so the men in front cover the weapons
+   of the men behind. Standing musketeers fire in turn. */
+function band(g, k, st, x, y, dir, t, over, walking, trail) {
   const step = walking ? Math.floor(t / 160) % 2 : 0;
-  standard(g, x + dir, y, dir, st, over);
+  standard(g, x - dir * (2 * k.gap + 6), y - 1, dir, st, over, (step + 1) % 2, trail);
   for (let i = 2; i >= 0; i--) {
-    const xi = x - dir * (5 + i * k.gap), yi = y - (i % 2);
+    const xi = x - dir * i * k.gap, yi = y - (i % 2);
     if (k.fire && !walking) {
       const a = ((t - i * 700) % 2100 + 2100) % 2100;       /* each man fires once every 2.1 s */
       if (a < 700) {
@@ -183,66 +179,52 @@ function wake(g, x, y, dir, t) {
 }
 
 /* ------------------------------------------------------------ panels */
-const COLS = [2, 31, 60, 89];                              /* each column's left edge */
-/* a panel of four kinds under one standard: realm a marching right, realm b standing facing left */
-function bandRows(g, t, kinds, st) {
-  for (let s = 0; s < 4; s++) {
-    band(g, kinds[s], st, COLS[s] + 21, 30, 1, t + s * 70, tab("a"), true);
-    band(g, kinds[s], st, COLS[s] + 8, 62, -1, t + s * 230, tab("b"), false);
-  }
+const COLS = [0, 37, 74, 111];                             /* each column's left edge */
+/* one column of a band panel: realm a marching right, realm b standing facing left */
+function rows(g, t, s, k, st, trail) {
+  band(g, k, st, COLS[s] + 26, 30, 1, t + s * 70, tab("a"), true, trail);
+  band(g, k, st, COLS[s] + 11, 62, -1, t + s * 230, tab("b"), false, trail);
 }
 function shipRows(g, t) {
   for (let s = 0; s < 4; s++) {
     const sp = SHIPS[s];
     [["a", 1, 30], ["b", -1, 62]].forEach(function (r, row) {
       const bob = Math.sin(t / 300 + s * 1.7 + row) > 0.4 ? 1 : 0, dir = r[1];
-      const x = dir > 0 ? COLS[s] + 13 - (sp.w >> 1) : COLS[s] + 13 + (sp.w >> 1), y = r[2];
+      const x = dir > 0 ? COLS[s] + 18 - (sp.w >> 1) : COLS[s] + 18 + (sp.w >> 1), y = r[2];
       wake(g, dir > 0 ? x - 1 : x + 1, y, dir, t + s * 50);
       blit(g, sp, x, y + bob, dir, tab(r[0]));
       animate(g, s, sp, x, y + bob, dir, t + s * 130);
     });
   }
 }
-/* the moving parts: the boat's oars stroke, the steam-ship smokes and its wheel turns */
+/* the moving parts: the boat's oars stroke, the steam-ship smokes */
 function animate(g, s, sp, x, y, dir, t) {
   const X = function (i) { return dir > 0 ? x + i : x - i - 1; };
   if (s === 0) {                                           /* oars: replace the bottom row */
     const row = OARS[Math.floor(t / 220) % 3].slice(0, sp.w);
     g.fillStyle = SEA[1]; for (let i = 0; i < sp.w; i++) g.fillRect(X(i), y - 1, 1, 1);
     g.fillStyle = INK; for (let i = 0; i < sp.w; i++) if (row[i] === "k") g.fillRect(X(i), y - 1, 1, 1);
-  } else if (s === 3) {                                    /* smoke from the funnel, a turning wheel */
+  } else if (s === 3) {                                    /* smoke from the funnel */
     for (let k = 0; k < 6; k++) {
       const a = (t / 1600 + k / 6) % 1;
       g.fillStyle = "rgba(70,62,58," + (0.8 * (1 - a)).toFixed(2) + ")";
       g.fillRect(X(6 - Math.round(a * 7)), Math.round(y - sp.h - 1 - a * 9), a > 0.4 ? 2 : 1, a > 0.4 ? 2 : 1);
     }
-    const f = Math.floor(t / 140) % 2;
-    g.fillStyle = PAL.c; g.fillRect(X(f ? 5 : 7), y - 3, 1, 1); g.fillRect(X(6), y - (f ? 2 : 4), 1, 1);
   }
 }
 
-const ABCD = function (kinds) { return kinds.map(function (k, j) { return "ABCD"[j] + ". " + k.name; }); };
 const SCENES = [
-  { group: "War bands", title: "1. Bronze swords", stages: ABCD(BRONZE), period: 4200,
-    note: "Under the bull's head. A: a leaf-shaped blade, widest near the tip, dark edge. B: a sickle sword. C: a short blade thrust forward. D: a leaf blade raised high, gold pommel.",
-    draw: function (g, t) { bandRows(g, t, BRONZE, STANDARDS[0]); } },
-  { title: "2. Pikes", stages: ABCD(PIKES), period: 4200,
-    note: "Under the flag with the cross. A: as in round one. B: taller, with a broad steel head. C: sloped forward, all pikes at one angle. D: levelled at the enemy, the men closer together.",
-    draw: function (g, t) { bandRows(g, t, PIKES, STANDARDS[2]); } },
-  { title: "3. Muskets", stages: ABCD(MUSKETS), period: 4200,
-    note: "Under the regimental colour; the standing row fires in turn, a flash and a puff of smoke, from the same levelled pose. A: shouldered, stock at the hip. B: the same with a bayonet. C: carried across the body. D: always levelled.",
-    draw: function (g, t) { bandRows(g, t, MUSKETS, STANDARDS[3]); } },
-  { title: "4. The four ages, for reference", stages: ["bronze (A)", "iron", "pikes (A)", "muskets (A)"], period: 4200,
-    note: "Every age with its standard: the first try of each new weapon, and the iron sword as picked.",
-    draw: function (g, t) {
-      const K = [BRONZE[0], IRON, PIKES[0], MUSKETS[0]];
-      for (let s = 0; s < 4; s++) {
-        band(g, K[s], STANDARDS[s], COLS[s] + 21, 30, 1, t + s * 70, tab("a"), true);
-        band(g, K[s], STANDARDS[s], COLS[s] + 8, 62, -1, t + s * 230, tab("b"), false);
-      }
-    } },
-  { group: "Ships", title: "5. The ships as picked", stages: ["oared boat", "sail", "galleon", "steam-ship"], period: 4200,
-    note: "The oared boat with stroking oars, the coloured sail, the galleon and the steam-ship with pale sails and the realm's stripe; all bob and leave a wake, the steam-ship smokes and turns its wheel.",
+  { group: "War bands", title: "1. Bronze, third try", stages: ["A. iron's shape", "B. longer", "C. at an angle", "D. an axe"], period: 4200,
+    note: "Under the bull's head. A: the iron sword you liked, cast in bronze, with a dark bronze guard. B: a longer blade, a gold pommel. C: held out at an angle. D: a bronze axe instead of a sword.",
+    draw: function (g, t) { for (let s = 0; s < 4; s++) rows(g, t, s, BRONZE[s], STANDARDS[0], true); } },
+  { title: "2. The four ages, flags trailing", stages: ["bronze (A)", "iron", "pikes", "muskets"], period: 4200,
+    note: "Your picks, with the bearer at the back facing the enemy. The flag flies back over his head, as it would on the march.",
+    draw: function (g, t) { const K = [BRONZE[0], IRON, PIKE, MUSKET]; for (let s = 0; s < 4; s++) rows(g, t, s, K[s], STANDARDS[s], true); } },
+  { title: "3. The four ages, flags forward", stages: ["bronze (A)", "iron", "pikes", "muskets"], period: 4200,
+    note: "The same with the standards exactly as in round one, flying forward over the men in front of the bearer.",
+    draw: function (g, t) { const K = [BRONZE[0], IRON, PIKE, MUSKET]; for (let s = 0; s < 4; s++) rows(g, t, s, K[s], STANDARDS[s], false); } },
+  { group: "Ships", title: "4. The ships as picked", stages: ["oared boat", "sail", "galleon", "steam-ship"], period: 4200,
+    note: "The oared boat with stroking oars, the coloured sail, the galleon and the steam-ship with pale sails and the realm's stripe; all bob and leave a wake; the steam-ship only smokes now.",
     draw: function (g, t) { shipRows(g, t); } },
 ];
 
@@ -250,7 +232,7 @@ const SCENES = [
 const out = document.getElementById("out");
 /* ?only=3 shows just the third panel, three times larger */
 const ONLY = /[?&]only=([0-9]+)/.exec(location.search);
-if (ONLY) document.head.insertAdjacentHTML("beforeend", "<style>canvas, .stages { width: 1080px; } canvas { height: 630px; } .stages { font-size: 18px; }</style>");
+if (ONLY) document.head.insertAdjacentHTML("beforeend", "<style>canvas, .stages { width: 1050px; } canvas { height: 490px; } .stages { font-size: 18px; }</style>");
 let grid = null;
 const panels = SCENES.map(function (sc, k) { return [sc, k]; }).filter(function (e) { return !ONLY || e[1] === +ONLY[1] - 1; }).map(function (e) {
   const sc = e[0];

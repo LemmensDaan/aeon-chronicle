@@ -1,5 +1,31 @@
 # Open questions for Daan
 
+## What was done overnight (2026-10-23/24), each committed and pushed
+
+| Commit | What |
+|---|---|
+| e210e50 | Animations on the history clock: pause freezes them; great moments slow history; follow a realm; ‹ › jump between great moments |
+| 209f473 | Diplomacy 2: wars end within ~10 years by peace (terms from a war score), then a 20-40 year truce; events dated to the month |
+| 163b88c | Diplomacy 3: allies answer calls to arms (or refuse), the threatened seek allies, coalitions against an overgrown realm |
+| c7a77e4 | Diplomacy 4: tribute is vassalage; small realms become vassals, absorbed decades later or breaking free |
+| 59d9289 | Diplomacy 5: a Diplomacy map mode, treaty lines in the tooltip, "Wars and treaties" on a realm's page |
+| d3a07e8 | Economy: income, upkeep, treasury and bankruptcy in talents / crowns; a Wealth statistics tab |
+| 39b9588 | Technology: 22 / 20 named discoveries by age that spread through contacts and strengthen realms |
+
+All of these change every history except the first. Checked on seeds 7, 42 and 3 of both packs (no
+errors; every map mode, realm and region page and statistics tab opened in headless Edge). Not
+checked in a real browser with playback running: the built-in browser refused localhost and file://
+while you were away, and headless Edge does not run animation frames, so the slow-down was tested by
+simulating the playback loop.
+
+24. **The chronicle got denser:** about 4,500-5,000 entries a historical history (was about 3,500),
+    from peaces, alliances, calls to arms, vassals, discoveries, bankruptcies and changes of type.
+    Trim (e.g. lower some to importance 1, or drop "call refused" and "lord defends")?
+    **(went with: as is)**
+25. **Realm counts at the end:** historical 10-13, fantasy 10-24 depending on the seed (fantasy has
+    fewer vassals). Fine, or should fantasy consolidate more? **(went with: as is)**
+
+
 Questions that came up while working through the night of 2026-10-23. I went ahead with the
 choice marked **(went with)** for each, so nothing is blocked; tell me where you want it different.
 

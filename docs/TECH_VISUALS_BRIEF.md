@@ -67,10 +67,13 @@ agreement and "Verification"), then this.
   bearer must march at the back of the band, facing the enemy (the map's `band()` puts him in front,
   facing backwards: fix that when wiring in).
 
+- **Round 3 (2026-10-24).** Bronze: A, the iron sword's shape in bronze with a dark guard. Flags
+  trailing behind the bearer (panel 2). Wired into the map (step 2 below is done).
+
 ## Suggested order
 
 1. The sample page of tech sprites (war bands by age or technology; ships by technology).
-2. After his picks: draw a realm's band and fleet by what it knew that year (`AEON.techsOf(world,
+2. **Done (2026-10-24).** After his picks: draw a realm's band and fleet by what it knew that year (`AEON.techsOf(world,
    p, year)` from the view's year).
 3. Lost knowledge in the engine (a technology held by few realms can die with them; rediscovery as
    for a first discovery), with chronicle entries.

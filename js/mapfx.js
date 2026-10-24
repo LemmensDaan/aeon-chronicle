@@ -156,7 +156,8 @@ function changes(w, y0, y1) {
       }
       const men = bands(w, y0, y1, g.to, g.from), m = origin != null && men ? MARCH : 0;
       out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), alt: flash, fx: { kind: "take", cells: g.cells, from: g.from, to: g.to, at: at, origin: origin, delay: delay,
-        march: m, dur: m + 3300, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color, nTo: men ? men[0] : 3, nFrom: men ? men[1] : 2 } });
+        march: m, dur: m + 3300, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color, nTo: men ? men[0] : 3, nFrom: men ? men[1] : 2,
+        lookTo: looksOf(w, tp, y1).band, lookFrom: looksOf(w, fp, y1).band } });
     }
   }
   for (const id in P) {
@@ -361,7 +362,7 @@ function sailings(w, y0, y1, out) {
       const sail = sailTime(lane);
       if (kind === "colony") {
         wait[target] = sail;
-        out.push({ prio: 6, who: [p.id], fx: { kind: kind, dur: sail + 1500, fleets: [{ path: lane, color: p.color, n: 1, segs: [[0, sail, 0, 1]] }], sail: sail, at: target } });
+        out.push({ prio: 6, who: [p.id], fx: { kind: kind, dur: sail + 1500, fleets: [{ path: lane, color: p.color, look: looksOf(w, p, y1), n: 1, segs: [[0, sail, 0, 1]] }], sail: sail, at: target } });
         continue;
       }
       if (kind === "invade") {
@@ -370,8 +371,8 @@ function sailings(w, y0, y1, out) {
         const second = sail * 0.6, landed2 = second + sail, inland = landed2 + 200;
         wait[target] = inland + INLAND;
         out.push({ prio: 6, who: [p.id, pol[1] && pol[1].id], fx: { kind: kind, dur: inland + INLAND + 600, sail: sail, landed2: landed2, inland: inland, at: target, fleets: [
-          { path: lane, color: p.color, n: 3, segs: [[0, sail, 0, 1]] },
-          { path: lane, color: p.color, n: 2, off: 14, segs: [[second, landed2, 0, 1]] }] } });
+          { path: lane, color: p.color, look: looksOf(w, p, y1), n: 3, segs: [[0, sail, 0, 1]] },
+          { path: lane, color: p.color, look: looksOf(w, p, y1), n: 2, off: 14, segs: [[second, landed2, 0, 1]] }] } });
         continue;
       }
       /* a raid: the defenders sail out from their nearest port, and the fleets meet in open water
@@ -383,10 +384,10 @@ function sailings(w, y0, y1, out) {
       if (alane && dlane && alane.length > 4 && dlane.length > 4) {
         const sa = Math.max(0.3, (alane.length - 4) / (alane.length - 1)), sd = Math.max(0.3, (dlane.length - 4) / (dlane.length - 1));
         out.push({ prio: 6, who: [p.id, q.id], fx: { kind: "battle", dur: 6000, loser: loser, fleets: [
-          { path: alane, color: p.color, n: 3, segs: [[0, 2000, 0, sa], [3900, 5800, sa, loser === 0 ? 0 : sa]] },
-          { path: dlane, color: q.color, n: 2, segs: [[0, 2000, 0, sd], [3900, 5800, sd, loser === 1 ? 0 : sd]] }] } });
+          { path: alane, color: p.color, look: looksOf(w, p, y1), n: 3, segs: [[0, 2000, 0, sa], [3900, 5800, sa, loser === 0 ? 0 : sa]] },
+          { path: dlane, color: q.color, look: looksOf(w, q, y1), n: 2, segs: [[0, 2000, 0, sd], [3900, 5800, sd, loser === 1 ? 0 : sd]] }] } });
       } else {
-        out.push({ prio: 5, who: [p.id, q && q.id], fx: { kind: "raid", dur: 5800, at: target, fleets: [{ path: lane, color: p.color, n: 3, segs: [[0, 2400, 0, 1], [3900, 5800, 1, 0]] }] } });
+        out.push({ prio: 5, who: [p.id, q && q.id], fx: { kind: "raid", dur: 5800, at: target, fleets: [{ path: lane, color: p.color, look: looksOf(w, p, y1), n: 3, segs: [[0, 2400, 0, 1], [3900, 5800, 1, 0]] }] } });
       }
     }
   }
@@ -544,19 +545,118 @@ function drawUnder(g, env, f, a) {
   if (f.kind === "split" && env.now - f.start < f.flick[1]) tear(g, env, f);
 }
 
-const SHIP = sprite(["....k....", "...kfk...", "..kfffk..", "..kfffk..", "...kfk...", "....k....", "kbbbbbbbk", ".kbbbbbk."], { k: INK, f: "#888", b: "#7a4a22" });
-const SOLDIER = sprite(["....s", ".kk.s", ".kwks", "kffks", ".ffk.", ".kk..", ".k.k.", "k...k"], { k: INK, w: "#e8c9a0", f: "#888", s: "#c9ced6" });
-const STEP = sprite(["....s", ".kk.s", ".kwks", "kffks", ".ffk.", ".kk..", "..k..", ".kk.."], SOLDIER.pal);
-const BANNER = sprite(["kfff", "kfff", "kff.", "k...", "kkk.", "kwk.", "kff.", "kk..", "k.k."], { k: INK, w: "#e8c9a0", f: "#888" });
-/* a few soldiers in their realm's tabards, walking (or standing) and facing dir (1 right, -1
-   left), led by a banner bearer; (x, y) is the leader's feet */
-function band(g, env, x, y, n, color, dir, t, walking, banner) {
+/* ------------------------------------------------------------ what a realm knows, on its soldiers and ships
+   (Daan's picks from samples/tech-sprites.html). The look is read from the named technologies the
+   realm knew that year (AEON.techsOf); pikes come with the fourth age once a realm has iron. */
+const LOOKS = {
+  historical: { bronze: "bronze", iron: "iron", gunpowder: "musket", sail: "sail", galleon: "galleon" },
+  fantasy: { smithing: "bronze", "star-iron": "iron", "black-powder": "musket", "sea-charts": "sail", galleons: "galleon", "steam-ships": "steam" },
+};
+const BAND_RANK = ["plain", "bronze", "iron", "pike", "musket"], SHIP_RANK = ["oared", "sail", "galleon", "steam"];
+const PIKE_AGE = 3;
+function ageAt(p, y) {
+  const al = p.ageLog || [];
+  let a = al.length ? al[0].age : 0;
+  for (const e of al) if (e.year <= y) a = e.age;
+  return a;
+}
+/* { band, ship }: how p's war bands and fleets look in year y */
+function looksOf(w, p, y) {
+  const L = LOOKS[w.packId] || {}, out = { band: "plain", ship: "oared" };
+  if (!p || !AEON.techsOf) return out;
+  for (const t of AEON.techsOf(w, p, y)) {
+    const look = L[t.id];
+    if (BAND_RANK.indexOf(look) > BAND_RANK.indexOf(out.band)) out.band = look;
+    if (SHIP_RANK.indexOf(look) > SHIP_RANK.indexOf(out.ship)) out.ship = look;
+  }
+  if (out.band === "iron" && ageAt(p, y) >= PIKE_AGE) out.band = "pike";
+  return out;
+}
+
+/* soldiers in their realm's tabards (f), two walking frames each; q bright bronze, E its dark guard,
+   n a musket's dark barrel, B its stock */
+const MAN_PAL = { k: INK, w: "#e8c9a0", f: "#888", F: "#555", s: "#c9ced6", i: "#8f969e", q: "#e3a94f", E: "#8a5a22", e: "#c08a3a",
+                  b: "#7a4a22", B: "#4e2f16", n: "#3b3236", y: GOLD };
+const STAND = [".kk..", ".k.k.", "k...k"], STRIDE = [".kk..", "..k..", ".kk.."];
+function man(top, legs) {
+  const rows = top.concat(legs || STAND), w = Math.max.apply(null, rows.map(function (r) { return r.length; }));
+  return sprite(rows.map(function (r) { return r + ".".repeat(w - r.length); }), MAN_PAL);
+}
+function kind(top, gap) { return { frames: [man(top, STAND), man(top, STRIDE)], gap: gap }; }
+const BANDS = {
+  plain: kind(["....s", ".kk.s", ".kwks", "kffks", ".ffk."], 5),                   /* the spear, before bronze */
+  bronze: kind(["....q", "....q", ".kk.q", ".kwkq", "kffEEE", ".ffkk"], 6),       /* the iron sword's shape, in bronze */
+  iron: kind(["....s", "....s", ".kk.s", ".kwks", "kffiii", ".ffkk"], 6),
+  pike: kind([".........s", "........b", ".......b", "......b", ".kk..b", ".kwkb", "kffk", ".ffk"], 4),   /* sloped forward */
+  musket: kind(["....k", "....n", "....n", ".kk.n", ".kwkn", "kffkB", ".ffBB"], 5),  /* shouldered, stock down */
+};
+/* a musketeer firing: the musket levelled, the muzzle 8 pixels on and 5 up from the feet */
+const AIM = man([".kk.....", ".kwk....", "kffBnnnk", ".ffk...."]);
+/* the bearer marches behind his band, facing the enemy, the pole on his back side (column 0) */
+const BEARER = [man(["k...", "kkk.", "kkwk", "kffk", "kff."], ["kkk..", "kk.k.", "k...k"]),
+                man(["k...", "kkk.", "kkwk", "kffk", "kff."], ["kkk..", "k.k..", "kkk.."])];
+/* the standard of the age over him (at: the pole's column); its flag trails behind as he marches */
+const STANDARDS = {
+  plain: { sp: sprite(["kfff", "kfff", "kff.", "k..."], MAN_PAL), at: 0 },
+  bronze: { sp: sprite(["e...e", "ee.ee", ".eye.", "..e..", "..k..", "..k.."], MAN_PAL), at: 2 },              /* a horned bull's head */
+  iron: { sp: sprite(["..y..", ".y.y.", "..k..", "kkkkk", ".fff.", ".fFf.", ".fff.", "..k..", "..k.."], MAN_PAL), at: 2 },  /* an eagle over a cloth */
+  pike: { sp: sprite(["kffff", "kfFff", "kFFFF", "kfFff", "kffff", "k...."], MAN_PAL), at: 0 },                 /* a flag with a cross */
+  musket: { sp: sprite(["y.....", "kffFFf", "kfFFff", "kFFfff", "kffffF", "k....."], MAN_PAL), at: 0 },         /* a regimental colour */
+};
+function shade(hex) {
+  const n = parseInt((hex || "#888888").slice(1), 16), d = function (v) { return Math.round(v * 0.55 + 42 * 0.45); };
+  return "rgb(" + d((n >> 16) & 255) + "," + d((n >> 8) & 255) + "," + d(n & 255) + ")";
+}
+/* a puff of musket smoke from (x, y), a (0-1) along its life */
+function puff(g, x, y, a) {
+  if (a < 0 || a >= 1) return;
+  if (a < 0.12) { px(g, x, y, "#ffd27a"); px(g, x + 1, y, "#e8742a"); }
+  g.fillStyle = "rgba(232,226,214," + (0.9 * (1 - a)).toFixed(2) + ")";
+  for (let k = 0; k < 5; k++) {
+    const r = 1 + a * 3;
+    g.fillRect(Math.round(x + 1 + a * 5 + (hash(k, 5) - 0.3) * r), Math.round(y - a * 3 + (hash(k, 6) - 0.5) * r), a > 0.4 ? 2 : 1, 1);
+  }
+}
+/* a few soldiers of a look in their realm's colour, walking (or standing) and facing dir (1 right,
+   -1 left), with a standard bearer behind them when banner is set; (x, y) is the leader's feet.
+   Standing musketeers fire in turn. */
+function band(g, env, x, y, n, color, dir, t, walking, banner, look) {
+  const K = BANDS[look] || BANDS.plain, over = { f: color || "#888", F: shade(color) }, step = walking ? Math.floor(t / 160) % 2 : 0;
   g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(env.u * dir, env.u);
-  const over = { f: color || "#888" }, step = walking ? Math.floor(t / 160) % 2 : 0;
-  if (banner) env.blit(g, BANNER, 1, -9, 1, over);
-  for (let i = 0; i < n; i++) env.blit(g, (step + i) % 2 ? STEP : SOLDIER, -5 - i * 5, -8 + (i % 2), 1, over);
+  if (banner) {
+    const st = STANDARDS[look] || STANDARDS.plain, b = BEARER[(step + 1) % 2], bx = -2 - (n - 1) * K.gap - 6;
+    env.blit(g, b, bx, -b.h - 1, 1, over);
+    g.save(); g.translate(2 * bx + 1, 0); g.scale(-1, 1);       /* the flag trails: mirrored about the pole */
+    env.blit(g, st.sp, bx - st.at, -b.h - 1 - st.sp.h, 1, over);
+    g.restore();
+  }
+  for (let i = n - 1; i >= 0; i--) {                           /* back to front: the leader on top */
+    const xi = -2 - i * K.gap, yi = i % 2;
+    if (look === "musket" && !walking) {
+      const a = ((t - i * 700) % 2100 + 2100) % 2100;           /* each man fires once every 2.1 s */
+      if (a < 700) { env.blit(g, AIM, xi, yi - AIM.h, 1, over); puff(g, xi + 8, yi - 5, a / 700); continue; }
+    }
+    const sp = K.frames[(step + i) % 2];
+    env.blit(g, sp, xi, yi - sp.h, 1, over);
+  }
   g.restore();
 }
+/* one soldier of a look, standing, feet at (x, y) in the current sprite frame */
+function soldier(g, env, look, x, y, over) { const sp = (BANDS[look] || BANDS.plain).frames[0]; env.blit(g, sp, x, y - sp.h, 1, over); }
+
+/* ships, bow to the right (f: the realm's colour): the oared boat (its oars stroke), the sail ship
+   with a coloured sail, the galleon and the steam-ship (it smokes) with pale sails and the realm's stripe */
+const SHIP_PAL = { k: INK, f: "#888", F: "#555", b: "#7a4a22", B: "#4e2f16", c: "#efe6d6", d: "#c9bc9a", i: "#8f969e", y: GOLD };
+const OARED = [".....k.......", ".....kff.....", ".....k.......", "k....k......k", "kb...k.....bk", "kbbbbbbbbbbbk", ".kbbbbbbbbbk.", "..kBkBkBkBk.."];
+const SHIPS = {
+  oared: [".k.k.k.k.k...", "..k.k.k.k.k..", "...k.k.k.k.k."].map(function (oars) { return sprite(OARED.concat([oars]), SHIP_PAL); }),
+  sail: [sprite(["......k......", "....kkkkk....", "...kfffffk...", "...kfFFffk...", "...kfffffk...", "....kkkkk....",
+                 "k.....k.....k", "kbbbbbbbbbbbk", ".kbbbbbbbbbk.", "..kkkkkkkkk.."], SHIP_PAL)],
+  galleon: [sprite(["....kff..kff...", "...kck..kck....", "...kcd..kcd....", "..kcccd.kcccd..", "..kccdd.kccdd..", "..kcccd.kcccd..",
+                    "kkk.k....k.....", "kbk.k....k...kk", "kbkkkkkkkkkkkk.", "kfffffffffffffk", ".kbbybbbybbbbk.", "..kkkkkkkkkkk.."], SHIP_PAL)],
+  steam: [sprite(["......kk......", "......ff......", "......kk......", "...kkkkkkkkk..", "...kccccccck..", "...kkkkkkkkk..",
+                  "kkkkk.kkk.kkkk", "kfffkiiikffffk", ".kbbkiiikbbbk.", "..kkkkkkkkkk.."], SHIP_PAL)],
+};
 const FLAG = sprite(["kff", "kff", "k..", "k..", "k.."], { k: INK, f: "#888" });
 /* the camp a landing party pitches at the water's edge: a standard and two tents */
 const CAMP = sprite(["kff.......", "kf....k...", "k....kck..", "k...kccdk.", "k..kcccddk", "kkkkkkkkkk"], { k: INK, f: "#888", c: "#ddd0aa", d: "#9a8a64" });
@@ -581,8 +681,22 @@ function shipsOf(env, fl, t) {
   }
   return out;
 }
+/* which way a ship's bow points on the screen: along its lane in the direction it sails, kept
+   while it lies still (fl.face, per ship) */
+function facing(env, fl, sh) {
+  const face = fl.face || (fl.face = {}), P = fl.path, VW = env.c.VW;
+  if (sh.moving) {
+    const a = P[sh.i], b = P[Math.max(0, Math.min(P.length - 1, sh.i + 2 * sh.dir))];
+    let dx = ((b[0] - a[0]) % VW + VW) % VW;
+    if (dx > VW / 2) dx -= VW;
+    if (dx) face[sh.k] = dx > 0 ? 1 : -1;
+  }
+  return face[sh.k] || 1;
+}
 function drawShip(g, env, fl, sh, t, sink) {
-  if (sink >= 9) return;
+  const kind = (fl.look && fl.look.ship) || "oared", frames = SHIPS[kind] || SHIPS.oared;
+  const sp = kind === "oared" && sh.moving ? frames[Math.floor((t + sh.k * 130) / 220) % 3] : frames[0];
+  if (sink >= sp.h) return;
   if (sh.moving) {                                         /* the wake, behind the ship */
     g.fillStyle = FOAM;
     for (let m = 2; m < 9; m += 2) if ((m / 2 + Math.floor(t / 150)) % 2) {
@@ -590,14 +704,20 @@ function drawShip(g, env, fl, sh, t, sink) {
       g.fillRect(Math.round(env.X0 + mx * env.P), Math.round(env.Y0 + q[1] * env.P + env.u), env.u, env.u);
     }
   }
-  const bob = Math.sin(t / 300 + sh.k * 1.7) > 0.4 ? 1 : 0;
+  const bob = Math.sin(t / 300 + sh.k * 1.7) > 0.4 ? 1 : 0, half = sp.w >> 1, top = 1 - sp.h + bob;
   frameAt(g, env, sh.x, sh.y, function () {
-    if (sink > 0) { g.save(); g.beginPath(); g.rect(-6, -10, 13, 12); g.clip(); }
-    env.blit(g, SHIP, -4, -7 + bob + Math.round(sink || 0), 1, { f: fl.color || "#888" });
+    g.scale(facing(env, fl, sh), 1);
+    if (sink > 0) { g.save(); g.beginPath(); g.rect(-half - 2, top - 4, sp.w + 4, sp.h + 5); g.clip(); }
+    env.blit(g, sp, -half, top + Math.round(sink || 0), 1, { f: fl.color || "#888", F: shade(fl.color) });
     if (sink > 0) g.restore();
+    if (kind === "steam" && !(sink > 0)) for (let k = 0; k < 6; k++) {   /* smoke from the funnel, drifting aft */
+      const a = ((t + sh.k * 300) / 1600 + k / 6) % 1;
+      g.fillStyle = "rgba(70,62,58," + (0.8 * (1 - a)).toFixed(2) + ")";
+      const s = a > 0.4 ? 2 : 1;
+      g.fillRect(6 - half - Math.round(a * 7), Math.round(top - 1 - a * 9), s, s);
+    }
   });
 }
-
 /* the sprite-pixel frame around a point on the screen: (0, 0) there, one unit per sprite pixel */
 function frameAt(g, env, x, y, draw) {
   g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(env.u, env.u); draw(); g.restore();
@@ -614,8 +734,8 @@ function drawOver(g, env, f, a) {
     const meet = [B[0] - dx * 2 * u, B[1] - dy * 2 * u], dir = dx >= 0 ? 1 : -1;
     if (f.march && t < f.march) {
       const q = ease(t / f.march), back = 26 * u * (1 - q) + 5 * u, d = 14 * u * (1 - ease((t - f.march * 0.3) / (f.march * 0.7))) + 5 * u;
-      band(g, env, meet[0] - dx * back, meet[1] - dy * back, f.nTo || 3, f.colTo, dir, t, true, true);
-      band(g, env, meet[0] + dx * d, meet[1] + dy * d, f.nFrom || 2, f.colFrom, -dir, t + 80, t > f.march * 0.3, false);
+      band(g, env, meet[0] - dx * back, meet[1] - dy * back, f.nTo || 3, f.colTo, dir, t, true, true, f.lookTo);
+      band(g, env, meet[0] + dx * d, meet[1] + dy * d, f.nFrom || 2, f.colFrom, -dir, t + 80, t > f.march * 0.3, false, f.lookFrom);
     } else if (t < f.march + 1000) {
       frameAt(g, env, meet[0], meet[1] - 3 * u, function () { brawl(g, t, 6); });
     }
@@ -723,25 +843,26 @@ function drawSea(g, env, f, a, t) {
     const sh = ships[0][0], r = R[f.at], tx = env.sx(r.x + 0.5), ty = env.sy(r.y + 0.5), q = ease((t - f.sail) / 900);
     const x = lerp(sh.x, tx, q), y = lerp(sh.y, ty, q);
     frameAt(g, env, x, y, function () {
-      env.blit(g, SOLDIER, -2, -8, 1, { f: f.fleets[0].color || "#888" });
-      if (f.kind === "invade") env.blit(g, SOLDIER, -7, -7, 1, { f: f.fleets[0].color || "#888" });
+      const look = f.fleets[0].look && f.fleets[0].look.band, over = { f: f.fleets[0].color || "#888" };
+      soldier(g, env, look, -2, 0, over);
+      if (f.kind === "invade") soldier(g, env, look, -7, 1, over);
     });
   }
   if (f.kind === "invade") {
-    const L = f.fleets[0].path, E = L[L.length - 1], S0 = L[Math.max(0, L.length - 7)], col = f.fleets[0].color || "#888";
+    const L = f.fleets[0].path, E = L[L.length - 1], S0 = L[Math.max(0, L.length - 7)], col = f.fleets[0].color || "#888", look = f.fleets[0].look && f.fleets[0].look.band;
     const ex = env.X0 + (((E[0] % env.c.VW) + env.c.VW) % env.c.VW) * env.P, ey = env.Y0 + E[1] * env.P;
     /* the camp on the beachhead, from the first landing to the end */
     if (t > f.sail + 400) frameAt(g, env, ex, ey, function () { env.blit(g, CAMP, -5, -6, 1, { f: col }); twinkle(g, -4, -8, (t - f.sail - 400) / 700); });
     /* the second wave steps off, then the band marches inland */
     if (t > f.landed2 && t < f.inland) {
       const sh = shipsOf(env, f.fleets[1], t)[0];
-      frameAt(g, env, lerp(sh.x, ex, ease((t - f.landed2) / 200)), lerp(sh.y, ey, ease((t - f.landed2) / 200)), function () { env.blit(g, SOLDIER, -2, -8, 1, { f: col }); });
+      frameAt(g, env, lerp(sh.x, ex, ease((t - f.landed2) / 200)), lerp(sh.y, ey, ease((t - f.landed2) / 200)), function () { soldier(g, env, look, -2, 0, { f: col }); });
     }
     if (t >= f.inland && t < f.inland + INLAND) {
       let dx = E[0] - S0[0], dy = E[1] - S0[1];
       const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
       const q = ease((t - f.inland) / INLAND), d = (4 + 20 * q) * env.u;
-      band(g, env, ex + dx * d, ey + dy * d, 3, col, dx >= 0 ? 1 : -1, t, true, true);
+      band(g, env, ex + dx * d, ey + dy * d, 3, col, dx >= 0 ? 1 : -1, t, true, true, look);
     }
   }
   if (f.kind === "colony" && t > f.sail + 600) {

@@ -306,8 +306,18 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   samples/animations.html round 2 are not wired in (Daan: not now).
 - **Diplomacy focus look (2026-10-24, Daan's pick):** the realm in focus is a pale cream wash (STANCE.self
   #f4ecd8) with its ordinary border and its province lines (a thick ink border was tried and dropped); the legend leads with a cream chip and its name.
-- **Next for another agent:** technology shown on the map, knowledge lost, old invention events tied
-  to the named technologies: see `docs/TECH_VISUALS_BRIEF.md`.
+- **Technology on the map (2026-10-24, view only, histories unchanged: checked historical and fantasy
+  seeds 7 and 42):** war bands and fleets look like what their realm knew that year (Daan's picks from
+  `samples/tech-sprites.html`, round 3). mapfx.js `looksOf(w, p, year)` reads `AEON.techsOf`
+  through a table per pack (`LOOKS`): band plain spear -> bronze sword (historical bronze, fantasy
+  smithing) -> iron sword (iron, star-iron) -> pike sloped forward (iron and the fourth age) -> musket
+  shouldered (gunpowder, black-powder); ship oared boat (stroking oars) -> sail (sail, sea-charts) ->
+  galleon (galleon, galleons) -> steam-ship, fantasy only, smoking (steam-ships). The standard bearer
+  now marches at the back of the band, facing the enemy, with the standard of the age (bull's head,
+  eagle, flag with a cross, regimental colour) trailing behind him; standing musketeers fire in turn.
+  Ships face the way they sail. Looks are read when the change is found (changes()), so a realm keeps
+  its look for the whole animation. Historical realms learn the sail early (age 0), so their oared
+  boat is rare. Next in `docs/TECH_VISUALS_BRIEF.md`: knowledge that can be lost, then the old events.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

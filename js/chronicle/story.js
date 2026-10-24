@@ -24,10 +24,10 @@ function storyParagraph(evs, from) {
   var p = h("p"), prev = null;
   evs.forEach(function (e, i) {
     var lead, gap = prev ? e.year - prev.year : 0;
-    if (!prev) lead = "In " + yr(e.year) + ", ";
+    if (!prev) lead = "In " + C.when(e) + ", ";
     else if (gap <= 10) lead = "Soon afterwards, ";
     else if (gap <= 300) lead = plural(gap, "year") + " later, ";
-    else lead = "In " + yr(e.year) + ", ";
+    else lead = "In " + C.when(e) + ", ";
     var text = String(e.text || ""), shown = LOWER_START.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
     var l = link("event", e.id, lead.replace(/,\s$/, ""));
     l.className += " ch-lead";

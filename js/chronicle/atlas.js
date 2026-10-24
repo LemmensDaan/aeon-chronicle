@@ -119,7 +119,7 @@ function runSearch(q) {
   for (var i = 0; i < w.chronicle.length; i++) {
     var e = w.chronicle[i], low = S.ix.low[e.id], ok = true;
     for (var j = 0; j < toks.length; j++) if (low.indexOf(toks[j]) < 0) { ok = false; break; }
-    if (ok) { total++; if (ev.length < 40) ev.push({ s: 0, kind: "event", id: e.id, title: yr(e.year), sub: e.text, hl: toks[0] }); }
+    if (ok) { total++; if (ev.length < 40) ev.push({ s: 0, kind: "event", id: e.id, title: C.when(e), sub: e.text, hl: toks[0] }); }
   }
   if (ev.length) groups.push({ label: "Chronicle text", items: ev, total: total });
   return groups;

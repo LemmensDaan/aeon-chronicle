@@ -386,7 +386,7 @@ function pageArtifact(id) {
       p.appendChild(linkified(e.text, e));
       var vb = h("div", "ch-verb");
       vb.appendChild(document.createTextNode(verbOf(e) + " · "));
-      vb.appendChild(link("event", e.id, yr(e.year)));
+      vb.appendChild(link("event", e.id, C.when(e)));
       add(li, vb, p);
       ol.appendChild(li);
     });
@@ -514,7 +514,7 @@ function pageEvent(id) {
   if (!e) return missing("event", id);
   var w = S.world, pg = h("div", "ch-page");
   var era = eraOf(e.year);
-  pg.appendChild(header("Chronicle entry · importance " + (e.importance || 1) + " of 5", yr(e.year), (era ? era.name : "") + (e.type ? " · " + e.type : "")));
+  pg.appendChild(header("Chronicle entry · importance " + (e.importance || 1) + " of 5", C.when(e), (era ? era.name : "") + (e.type ? " · " + e.type : "")));
   var q = h("blockquote", "ch-fate");
   q.appendChild(linkified(e.text, e));
   pg.appendChild(q);

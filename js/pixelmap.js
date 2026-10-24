@@ -17,7 +17,8 @@ const AEON = window.AEON = window.AEON || {};
 const PPC = 4;
 const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
 /* the diplomacy mode's colours: how each realm stands with the realm in focus (AEON.stancesAt) */
-const STANCE = { self: "#e0b84f", war: "#b5452e", lord: "#7a4f9a", vassal: "#3f8f8a", alliance: "#4f8a3a", truce: "#d49a3a", friend: "#a9c48a", none: "#a49a88" };
+/* (Daan, 2026-10-24: truce silver, trade gold; the realm in focus keeps its own colour) */
+const STANCE = { war: "#b5452e", lord: "#7a4f9a", vassal: "#3f8f8a", alliance: "#4f8a3a", truce: "#c9ced6", friend: "#e0b84f", none: "#a49a88" };
 AEON.stanceColors = STANCE;
 
 /* ------------------------------------------------------------ palette */
@@ -287,8 +288,8 @@ function elevRank(c, R) {
 /* contest (from mapfx.js), when given: regions changing hands, { rid: { from, to, phase } }. They
    keep the old owner's borders while their 2-pixel blocks, border pixels too (most such land is a
    single cell, which is mostly border), flicker between the two colours. */
-function compose(c, w, mode, roads, contest, focus) {
-  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0) + "|" + (mode === "diplomacy" ? focus : "");
+function compose(c, w, mode, roads, contest, focus, provOf) {
+  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0) + "|" + (mode === "diplomacy" ? focus : "") + "|" + (provOf || "");
   if (c.key === key && !contest) return c.frame;
   c.key = contest ? null : key;
   const VW = c.VW, VH = c.VH, R = w.regions, land = c.land, cellOf = c.cellOf;
@@ -341,7 +342,7 @@ function compose(c, w, mode, roads, contest, focus) {
     const colorOf = function (id) {
       if (cols[id]) return cols[id];
       const p = w.polities[id];
-      return (cols[id] = rgb(stance ? STANCE[stance[id] || "none"] : (p && p.color) || "#888888"));
+      return (cols[id] = rgb(stance && stance[id] !== "self" ? STANCE[stance[id] || "none"] : (p && p.color) || "#888888"));
     };
     const at = function (x, y, o) {
       if (y < 0 || y >= VH) return o;
@@ -355,6 +356,19 @@ function compose(c, w, mode, roads, contest, focus) {
       if (o == null && !ct) continue;
       const edge = o != null && (at(x + 1, y, o) !== o || at(x - 1, y, o) !== o || at(x, y + 1, o) !== o || at(x, y - 1, o) !== o);
       const edge2 = o != null && !edge && (at(x + 2, y, o) !== o || at(x - 2, y, o) !== o || at(x, y + 2, o) !== o || at(x, y - 2, o) !== o);
+      /* the provinces of the realm under the cursor: a one-pixel line where two of its provinces meet */
+      if (provOf != null && o === provOf && !(ct && ct.phase >= 0)) {
+        const pv = R[cellOf[i]].province, pr = function (x2, y2) {
+          if (y2 < 0 || y2 >= VH) return pv;
+          const j = y2 * VW + ((x2 + VW) % VW);
+          return land[j] && own[cellOf[j]] === o ? R[cellOf[j]].province : pv;
+        };
+        if (pr(x + 1, y) !== pv || pr(x, y + 1) !== pv) {
+          const cl = colorOf(o);
+          d[i * 4] = cl[0] * 0.45; d[i * 4 + 1] = cl[1] * 0.45; d[i * 4 + 2] = cl[2] * 0.45;
+          continue;
+        }
+      }
       const show = ct && ct.phase >= 0 && (((x >> 1) + (y >> 1) + ct.phase) & 1) ? ct.to : o;
       if (show == null) continue;
       const cl = colorOf(show);
@@ -548,7 +562,28 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   /* capitals first, the biggest realms' first, then cities, towns, villages; nothing is drawn
      on top of another marker, so where capitals crowd together only the greater ones show */
   sites.sort(function (a, b) { return b.rank - a.rank || a.r.id - b.r.id; });
+  /* wonders standing in the shown year: a small monument beside the cell, at every zoom; placed
+     right after the capitals (wonders stand in capitals, or in cities that once were), so no town
+     takes their room */
+  const placeWonders = function () {
+    if (!AEON.wonders) return;
+    const base = baseOf(w), year = w.year, seen = {};
+    for (const a of AEON.wonders(base)) {
+      if (a.location == null || a.created > year || (a.destroyed != null && a.destroyed <= year) || seen[a.location]) continue;
+      if (AEON.mapfx && AEON.mapfx.hides(a.id)) continue;      /* still rising: mapfx.js draws it */
+      seen[a.location] = true;
+      const r = R[a.location];
+      /* just right of a capital-sized marker on the same cell, standing on the same ground line */
+      const x = Math.round(sx(r.x + 0.5) + 5.5 * u), y = Math.round(sy(r.y + 0.5) + 3 * u - WONDER.h * u);
+      const b = [x - u, y - u, x + (WONDER.w + 1) * u, y + (WONDER.h + 1) * u];
+      if (!free(b)) continue;
+      boxes.push(b);
+      drawn.push(function (dx) { blit(ctx, WONDER, x + dx, y, u, null); });
+    }
+  };
+  let wondersPlaced = false;
   for (const st of sites) {
+    if (!wondersPlaced && st.rank < 1000) { placeWonders(); wondersPlaced = true; }
     /* a breakaway's new seat stays the town it was until mapfx.js has crowned it */
     const town = st.cap && AEON.mapfx && AEON.mapfx.asTown(st.r.id), tier = town ? (st.r.settlement ? st.r.settlement.tier : 2) : st.tier;
     const sp = st.cap && !town ? PALACE : tier >= 3 ? CITY : tier === 2 ? TOWN : VILLAGE;
@@ -577,22 +612,8 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
     }
   }
 
-  /* wonders standing in the shown year: a small monument beside the cell, from 2x zoom on */
-  if (pc >= 2 && AEON.wonders) {
-    const base = baseOf(w), year = w.year, seen = {};
-    for (const a of AEON.wonders(base)) {
-      if (a.location == null || a.created > year || (a.destroyed != null && a.destroyed <= year) || seen[a.location]) continue;
-      if (AEON.mapfx && AEON.mapfx.hides(a.id)) continue;      /* still rising: mapfx.js draws it */
-      seen[a.location] = true;
-      const r = R[a.location];
-      /* just right of a capital-sized marker on the same cell, standing on the same ground line */
-      const x = Math.round(sx(r.x + 0.5) + 5.5 * u), y = Math.round(sy(r.y + 0.5) + 3 * u - WONDER.h * u);
-      const b = [x - u, y - u, x + (WONDER.w + 1) * u, y + (WONDER.h + 1) * u];
-      if (!free(b)) continue;
-      boxes.push(b);
-      drawn.push(function (dx) { blit(ctx, WONDER, x + dx, y, u, null); });
-    }
-  }
+
+  if (!wondersPlaced) placeWonders();
 
   /* hover and selection: pixel corner brackets round the cell, with a drop shadow (as in the
      game project). The selection sits one pixel further out, so both show on the same cell. */
@@ -631,7 +652,7 @@ function draw(canvas, world, opts) {
   canvas._aeonView = v;
 
   const fxOn = AEON.mapfx && AEON.mapfx.live(), mode = opts.mode || "political";
-  const c = getCache(world), frame = compose(c, world, mode, !!opts.showRoads, fxOn && (mode === "political" || mode === "diplomacy") ? AEON.mapfx.contested() : null, opts.focus || null);
+  const c = getCache(world), frame = compose(c, world, mode, !!opts.showRoads, fxOn && (mode === "political" || mode === "diplomacy") ? AEON.mapfx.contested() : null, opts.focus || null, opts.provincesOf != null ? opts.provincesOf : null);
   ctx.fillStyle = DESK; ctx.fillRect(0, 0, pw, ph);
   const mw = c.VW * v.P, mh = c.VH * v.P;
   const X0 = Math.round(v.ox * v.dpr);

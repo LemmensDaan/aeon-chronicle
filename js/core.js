@@ -1119,7 +1119,30 @@ AEON.warScore = function (world, t) {
   }
   return raw / (Math.abs(raw) + 3);
 };
+/* a coalition's campaign: every tick each member at war with the giant fights a battle on their
+   border (if they share one), and a win takes one or two of the giant's provinces */
+function campaign(world) {
+  const rng = world.rng, R = world.regions;
+  for (const t of (world.treaties || []).filter(function (x) { return x.kind === "war" && x.coalition && x.end == null; })) {
+    const a = world.polities[t.a], H = world.polities[t.b];
+    if (!a || !H || a.ended || H.ended) continue;
+    const fr = [];
+    for (const rid of H.regions) if (R[rid].neighbors.some(function (n) { return R[n] && R[n].owner === a.id; })) fr.push(R[rid]);
+    if (!fr.length) continue;
+    /* each side's army is split over the wars it is fighting, as in the packs' battles */
+    let wa = 0, wh = 0;
+    for (const x of world.treaties) if (x.kind === "war" && x.end == null) { if (x.a === a.id || x.b === a.id) wa++; if (x.a === H.id || x.b === H.id) wh++; }
+    const site = rng.pick(fr), o = AEON.battle(world, a, H, { region: site.id, frontier: fr.length, shareA: 1 / Math.max(1, wa), shareD: 1 / Math.max(1, wh) });
+    if (!o.won) continue;
+    for (const r of AEON.oneEach(world, [site].concat(rng.shuffle(fr.filter(function (x) { return x !== site; }))), Math.min(2, o.take))) {
+      if (r.owner !== H.id || H.ended) continue;
+      AEON.remember(world, H, a, -0.15, "took " + (r.name || "a province"));
+      for (const x of AEON.provincePart(world, r, H.id)) transferRegion(world, x, a);
+    }
+  }
+}
 function warClock(world) {
+  campaign(world);
   const T = world.treaties || [], rng = world.rng;
   const open = T.filter(function (t) { return t.kind === "war" && t.end == null; });
   for (const t of open) {
@@ -1134,6 +1157,7 @@ function warClock(world) {
   }
 }
 function concludePeace(world, t, sc) {
+  t.score = Math.round(sc * 100) / 100;                  /* for the war's page: + favours side a */
   const a = world.polities[t.a], b = world.polities[t.b];
   const id = world.pack.peaceEvent || "peace-treaty";
   const def = (world.pack.events || []).filter(function (d) { return d.id === id; })[0];
@@ -1148,6 +1172,56 @@ function concludePeace(world, t, sc) {
     text: a.name + " and " + b.name.replace(/^The /, "the ") + " made peace." });
   if (t.end == null) AEON.endTreaty(world, t, "peace");
   AEON.makeTruce(world, a, b);
+  /* a giant that loses the war a coalition led against it breaks apart */
+  if (t.coalition && !t.joined && sc >= 0.25 && !b.ended) breakUp(world, b, a);
+}
+/* The far provinces of a beaten giant break away: about a third of its provinces, the ones farthest
+   from its capital, gathered round two or three of the farthest, each group a realm of its own
+   (heirs of the giant: successor or warlord states, core.js realm types), hostile to it. */
+function breakUp(world, H, victor) {
+  const R = world.regions, cap = R[H.capital], W = world.width;
+  const far = function (r) { let dx = Math.abs(r.x - cap.x); if (dx > W / 2) dx = W - dx; return dx * dx + (r.y - cap.y) * (r.y - cap.y); };
+  const provs = {};
+  for (const rid of H.regions) { const r = R[rid], k = r.province != null ? r.province : "r" + rid; (provs[k] || (provs[k] = [])).push(r); }
+  const list = Object.keys(provs).map(function (k) { const rs = provs[k]; return { rs: rs, d: far(rs[0]), at: rs[0] }; })
+    .filter(function (pv) { return pv.rs.every(function (r) { return r.id !== H.capital; }); })
+    .sort(function (x, y) { return y.d - x.d; });
+  const n = Math.floor(list.length / 3);
+  if (n < 2) return;
+  const lost = list.slice(0, n), seeds = [lost[0]];
+  for (const pv of lost) {
+    if (seeds.length >= Math.min(3, Math.ceil(n / 3))) break;
+    if (seeds.every(function (s2) { let dx = Math.abs(s2.at.x - pv.at.x); if (dx > W / 2) dx = W - dx; return dx * dx + (s2.at.y - pv.at.y) ** 2 > 400; })) seeds.push(pv);
+  }
+  const groups = seeds.map(function () { return []; });
+  for (const pv of lost) {
+    let best = 0, bd = Infinity;
+    seeds.forEach(function (s2, i) { let dx = Math.abs(s2.at.x - pv.at.x); if (dx > W / 2) dx = W - dx; const d = dx * dx + (s2.at.y - pv.at.y) ** 2; if (d < bd) { bd = d; best = i; } });
+    groups[best].push(pv);
+  }
+  const born = [];
+  let moved = 0;
+  for (const g of groups) {
+    const regs = [].concat.apply([], g.map(function (pv) { return pv.rs; })).filter(function (r) { return r.owner === H.id; });
+    if (!regs.length) continue;
+    regs.sort(function (x, y) { return ((y.settlement && y.settlement.tier) || 0) - ((x.settlement && x.settlement.tier) || 0); });
+    transferRegion(world, regs[0], null);
+    const np = spawnPolity(world, regs[0], H.archetypeId);
+    for (let i = 1; i < regs.length; i++) transferRegion(world, regs[i], np);
+    const share = regs.length / Math.max(1, H.regions.length + regs.length);
+    np.population = Math.max(600, Math.round(H.population * share));
+    H.population = Math.max(60, H.population - np.population);
+    np.tech = H.tech * 0.95;
+    np.relations[H.id] = H.relations[np.id] = -0.6;
+    moved += regs.length;
+    born.push(np);
+  }
+  if (!born.length) return;
+  H.traits.stability = clamp(H.traits.stability - 0.1, 0.02, 0.98);
+  recordEvent(world, "empire-breaks-up", { importance: 5, tags: ["coalition", "breakup", "territory", "split"],
+    actors: [{ kind: "polity", id: H.id }, { kind: "polity", id: victor.id }].concat(born.map(function (q) { return { kind: "polity", id: q.id }; })), regionId: H.capital,
+    text: "Beaten by the coalition that " + victor.name.replace(/^The /, "the ") + " had led against it, " + H.name.replace(/^The /, "the ") + " could no longer hold its far provinces: " +
+      born.map(function (q) { return q.name; }).join(", ").replace(/, ([^,]*)$/, " and $1") + " broke away as realms of their own, taking " + moved + " regions with them." });
 }
 /* a truce of 20-40 years after a war, unless one is already in force or a side has fallen */
 AEON.makeTruce = function (world, a, b) {
@@ -1361,18 +1435,13 @@ function vassalTick(world) {
 
 /* How every living realm stood with one realm (focus) in a year, for the diplomacy map: { id:
    stance } with "self", "war", "lord" (its overlord), "vassal", "alliance", "truce", "friend"
-   (trade or marriage) or nothing (neutral). With no focus: "war" for every realm at war that
-   year, "vassal" for every vassal. */
+   (trade or marriage) or nothing (neutral). With no focus every realm is neutral. */
 AEON.stancesAt = function (world, focusId, year) {
   const out = {}, RANK = { war: 6, lord: 5, vassal: 4, alliance: 3, truce: 2, friend: 1 };
+  if (focusId == null) return out;
   const put = function (id, st) { if (!out[id] || RANK[st] > RANK[out[id]]) out[id] = st; };
   for (const t of world.treaties || []) {
     if (t.start > year || (t.end != null && t.end <= year)) continue;
-    if (focusId == null) {
-      if (t.kind === "war") { put(t.a, "war"); put(t.b, "war"); }
-      else if (t.kind === "tribute") put(t.a, "vassal");
-      continue;
-    }
     if (t.a !== focusId && t.b !== focusId) continue;
     const o = t.a === focusId ? t.b : t.a;
     if (t.kind === "war") put(o, "war");
@@ -1383,6 +1452,17 @@ AEON.stancesAt = function (world, focusId, year) {
   }
   if (focusId != null) out[focusId] = "self";
   return out;
+};
+
+/* an event's date for reading: its season and year ("spring 1203 BC") from ev.date (dateTick), or
+   just the year of its tick for events made before dates existed; seasons from pack.seasons
+   (winter, spring, summer, autumn by default; months 12-2, 3-5, 6-8, 9-11) */
+AEON.dateLabel = function (world, ev) {
+  const pack = world.pack, label = function (y) { return pack.yearLabel ? pack.yearLabel(y) : String(y); };
+  if (!ev || ev.date == null) return ev ? label(ev.year) : "";
+  const y = Math.floor(ev.date), m = Math.floor((ev.date - y) * 12) % 12;
+  const S = pack.seasons || ["winter", "spring", "summer", "autumn"];
+  return S[m === 11 || m < 2 ? 0 : m < 5 ? 1 : m < 8 ? 2 : 3] + " " + label(y);
 };
 
 function endTreatiesOf(world, p) {

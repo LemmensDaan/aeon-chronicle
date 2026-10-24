@@ -269,6 +269,26 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   income for all of it (-4% a tick). Prosperity: capacity x (1 + 0.3 p), output per head x (1 +
   0.25 p). Realm page: Prosperity. Seed 7: prosperity 0.2-0.7 at the end; armyExtra mostly at its
   cap (surpluses are large; tune later).
+- **Daan's answers 2026-10-24 (QUESTIONS.md, then removed):** (8) a giant that loses a coalition war
+  breaks up; (14) diplomacy map: nothing coloured without a realm in focus, truce silver, trade gold;
+  (15) a page per war and an overview of wars; (22, 23) technology shown on the map, knowledge lost,
+  old invention events tied to the named ones: a brief for another agent (docs/TECH_VISUALS_BRIEF.md);
+  wonders were not drawn on the map; (28) province borders when a realm is hovered / selected; (7)
+  dates with seasons. Every other overnight choice stands as built.
+- **Map, dates, break-ups (2026-10-24):** diplomacy mode: `AEON.stancesAt` returns nothing without a
+  focus; STANCE truce #c9ced6 (silver), friend #e0b84f (gold); the realm in focus keeps its own
+  colour. Wonders: pixelmap places them right after the capitals (placeWonders) at every zoom (they
+  were only drawn from 2x zoom and lost their room to towns). Province outlines: compose(...,
+  provOf): a one-pixel line in the realm's darkened colour where two of its provinces meet, for the
+  realm under the cursor (else the selected land's; ui.js opts.provincesOf). Tooltip: "N regions in
+  M provinces". Dates: `AEON.dateLabel(world, ev)` ("spring 1203 BC", seasons from pack.seasons,
+  default winter / spring / summer / autumn), chronicle `C.when(e)` used in the story, timeline,
+  event pages, atlas search, graph labels and the export. Break-ups: `campaign()` (start of warClock)
+  fights one battle a tick for every open coalition war on the giant's border (armies split over
+  open wars), a win takes 1-2 provinces; `concludePeace` stores t.score; a leader's coalition war
+  ending at score >= 0.25 for the coalition calls `breakUp`: the giant's farthest third of
+  provinces (not its capital's) form 2-3 new realms (spawnPolity, hostile, its heirs), event
+  "empire-breaks-up" (importance 5). Historical seeds 7 / 42: 4 / 6 break-ups (seed 3: none); giants regrow.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

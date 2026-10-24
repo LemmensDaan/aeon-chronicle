@@ -364,6 +364,7 @@ const LEGENDS = {
   habitability: ["Habitability", "harsh", "kind"],
   elevation: ["Elevation", "coast", "peaks"],
 };
+function realmAt(rid) { const r = rid != null && shown().regions[rid]; return r && r.owner != null ? r.owner : null; }
 /* the realm the diplomacy map is about: the one under the cursor, else the selected land's, else
    the followed realm (null: none, and the map shows every war and vassal) */
 function diploFocus() {
@@ -382,10 +383,7 @@ function updateLegend() {
     if (f) {
       L.appendChild(el("b", { text: world.polities[f].name }));
       item("war", "at war"); item("alliance", "allied"); item("lord", "its lord"); item("vassal", "vassal"); item("truce", "truce"); item("friend", "trade, marriage");
-    } else {
-      L.appendChild(el("b", { text: "Point at a realm" }));
-      item("war", "at war"); item("vassal", "a vassal");
-    }
+    } else L.appendChild(el("b", { text: "Point at a realm to see how the others stand with it" }));
     L.classList.remove("hidden");
     return;
   }
@@ -410,6 +408,8 @@ function drawMap() {
     AEON.render.draw(dom.canvas, shown(), {
       mode: mapMode,
       focus: mapMode === "diplomacy" ? diploFocus() : null,
+      /* the provinces of the realm under the cursor (else the selected land's) are outlined */
+      provincesOf: realmAt(hoverRegion) || realmAt(selectedRegion),
       year: playbackYear,
       hoverRegion: hoverRegion,
       selectedRegion: selectedRegion,
@@ -704,9 +704,12 @@ function fillTip(view, r) {
     tipEl.appendChild(el("div", { class: "ae-tip-name" }, sw, el("span", { text: owner.name })));
     const f = AEON.rulerAt ? AEON.rulerAt(world, owner.id, year) : null;
     tipEl.appendChild(el("div", { text: f ? (f.title ? f.title + " " : "") + f.name + ", reigning" : "No ruler at present" }));
-    let provinces = 0;
-    for (const x of view.regions) if (x.owner === owner.id) provinces++;
-    const bits = [provinces + (provinces === 1 ? " province" : " provinces")];
+    /* its land that year: regions, and the provinces (core.js makeProvinces) they lie in */
+    let regions = 0;
+    const provs = {};
+    for (const x of view.regions) if (x.owner === owner.id) { regions++; if (x.province != null) provs[x.province] = true; }
+    const np = Object.keys(provs).length;
+    const bits = [regions + (regions === 1 ? " region" : " regions") + (np ? " in " + np + (np === 1 ? " province" : " provinces") : "")];
     if (live && owner.population) bits.unshift(owner.population.toLocaleString() + " people");
     const form = AEON.typeAt(world, owner, year), kind = form ? form.name : owner.archetypeName;
     bits.push((kind ? kind + ", " : "") + "since " + pack.yearLabel(owner.founded));
@@ -774,7 +777,7 @@ function exportChronicle() {
   for (const ev of world.chronicle) {
     if (ev.type === "era-change") { lines.push(""); lines.push("## " + ev.text); lines.push(""); continue; }
     const stars = ev.importance >= 4 ? "**" : "";
-    lines.push("- " + p.yearLabel(ev.year) + " — " + stars + ev.text + stars);
+    lines.push("- " + AEON.dateLabel(world, ev) + " — " + stars + ev.text + stars);
   }
   const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
   const a = document.createElement("a");

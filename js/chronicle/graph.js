@@ -120,7 +120,7 @@ function gBuild(focus, old) {
     var s = gSplit(k), e = ent(s.kind, s.id), men = s.kind === "event" ? (e.importance || 1) * 4 : (m[k] || 0);
     var n = {
       key: k, kind: s.kind, id: s.id, mentions: m[k] || 0, nb: [],
-      label: s.kind === "event" ? yr(e.year) + ": " + trunc(e.text, 40) : entName(s.kind, s.id),
+      label: s.kind === "event" ? C.when(e) + ": " + trunc(e.text, 40) : entName(s.kind, s.id),
       color: s.kind === "polity" ? safeColor(e.color) : null, dead: s.kind === "polity" && e.ended != null,
       r: G_BASE[s.kind] + Math.min(s.kind === "polity" ? 13 : 7, Math.sqrt(men) * 0.55),
       x: 0, y: 0, vx: 0, vy: 0, fx: null, fy: null, placed: false

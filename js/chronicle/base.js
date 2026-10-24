@@ -77,6 +77,8 @@ function getPack() {
   });
   return p;
 }
+/* an event's season and year (core.js AEON.dateLabel) */
+function when(e) { return AEON.dateLabel && S.world ? AEON.dateLabel(S.world, e) : yr(e.year); }
 function yr(y) {
   var p = getPack();
   if (p && typeof p.yearLabel === "function") { var s = call(function () { return p.yearLabel(y); }); if (s != null) return String(s); }
@@ -118,7 +120,7 @@ function entName(kind, id) {
   var e = ent(kind, id);
   if (!e) return "(unknown " + kind + ")";
   if (kind === "region" || kind === "settlement") return regionLabel(e);
-  if (kind === "event") return yr(e.year) + ": " + trunc(e.text, 60);
+  if (kind === "event") return when(e) + ": " + trunc(e.text, 60);
   return e.name || "(unnamed)";
 }
 function polityEnd(p) { return p.ended != null ? p.ended : S.world.year; }
@@ -344,7 +346,7 @@ function onRootClick(ev) {
 C.KIND_LABEL = KIND_LABEL; C.TIER = TIER; C.IMP_LABEL = IMP_LABEL; C.PAGE_STEP = PAGE_STEP; C.S = S;
 C.h = h; C.add = add; C.clear = clear; C.svg = svg; C.safeColor = safeColor; C.plural = plural;
 C.cap = cap; C.pct = pct; C.trunc = trunc; C.call = call; C.objVals = objVals; C.yr = yr; C.eras = eras;
-C.eraOf = eraOf; C.archetype = archetype; C.biomeName = biomeName; C.regionLabel = regionLabel;
+C.when = when; C.eraOf = eraOf; C.archetype = archetype; C.biomeName = biomeName; C.regionLabel = regionLabel;
 C.ent = ent; C.entName = entName; C.polityEnd = polityEnd; C.indexEvents = indexEvents;
 C.eventsOf = eventsOf; C.eventsOfRegion = eventsOfRegion; C.hasTag = hasTag; C.timeSpan = timeSpan;
 C.derived = derived; C.territory = territory; C.peakSize = peakSize; C.curEntry = curEntry;

@@ -53,7 +53,7 @@ function entryNode(ev, opts) {
   opts = opts || {};
   var imp = Math.max(1, Math.min(5, ev.importance || 1));
   var row = h("div", "ch-ev ch-i" + imp);
-  var y = link("event", ev.id, yr(ev.year));
+  var y = link("event", ev.id, C.when(ev));
   y.className = "ch-yr";
   var body = h("div", "ch-body"), p = h("p", "ch-txt");
   p.appendChild(linkified(ev.text, ev));

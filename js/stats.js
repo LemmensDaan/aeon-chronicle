@@ -239,36 +239,18 @@ function drawSwords(ctx, x, y, u) {
   for (const d of [[-1, 0], [1, 0], [0, -1], [0, 1]]) paint(d[0], d[1], INK);
   paint(0, 0, null);
 }
-/* a pennant on a pole, 10x12, with the age's number on it in the map's pixel font: a realm
-   entering a new age */
-const PENNANT = [
-  "poooooooo.",
-  "pfffffffo.",
-  "pfffffffo.",
-  "pfffffffo.",
-  "pffffffo..",
-  "pfffffffo.",
-  "pfffffffo.",
-  "pfffffffo.",
-  "poooooooo.",
-  "p.........",
-  "p.........",
-  "pp........",
-];
-const PENNANT_PAL = { p: INK, o: INK, f: "#e0b84f" };
-function drawPennant(ctx, x, y, u, n) {
-  ctx.globalAlpha = 0.45;
-  ctx.fillStyle = "#000";
-  for (let r = 0; r < 12; r++) for (let c = 0; c < 10; c++) if (PENNANT[r][c] !== ".") ctx.fillRect(x + (c + 1) * u, y + (r + 1) * u, u, u);
+/* a realm entering a new age: the map's laurels with the age's numeral (mapfx.js), on a small
+   gold-edged parchment plaque like the map's bubble, LAUREL_W x LAUREL_H; age counts from 0 */
+const LAUREL_W = 15, LAUREL_H = 12;
+function drawLaurels(ctx, x, y, u, age) {
+  ctx.globalAlpha = 0.45; ctx.fillStyle = "#000"; ctx.fillRect(x + u, y + u, LAUREL_W * u, LAUREL_H * u);
   ctx.globalAlpha = 1;
-  for (let r = 0; r < 12; r++) for (let c = 0; c < 10; c++) {
-    const ch = PENNANT[r][c];
-    if (ch === ".") continue;
-    ctx.fillStyle = PENNANT_PAL[ch];
-    ctx.fillRect(x + c * u, y + r * u, u, u);
-  }
-  if (AEON.pixelFont) AEON.pixelFont.draw(ctx, String(n % 10), x + 2 * u, y + u, INK, u);
+  ctx.fillStyle = "#e0b84f"; ctx.fillRect(x, y, LAUREL_W * u, LAUREL_H * u);
+  ctx.fillStyle = "#efe2bf"; ctx.fillRect(x + u, y + u, (LAUREL_W - 2) * u, (LAUREL_H - 2) * u);
+  const sp = AEON.mapfx && AEON.mapfx.laurels && AEON.mapfx.laurels(age);
+  if (sp && AEON.render && AEON.render.blit) AEON.render.blit(ctx, sp, x + ((LAUREL_W - sp.w) >> 1) * u, y + ((LAUREL_H - sp.h) >> 1) * u, u, null);
 }
+const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 /* a wonder raised (a gilded obelisk) and a wonder lost (its broken stump) */
 const OBELISK = ["...k...", "..kyk..", "..kwk..", "..kwk..", ".kwwwk.", ".kwwwk.", "kkkkkkk"];
 const STUMP = [".......", ".......", "..k....", "..kgk.k", "..kgkgk", ".kgggkg", "kkkkkkk"];
@@ -389,10 +371,10 @@ function build() {
   const ages = w.pack.ages;
   if (ages) {
     const k4 = h("span", "st-key"), pc = h("canvas");
-    pc.width = 24; pc.height = 28; pc.style.width = "24px"; pc.style.height = "28px";
-    drawPennant(pc.getContext("2d"), 1, 1, 2, 2);
+    pc.width = 2 * LAUREL_W + 4; pc.height = 2 * LAUREL_H + 4; pc.style.width = pc.width + "px"; pc.style.height = pc.height + "px";
+    drawLaurels(pc.getContext("2d"), 1, 1, 2, 1);
     k4.appendChild(pc);
-    k4.appendChild(h("span", null, "New age: " + ages.map(function (a, i) { return (i + 1) + " " + (a.short || a.name); }).join(" · ")));
+    k4.appendChild(h("span", null, "New age: " + ages.map(function (a, i) { return (ROMAN[i] || i + 1) + " " + (a.short || a.name); }).join(" · ")));
     keys.appendChild(k4);
   }
   if (S.data.wonderMarks.length) {
@@ -562,13 +544,13 @@ function markers(ctx, dpr, H) {
       if (t < 0 || t >= d.T) continue;
       const r = stackAt(t, H).rows[bi];
       if (!r || r.h < 4) continue;
-      /* the pole stands in the band's upper part; kept inside the chart at the top edge */
-      const x = Math.round(S.geo.xOf(t) * dpr - u / 2), y = Math.max(u, Math.round((r.y + r.h * 0.3) * dpr - 10 * u));
-      const box = [x - u, y - u, x + 11 * u, y + 13 * u];
+      /* the plaque sits over its year in the band's upper part; kept inside the chart at the top edge */
+      const x = Math.round(S.geo.xOf(t) * dpr - LAUREL_W * u / 2), y = Math.max(u, Math.round((r.y + r.h * 0.3) * dpr - LAUREL_H * u));
+      const box = [x - u, y - u, x + (LAUREL_W + 1) * u, y + (LAUREL_H + 1) * u];
       if (hit(box)) continue;
       boxes.push(box);
       ctx.globalAlpha = S.hoverBand != null && S.hoverBand !== bi ? 0.35 : 1;
-      drawPennant(ctx, x, y, u, e.age + 1);
+      drawLaurels(ctx, x, y, u, e.age);
       ctx.globalAlpha = 1;
       S.markers.push({ kind: "age", p: b.p, age: e.age, year: e.year, box: [box[0] / dpr, box[1] / dpr, box[2] / dpr, box[3] / dpr] });
     }
@@ -675,7 +657,7 @@ function tip(e, p) {
   if (S.hoverMarker && S.hoverMarker.kind === "age") {
     const m = S.hoverMarker, ages = S.world.pack.ages;
     el.appendChild(h("div", "ae-tip-name", m.p.name + " entered " + ages[m.age].name));
-    el.appendChild(h("div", null, pack.yearLabel(m.year) + " · age " + (m.age + 1) + " of " + ages.length));
+    el.appendChild(h("div", null, pack.yearLabel(m.year) + " · age " + (ROMAN[m.age] || m.age + 1) + " of " + (ROMAN[ages.length - 1] || ages.length)));
     el.appendChild(h("div", "dim", "Click to open the realm in the chronicle"));
   } else if (S.hoverMarker && S.hoverMarker.kind === "wonder") {
     const m = S.hoverMarker.m, owner = m.owner != null ? S.world.polities[m.owner] : null;

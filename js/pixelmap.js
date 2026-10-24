@@ -117,8 +117,36 @@ const PALACE = sprite([".......k.......", "......kyk......", ".....kfffk.....", 
                        ".kgkkgggggkkgk.", ".kgkkgwgwgkkgk.", "kkgkkgggggkkgkk", "kgggggkbkgggggk", "kkkkkkkkkkkkkkk"], ROOF);
 /* a realm colour, darkened for the shaded side of its banner */
 function darker(hex) { const c = rgb(hex || "#888888"); return "rgb(" + Math.round(c[0] * 0.62) + "," + Math.round(c[1] * 0.62) + "," + Math.round(c[2] * 0.62) + ")"; }
-/* a wonder: a gilded obelisk */
-const WONDER = sprite(["...k...", "..kyk..", "..kwk..", "..kwk..", ".kwwwk.", ".kwwwk.", "kkkkkkk"], { k: INK, y: "#e0b84f", w: "#efe6d6" });
+/* wonders: the designs of samples/animations.html (round 2 and the Greek / Roman set), in sand
+   stone (x lit, s shaded, t seams, n shadow), bronze (e), gold (y) and fire (o). Which one a wonder
+   gets is read from its name (wonderSprite), so the designs change no history. */
+const STONE = { k: INK, w: "#efe6d6", r: "#b5452e", b: "#7a4a22", y: "#e0b84f", o: "#e8742a", x: "#e3d3ad", s: "#b59d70", t: "#8a7a5a", n: "#4a3c2c", e: "#a87a3a" };
+const WONDERS = {
+  ziggurat: sprite(["....kyk....", "...kkkkk...", "...kxxsk...", "..kkkkkkk..", "..kxxxxsk..", ".kkkkkkkkk.", ".kxxkbkxsk.", "kkkkkkkkkkk"], STONE),
+  lighthouse: sprite(["..oyo..", ".koyok.", ".kkkkk.", "..kxk..", "..krk..", "..kxk..", "..krk..", ".kxxsk.", ".krrrk.", ".kxxsk.", "kxxbxsk", "kkkkkkk"], STONE),
+  hall: sprite(["......y......", "....kkkkk....", "...kxxxxsk...", "..kxxxxxssk..", ".kkkkkkkkkkk.", ".kxkxkxkxkxk.", ".kxkxkxkxkxk.", ".kxkxkbkxkxk.", "kkkkkkkkkkkkk"], STONE),
+  temple: sprite(["......kkkk......", "....kkxxxxkk....", "..kkxxxxxxxxkk..", ".kkkkkkkkkkkkkk.", ".kxxxxxxxxxxxxk.", ".kkkkkkkkkkkkkk.", ".xsnxsnxsnxsnxs.", ".xsnxsnxsnxsnxs.", ".xsnxsnxsnxsnxs.", ".xsnxsnxsnxsnxs.", "kkkkkkkkkkkkkkkk", "kxxxxxxxxxxxxxsk", "kkkkkkkkkkkkkkkk"], STONE),
+  colosseum: sprite(["..kkkkkkkkk....", ".kxkxkxkxkxk...", "kxxxxxxxxxxxkk.", "kxkxkxkxkxkxkxk", "kxxxxxxxxxxxxsk", "kxkxkxkxkxkxkxk", "kxxxxxxxxxxxxsk", "kkkkkkkkkkkkkkk"], STONE),
+  arch: sprite(["...kykyk...", "kkkkkkkkkkk", "kxxxxyxxxsk", "kkkkkkkkkkk", "kxxkkkkkxsk", "kxk.....ksk", "kxk.....ksk", "kxk.....ksk", "kxk.....ksk", "kkk.....kkk"], STONE),
+  colossus: sprite(["o......", "y.kyk..", "k.kek..", "kkkekk.", "..keek.", "..keek.", "..keek.", "..kekek", "..kekek", ".kkkkkk", ".kxxsk.", ".kxxsk.", "kkkkkkk"], STONE),
+  obelisk: sprite(["....k....", "...kyk...", "..kyyok..", "..kxxsk..", "..kxtsk..", "..kxxsk..", "..kxxsk..", "..ktxsk..", "..kxxsk..", "..kxxsk..", "..kxtsk..", "..kxxsk..", ".kkkkkkk.", ".kxxxxsk.", "kkkkkkkkk", "kxxxxxxsk", "kkkkkkkkk"], STONE),
+};
+/* the design for a wonder's name, first match wins; anything else is an obelisk */
+const WONDER_DESIGN = [
+  [/ziggurat|tomb|barrow|granary/i, "ziggurat"],
+  [/lighthouse|harbour|sea-wall/i, "lighthouse"],
+  [/colossus|giant/i, "colossus"],
+  [/hippodrome|walls|citadel|fortress|arsenal/i, "colosseum"],
+  [/arch|gate|aqueduct|bridge|processional/i, "arch"],
+  [/temple|colonnade|bourse|charterhouse/i, "temple"],
+  [/hall|basilica|cathedral|library|palace|observatory|orrery|gardens/i, "hall"],
+];
+function wonderSprite(a) {
+  const name = (a && a.name) || "";
+  for (const d of WONDER_DESIGN) if (d[0].test(name)) return WONDERS[d[1]];
+  return WONDERS.obelisk;
+}
+const WONDER = WONDERS.obelisk;
 
 /** A well-mixed value in [0,1) per cell id; salt gives independent values for the same cell. */
 function cellRand(id, salt) {
@@ -573,14 +601,14 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
       if (a.location == null || a.created > year || (a.destroyed != null && a.destroyed <= year) || seen[a.location]) continue;
       if (AEON.mapfx && AEON.mapfx.hides(a.id)) continue;      /* still rising: mapfx.js draws it */
       seen[a.location] = true;
-      const r = R[a.location];
+      const r = R[a.location], sp = wonderSprite(a);
       /* just right of the capital's palace on the same cell (clear of it: a marker never covers
          another), standing on the same ground line */
-      const x = Math.round(sx(r.x + 0.5) + (PALACE.w / 2 + 2) * u), y = Math.round(sy(r.y + 0.5) + 3 * u - WONDER.h * u);
-      const b = [x - u, y - u, x + (WONDER.w + 1) * u, y + (WONDER.h + 1) * u];
+      const x = Math.round(sx(r.x + 0.5) + (PALACE.w / 2 + 2) * u), y = Math.round(sy(r.y + 0.5) + 3 * u - sp.h * u);
+      const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
       if (!free(b)) continue;
       boxes.push(b);
-      drawn.push(function (dx) { blit(ctx, WONDER, x + dx, y, u, null); });
+      drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, null); });
     }
   };
   let wondersPlaced = false;
@@ -670,6 +698,7 @@ function draw(canvas, world, opts) {
     world: world, c: c, P: v.P, X0: X0, Y0: v.Y0, u: spriteUnit(v), pc: v.P / v.dpr, mode: opts.mode || "political",
     sx: function (gx) { return X0 + gx * cell; }, sy: function (gy) { return v.Y0 + gy * cell; },
     sprites: { VILLAGE: VILLAGE, TOWN: TOWN, CITY: CITY, PALACE: PALACE, WONDER: WONDER }, blit: blit,
+    wonderSprite: function (id) { return wonderSprite(baseOf(world).artifacts[id]); },
   };
   if (fx) fx.draw(ctx, env, "under");
   drawOverlay(ctx, world, c, v, opts, [X0]);
@@ -685,7 +714,7 @@ function hitTest(canvas, world, px, py, opts) {
   return gy * W + gx;
 }
 
-AEON.render = { draw: draw, modes: MODES, hitTest: hitTest, pixelScale: pixelScale, cacheOf: getCache };
+AEON.render = { draw: draw, modes: MODES, hitTest: hitTest, pixelScale: pixelScale, cacheOf: getCache, wonderSprite: wonderSprite, blit: blit };
 AEON.pixelFont = { draw: text, width: textWidth, fold: fold };
 
 })();

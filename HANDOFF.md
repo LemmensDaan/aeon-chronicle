@@ -302,8 +302,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   + 2 sprite pixels right (pixelmap placeWonders and the mapfx rise / fall animation alike). Harbours,
   lighthouses and sea-walls (historical WONDERS) and the fantasy harbour / lighthouse great works only
   in a capital on the open sea. Tooltip: "Wonder: <name>, raised <year>"; the "ruins" feature is not
-  listed under a standing settlement. Wonders still have one sprite (the obelisk); the designs of
-  samples/animations.html round 2 are not wired in (Daan: not now).
+  listed under a standing settlement. Wonder designs (2026-10-24, view only): pixelmap
+  `wonderSprite(a)` picks one of the eight samples/animations.html designs from the wonder's name
+  (WONDER_DESIGN regexes: ziggurat, lighthouse, colossus, colosseum, arch, Greek temple, domed hall;
+  anything else the tall obelisk); the map and the mapfx rise / fall use it. Statistics: ages are
+  the map's laurels with the numeral (I-V) on a gold-edged plaque (AEON.mapfx.laurels), not the
+  numbered pennant; the legend and tooltip use Roman numerals.
 - **Diplomacy focus look (2026-10-24, Daan's pick):** the realm in focus is a pale cream wash (STANCE.self
   #f4ecd8) with its ordinary border and its province lines (a thick ink border was tried and dropped); the legend leads with a cream chip and its name.
 - **Technology on the map (2026-10-24, view only, histories unchanged: checked historical and fantasy

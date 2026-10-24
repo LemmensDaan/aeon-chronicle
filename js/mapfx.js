@@ -775,7 +775,7 @@ function drawOver(g, env, f, a) {
   } else if (f.kind === "rise" || f.kind === "fall") {
     if (env.pc < 2) return;
     /* where the map draws a standing wonder: right of the cell's marker, on its ground line */
-    const r = R[f.at], W = S.WONDER, x = env.sx(r.x + 0.5) + (S.PALACE.w / 2 + 2) * env.u, y = env.sy(r.y + 0.5) + 3 * env.u;
+    const r = R[f.at], W = env.wonderSprite ? env.wonderSprite(f.id) : S.WONDER, x = env.sx(r.x + 0.5) + (S.PALACE.w / 2 + 2) * env.u, y = env.sy(r.y + 0.5) + 3 * env.u;
     frameAt(g, env, x, y, function () {
       if (f.kind === "rise") {
         const h = Math.round(W.h * ease(a / 0.7));
@@ -892,6 +892,6 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
+AEON.mapfx = { collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, laurels: function (age) { return LAURELS[Math.max(0, Math.min(4, age))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
 
 })();

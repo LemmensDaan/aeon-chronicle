@@ -260,6 +260,15 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   historical conquest: at war with a neighbour 1.3x weaker (might), a battle at the border; won: a
   realm of 1-2 provinces whole, else 2-3 provinces, then peace. Fantasy ends with 10-15 realms (seeds
   7, 42, 3, 11), was 10-24.
+- **Spending (2026-10-24, changes every history):** core.js `spend()` in economyTick, after the
+  balance is added and before the treasury is capped at 3 years: reserve 1 year's income (2.5 for a
+  realm at peace that could afford a wonder), the rest spent. At war or facing a stronger hostile
+  neighbour 70% army, 20% navy (if coastal), 10% prosperity; at peace army (0.15 + aggression x 0.5)
+  x 0.6, navy x 0.25, the rest prosperity. Soldiers 1 each (losses first, then p.armyExtra up to
+  +33% of the levy, -10% a tick), ships 10 each (p.navyExtra up to +50%), prosperity 80 years'
+  income for all of it (-4% a tick). Prosperity: capacity x (1 + 0.3 p), output per head x (1 +
+  0.25 p). Realm page: Prosperity. Seed 7: prosperity 0.2-0.7 at the end; armyExtra mostly at its
+  cap (surpluses are large; tune later).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

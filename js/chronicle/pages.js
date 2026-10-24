@@ -117,6 +117,7 @@ function pagePolity(id) {
     stat("Cities", (function () { var n = 0; (p.regions || []).forEach(function (rid) { var st = w.regions[rid].settlement; if (st && st.tier >= 3) n++; }); return n; })()),
     stat("Income", (forces.income || p.income || 0).toLocaleString("en") + " " + AEON.currency(w).many + " a year"),
     stat("Treasury", (forces.treasury != null ? forces.treasury : p.treasury || 0).toLocaleString("en") + " " + AEON.currency(w).many),
+    stat("Prosperity", pct(p.prosperity || 0) + "%"),
     stat("Army", forces.army.toLocaleString() + (forces.army === 1 ? " soldier" : " soldiers")),
     stat("Fleet", forces.navy.toLocaleString() + (forces.navy === 1 ? " ship" : " ships")),
     stat("Prestige", Math.round((p.prestige || 0) * 100) / 100));

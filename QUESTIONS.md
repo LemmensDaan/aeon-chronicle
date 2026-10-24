@@ -136,3 +136,17 @@ choice marked **(went with)** for each, so nothing is blocked; tell me where you
 23. **The old flavour events** (historical "invention", "printing-press", "gunpowder-adopted"; fantasy
     schools) still fire on their own and are not tied to the named technologies. Tie them together?
     **(went with: left as they are)**
+
+## Asked 2026-10-24 (morning), done the same day
+
+26. **Spending:** a realm keeps a reserve (1 year's income, 2.5 for a rich one at peace so it can afford
+    a wonder) and spends the rest: at war mostly on soldiers (1 talent each to raise, up to a third
+    above its levy) and ships (10 each); at peace mostly on prosperity (80 years' income buys all of
+    it), which feeds up to 30% more people and makes each earn up to 25% more, wearing away 4% a
+    step. Surpluses are large, so most realms keep their bought third of extra soldiers. Make
+    soldiers dearer, or let peaceful realms buy fewer? **(went with: as is)**
+27. **Camera:** while a great moment holds the year the map zooms in (to 3 device pixels a map
+    pixel) and glides to it; the ◎ button turns it off. On by default. Zoom back out afterwards?
+    **(went with: stays zoomed in)**
+28. **Provinces** are not drawn on the map. Show faint province borders (or a provinces map mode),
+    and name them in the tooltip? **(went with: not drawn)**

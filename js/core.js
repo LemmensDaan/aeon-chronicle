@@ -282,7 +282,7 @@ function capacity(world, polity) {
   for (const r of regionsOf(world, polity)) {
     cap += r.habitability * 9000 * (1 + polity.tech * 2.2);
   }
-  return Math.max(500, cap * techFactor(world, polity, "growth"));
+  return Math.max(500, cap * techFactor(world, polity, "growth") * (1 + 0.3 * (polity.prosperity || 0)));
 }
 
 function recordEvent(world, type, payload) {
@@ -1424,11 +1424,11 @@ function driftRelations(world, alive) {
    of its land), its ports (by the size of the town), its trade (each trade treaty adds a twentieth
    of what its people make, at most four), and its vassals' tribute (each pays its lord 15% of its
    income). Upkeep: 0.05 a soldier and 0.8 a ship a year, half again while at war. The balance goes
-   into the treasury every tick (which holds at most three years' income: the rest is spent on the
-   court and its building). A realm may run into debt up to twice its income; beyond that it cannot pay its soldiers:
+   into the treasury every tick; what is left after spending (spend()) is capped at three years'
+   income (the rest goes on the court). A realm may run into debt up to twice its income; beyond that it cannot pay its soldiers:
    a third of its army leaves, its stability falls and its debts are written down. The treasury
    colours p.wealth (0..1, which the packs read): a full one adds up to 0.15, debt takes up to 0.15
-   away. Income, upkeep and treasury are logged with the size history. */
+   away. What is above a reserve is spent (see spend()). Income, upkeep and treasury are logged with the size history. */
 /* ------------------------------------------------------------ technologies --
    Named discoveries (pack.technologies: { id, name, age, needs: [ids], effects: { army, navy,
    growth, wealth }, verb }). A realm can take up one once it has reached the technology's age and
@@ -1505,7 +1505,7 @@ AEON.currency = function (world) { return world.pack.currency || { one: "talent"
 function economyTick(world, alive) {
   const live = alive.filter(function (p) { return !p.ended; }), base = {}, make = {}, trade = {}, paid = {}, war = {};
   for (const p of live) {
-    const people = p.population * 0.0015 * (0.4 + p.tech) * techFactor(world, p, "wealth");
+    const people = p.population * 0.0015 * (0.4 + p.tech) * techFactor(world, p, "wealth") * (1 + 0.25 * (p.prosperity || 0));
     let land = 0, ports = 0;
     for (const id of p.regions) {
       const r = world.regions[id];
@@ -1530,7 +1530,7 @@ function economyTick(world, alive) {
     const income = Math.max(1, Math.round(base[p.id] + (trade[p.id] || 0) + (paid[p.id] || 0)));
     const upkeep = Math.round(((p.army || 0) * 0.05 + (p.navy || 0) * 0.8) * (war[p.id] ? 1.5 : 1));
     p.income = income; p.upkeep = upkeep; p.trade = Math.round(trade[p.id] || 0); p.tributeNet = Math.round(paid[p.id] || 0);
-    p.treasury = Math.min(income * 3, Math.round((p.treasury || 0) + (income - upkeep) * world.timeStep));
+    p.treasury = Math.round((p.treasury || 0) + (income - upkeep) * world.timeStep);
     if (p.treasury < -2 * income) {
       p.armyDebt = (p.armyDebt || 0) + fullArmy(world, p) * 0.33;
       p.traits.stability = clamp(p.traits.stability - 0.08, 0.02, 0.98);
@@ -1543,8 +1543,49 @@ function economyTick(world, alive) {
       }
       p.bankrupt = world.year;
     }
+    spend(world, p, !!war[p.id]);
+    p.treasury = Math.min(income * 3, p.treasury);
     p.wealth = clamp(p.wealth + clamp(p.treasury / (income * 3), -1, 1) * 0.15, 0, 1);
   }
+}
+/* What a realm does with its money: it keeps a reserve (a year's income; two and a half years for a
+   realm at peace rich enough to raise a wonder, see AEON.canBuildWonder) and spends the rest. At war
+   or facing a stronger, hostile neighbour mostly on soldiers (first making good its losses, then
+   enlisting more, up to a third above its levy) and on ships if it has a coast; at peace mostly on
+   prosperity (p.prosperity, 0..1; eighty years' income buys all of it): roads, granaries, harbours,
+   schools, which let its land feed more people (+30% at full) and make each of them earn more
+   (+25%). Soldiers cost 1 each to raise, ships 10. Prosperity wears away (4% a tick) and bought soldiers and ships go home again (10% a tick), so they must be paid for again. */
+function spend(world, p, atWar) {
+  p.armyExtra = (p.armyExtra || 0) * 0.9; p.navyExtra = (p.navyExtra || 0) * 0.9;
+  p.prosperity = (p.prosperity || 0) * 0.96;
+  const income = p.income || 1;
+  let threat = atWar;
+  if (!threat) {
+    const me = AEON.fieldArmy(world, p);
+    for (const q of neighborPolities(world, p)) if ((p.relations[q.id] || 0) < -0.3 && AEON.fieldArmy(world, q) > me * 1.2) { threat = true; break; }
+  }
+  const rich = !threat && AEON.canBuildWonder(world, Object.assign({}, p, { treasury: Infinity }));
+  const reserve = income * (rich ? 2.5 : 1), budget = (p.treasury || 0) - reserve;
+  if (budget <= 0) return;
+  let coast = 0;
+  for (const id of p.regions) if (onSea(world, world.regions[id])) { coast = 1; break; }
+  const t = p.traits, warlike = 0.15 + t.aggression * 0.5;
+  const toArmy = threat ? 0.7 : warlike * 0.6, toNavy = coast ? (threat ? 0.2 : warlike * 0.25) : 0, toLand = Math.max(0, 1 - toArmy - toNavy);
+  /* soldiers: 1 a man to raise and arm (twenty years' pay); losses first */
+  let men = budget * toArmy / 1;
+  const healed = Math.min(p.armyDebt || 0, men);
+  p.armyDebt = (p.armyDebt || 0) - healed; men -= healed;
+  const full = fullArmy(world, Object.assign({}, p, { armyExtra: 0 }));
+  if (full > 0) p.armyExtra = Math.min(0.33, (p.armyExtra || 0) + men / full);
+  /* ships: 10 a hull */
+  let ships = budget * toNavy / 10;
+  const mended = Math.min(p.navyDebt || 0, ships);
+  p.navyDebt = (p.navyDebt || 0) - mended; ships -= mended;
+  const fleet = fullNavy(world, Object.assign({}, p, { navyExtra: 0 }));
+  if (fleet > 0) p.navyExtra = Math.min(0.5, (p.navyExtra || 0) + ships / fleet);
+  /* prosperity: eighty years' income buys the whole of it */
+  p.prosperity = Math.min(1, (p.prosperity || 0) + budget * toLand / (income * 80));
+  p.treasury = Math.round(reserve);
 }
 
 /* How a realm's people spread over its land: by habitability, and far more thickly where there is a
@@ -1593,7 +1634,7 @@ function fullArmy(world, p) {
   const weary = world.pack.warWeariness ? clamp(world.pack.warWeariness(world, p) || 0, 0, 1) : 0;
   const readiness = (0.6 + t.stability * 0.5) * (p.ruler ? 1 : 0.85) * (1 - weary * 0.4);
   const k = typeOf(world, p) || {};
-  return p.population * 0.012 * (a.army == null ? 1 : a.army) * (k.army == null ? 1 : k.army) * (0.7 + t.aggression * 0.6) * readiness;
+  return p.population * 0.012 * (a.army == null ? 1 : a.army) * (k.army == null ? 1 : k.army) * (0.7 + t.aggression * 0.6) * readiness * (1 + (p.armyExtra || 0));
 }
 function fullNavy(world, p) {
   const a = archetypeOf(world, p) || {}, k = typeOf(world, p) || {};
@@ -1604,7 +1645,7 @@ function fullNavy(world, p) {
     if (r.settlement) hulls += Math.min(4, r.settlement.tier) + (id === p.capital ? 2 : 0);
     else hulls += 0.25;                                  /* fishing boats along an open shore */
   }
-  return hulls * 5 * (0.4 + p.wealth) * (0.5 + p.tech) * (a.navy == null ? 1 : a.navy) * (k.navy == null ? 1 : k.navy);
+  return hulls * 5 * (0.4 + p.wealth) * (0.5 + p.tech) * (a.navy == null ? 1 : a.navy) * (k.navy == null ? 1 : k.navy) * (1 + (p.navyExtra || 0));
 }
 /* what a realm can put in the field and at sea now: never below a tenth of its full strength */
 AEON.armyOf = function (world, p) { const f = fullArmy(world, p); return Math.round(Math.max(f * 0.1, f - (p.armyDebt || 0))); };

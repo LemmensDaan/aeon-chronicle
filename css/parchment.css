@@ -94,6 +94,7 @@ html, body { font-family: var(--ae-serif); }
 .ae-legend b { color: var(--pp-ink); font-weight: 600; margin-right: 3px; }
 .ae-legend-ramp { display: flex; outline: 1px solid var(--pp-ink); }
 .ae-legend-ramp i { width: 12px; height: 10px; display: block; }
+.ae-legend-chip { width: 10px; height: 10px; display: inline-block; outline: 1px solid var(--pp-ink); margin-left: 6px; }
 .ae-overlay.on::before { background: var(--pp-ribbon); box-shadow: inset 0 0 0 1px #f3e4c4; }
 /* the bookmark hangs from the top edge of the strip, just right of the selected tab's name;
    every tab keeps room on its right for it, so switching tabs doesn't shift the row */

@@ -251,6 +251,44 @@ function pagePolity(id) {
     s.appendChild(rul);
   }
 
+  /* every treaty it made, newest first: wars with their length and how they ended, and the
+     chronicle entries that began and ended them */
+  var all = AEON.treatiesOf ? AEON.treatiesOf(w, p, null).filter(function (t) { return t.start <= w.year; }) : [];
+  if (all.length) {
+    s = section(pg, "Wars and treaties");
+    var KIND = { war: "War", truce: "Truce", alliance: "Alliance", trade: "Trade", marriage: "Marriage", peace: "Peace" };
+    var tl = h("ul", "ch-ul");
+    all.slice().reverse().slice(0, 40).forEach(function (t) {
+      var oid = t.a === p.id ? t.b : t.a, li = h("li");
+      var kind = t.kind === "tribute" ? (t.a === p.id ? "Vassal of" : "Lord of") : (KIND[t.kind] || t.kind) + (t.kind === "war" || t.kind === "truce" ? " with" : t.kind === "trade" || t.kind === "marriage" ? " with" : " with");
+      add(li, h("b", null, kind + " "));
+      if (w.polities[oid]) li.appendChild(link("polity", oid));
+      var bits = [];
+      if (t.name) bits.push(t.name);
+      var to = t.end != null && t.end <= w.year ? t.end : null;
+      /* by the dates of the events that made and ended it, where known */
+      var y0 = t.startDate != null ? Math.floor(t.startDate) : t.start, y1 = to != null && t.endDate != null ? Math.floor(t.endDate) : to;
+      bits.push(yr(y0) + (to != null ? (y1 !== y0 ? " – " + yr(y1) : "") : " – present"));
+      if (t.kind === "war" && t.years != null) bits.push(t.years < 1 ? "a single season" : Math.round(t.years) + (Math.round(t.years) === 1 ? " year" : " years"));
+      if (t.joined && !t.levy) bits.push("joined as an ally");
+      if (t.levy) bits.push("as a vassal's levy");
+      if (t.coalition) bits.push("in a coalition");
+      if (to != null && t.ended) bits.push({ peace: "ended in peace", fall: "ended with a fall", lapsed: "lapsed", revolt: "ended in revolt", broken: "broken", betrayed: "betrayed", refused: "broken by a refusal", estranged: "lapsed in ill will", war: "ended by war", "new lord": "a new lord" }[t.ended] || t.ended);
+      li.appendChild(document.createTextNode(" — " + bits.join(", ")));
+      var C = w.chronicle, e0 = t.ev != null && C[t.ev] && C[t.ev].year === t.start ? C[t.ev] : null, e1 = t.endEv != null && C[t.endEv] && C[t.endEv].year === t.end ? C[t.endEv] : null;
+      if (e0 || e1) {
+        var d = h("div", "ch-lead");
+        if (e0) d.appendChild(link("event", e0.id, "how it began"));
+        if (e0 && e1) d.appendChild(document.createTextNode(" · "));
+        if (e1) d.appendChild(link("event", e1.id, "how it ended"));
+        li.appendChild(d);
+      }
+      tl.appendChild(li);
+    });
+    if (all.length > 40) tl.appendChild(h("li", "ch-lead", (all.length - 40) + " older treaties are not listed."));
+    s.appendChild(tl);
+  }
+
   s = section(pg, "In the chronicle");
   var evs = sorted(eventsOf("polity", id));
   s.appendChild(h("p", "ch-sub", plural(evs.length, "entry", "entries")));

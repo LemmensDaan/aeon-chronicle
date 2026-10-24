@@ -59,3 +59,14 @@ choice marked **(went with)** for each, so nothing is blocked; tell me where you
 13. **Fantasy has few vassals and ends with 19-21 realms** in two of four seeds (historical 10). Its
     fealty event fires less often than historical absorb-minor. Push fantasy consolidation harder?
     **(went with: as is)**
+
+## Diplomacy: on the map and in the encyclopedia
+
+14. **Diplomacy map mode:** colours every realm by how it stands with the realm under the cursor (else
+    the selected land's realm, else the followed one): at war red, allied green, its lord purple, its
+    vassals teal, truce amber, trade or marriage pale green, the rest a neutral parchment. With no realm
+    in focus it shows every realm at war and every vassal. The colours are new, not from a sample. Want
+    a sample round for them first? **(went with: these colours)**
+15. **"Wars and treaties" on a realm's page** (newest first, at most 40, with links to the entries that
+    began and ended each) instead of a page per war. A real war page (sides, battles, score, terms)
+    would need a new kind of encyclopedia entry; worth it? **(went with: the list, no war pages yet)**

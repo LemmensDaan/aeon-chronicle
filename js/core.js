@@ -1301,6 +1301,32 @@ function vassalTick(world) {
   }
 }
 
+/* How every living realm stood with one realm (focus) in a year, for the diplomacy map: { id:
+   stance } with "self", "war", "lord" (its overlord), "vassal", "alliance", "truce", "friend"
+   (trade or marriage) or nothing (neutral). With no focus: "war" for every realm at war that
+   year, "vassal" for every vassal. */
+AEON.stancesAt = function (world, focusId, year) {
+  const out = {}, RANK = { war: 6, lord: 5, vassal: 4, alliance: 3, truce: 2, friend: 1 };
+  const put = function (id, st) { if (!out[id] || RANK[st] > RANK[out[id]]) out[id] = st; };
+  for (const t of world.treaties || []) {
+    if (t.start > year || (t.end != null && t.end <= year)) continue;
+    if (focusId == null) {
+      if (t.kind === "war") { put(t.a, "war"); put(t.b, "war"); }
+      else if (t.kind === "tribute") put(t.a, "vassal");
+      continue;
+    }
+    if (t.a !== focusId && t.b !== focusId) continue;
+    const o = t.a === focusId ? t.b : t.a;
+    if (t.kind === "war") put(o, "war");
+    else if (t.kind === "tribute") put(o, t.a === focusId ? "lord" : "vassal");
+    else if (t.kind === "alliance") put(o, "alliance");
+    else if (t.kind === "truce") put(o, "truce");
+    else if (t.kind === "trade" || t.kind === "marriage") put(o, "friend");
+  }
+  if (focusId != null) out[focusId] = "self";
+  return out;
+};
+
 function endTreatiesOf(world, p) {
   for (const t of world.treaties || []) if (t.end == null && (t.a === p.id || t.b === p.id)) AEON.endTreaty(world, t, "fall");
 }

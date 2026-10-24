@@ -348,9 +348,31 @@ const LEGENDS = {
   habitability: ["Habitability", "harsh", "kind"],
   elevation: ["Elevation", "coast", "peaks"],
 };
+/* the realm the diplomacy map is about: the one under the cursor, else the selected land's, else
+   the followed realm (null: none, and the map shows every war and vassal) */
+function diploFocus() {
+  const v = shown(), pick = function (rid) { const r = rid != null && v.regions[rid]; return r && r.owner != null ? r.owner : null; };
+  return pick(hoverRegion) || pick(selectedRegion) || followed || null;
+}
 function updateLegend() {
   const L = dom.legend, spec = LEGENDS[mapMode], ramp = AEON.mapRamps && AEON.mapRamps[mapMode];
   if (!L) return;
+  if (mapMode === "diplomacy" && AEON.stanceColors) {
+    const f = diploFocus(), key = "diplomacy|" + f;
+    if (L._mode === key) { L.classList.remove("hidden"); return; }
+    L._mode = key;
+    L.textContent = "";
+    const S = AEON.stanceColors, item = function (k, t) { const i = el("i", { class: "ae-legend-chip" }); i.style.background = S[k]; L.appendChild(i); L.appendChild(el("span", { text: t })); };
+    if (f) {
+      L.appendChild(el("b", { text: world.polities[f].name }));
+      item("war", "at war"); item("alliance", "allied"); item("lord", "its lord"); item("vassal", "vassal"); item("truce", "truce"); item("friend", "trade, marriage");
+    } else {
+      L.appendChild(el("b", { text: "Point at a realm" }));
+      item("war", "at war"); item("vassal", "a vassal");
+    }
+    L.classList.remove("hidden");
+    return;
+  }
   if (!spec || !ramp) { L.classList.add("hidden"); return; }
   if (L._mode === mapMode) { L.classList.remove("hidden"); return; }
   L._mode = mapMode;
@@ -371,6 +393,7 @@ function drawMap() {
   try {
     AEON.render.draw(dom.canvas, shown(), {
       mode: mapMode,
+      focus: mapMode === "diplomacy" ? diploFocus() : null,
       year: playbackYear,
       hoverRegion: hoverRegion,
       selectedRegion: selectedRegion,
@@ -399,7 +422,7 @@ function buildApp() {
     el("div", { class: "ae-progress-track" }, dom.progressBar));
   mapWrap.appendChild(dom.progress);
 
-  const modes = ["political", "biome", "population", "elevation", "habitability"];
+  const modes = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
   const modeBar = el("div", { class: "ae-modes" });
   modes.forEach(function (m) {
     modeBar.appendChild(el("button", {
@@ -670,6 +693,22 @@ function fillTip(view, r) {
     const form = AEON.typeAt(world, owner, year), kind = form ? form.name : owner.archetypeName;
     bits.push((kind ? kind + ", " : "") + "since " + pack.yearLabel(owner.founded));
     tipEl.appendChild(el("div", { class: "dim", text: bits.join(" · ") }));
+    /* how it stood with the others that year: wars, its lord, its vassals, its allies */
+    if (AEON.treatiesOf) {
+      const by = { war: [], lord: [], vassal: [], alliance: [] };
+      for (const t of AEON.treatiesOf(world, owner, year)) {
+        const o = world.polities[t.a === owner.id ? t.b : t.a];
+        if (!o) continue;
+        const k = t.kind === "tribute" ? (t.a === owner.id ? "lord" : "vassal") : t.kind;
+        if (by[k] && by[k].indexOf(o.name) < 0) by[k].push(o.name);
+      }
+      const say = [];
+      if (by.war.length) say.push("at war with " + by.war.join(", "));
+      if (by.lord.length) say.push("vassal of " + by.lord.join(", "));
+      if (by.vassal.length) say.push(by.vassal.length === 1 ? "lord of " + by.vassal[0] : "lord of " + by.vassal.length + " vassals");
+      if (by.alliance.length) say.push("allied with " + by.alliance.join(", "));
+      if (say.length) tipEl.appendChild(el("div", { class: "dim", text: say.join(" · ") }));
+    }
     const forces = AEON.forcesAt(owner, year);
     if (forces) tipEl.appendChild(el("div", { class: "dim", text: forces.army.toLocaleString() + " soldiers · " + forces.navy.toLocaleString() + (forces.navy === 1 ? " ship" : " ships") }));
     const age = AEON.ageAt ? AEON.ageAt(world, owner.id, year) : null;

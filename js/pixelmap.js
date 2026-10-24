@@ -15,7 +15,10 @@
 
 const AEON = window.AEON = window.AEON || {};
 const PPC = 4;
-const MODES = ["political", "biome", "population", "elevation", "habitability"];
+const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
+/* the diplomacy mode's colours: how each realm stands with the realm in focus (AEON.stancesAt) */
+const STANCE = { self: "#e0b84f", war: "#b5452e", lord: "#7a4f9a", vassal: "#3f8f8a", alliance: "#4f8a3a", truce: "#d49a3a", friend: "#a9c48a", none: "#a49a88" };
+AEON.stanceColors = STANCE;
 
 /* ------------------------------------------------------------ palette */
 const P = {
@@ -284,8 +287,8 @@ function elevRank(c, R) {
 /* contest (from mapfx.js), when given: regions changing hands, { rid: { from, to, phase } }. They
    keep the old owner's borders while their 2-pixel blocks, border pixels too (most such land is a
    single cell, which is mostly border), flicker between the two colours. */
-function compose(c, w, mode, roads, contest) {
-  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0);
+function compose(c, w, mode, roads, contest, focus) {
+  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0) + "|" + (mode === "diplomacy" ? focus : "");
   if (c.key === key && !contest) return c.frame;
   c.key = contest ? null : key;
   const VW = c.VW, VH = c.VH, R = w.regions, land = c.land, cellOf = c.cellOf;
@@ -327,14 +330,19 @@ function compose(c, w, mode, roads, contest) {
     }
   }
 
-  /* realms, in the political mode only: a dithered wash of the realm colour and a two-pixel
-     border where owners meet. Water never counts as a different owner, so coasts stay clean. */
-  const tint = mode === "political", borders = tint;
+  /* realms, in the political and diplomacy modes: a dithered wash of the realm colour (in the
+     diplomacy mode, of how it stands with the realm in focus) and a two-pixel border where owners
+     meet. Water never counts as a different owner, so coasts stay clean. */
+  const diplo = mode === "diplomacy", tint = mode === "political" || diplo, borders = tint;
   if (tint) {
     const own = new Array(R.length);
     for (let k = 0; k < R.length; k++) own[k] = contest && contest[k] ? contest[k].from : R[k].owner;
-    const cols = {};
-    const colorOf = function (id) { const p = w.polities[id]; return cols[id] || (cols[id] = rgb((p && p.color) || "#888888")); };
+    const cols = {}, stance = diplo && AEON.stancesAt ? AEON.stancesAt(baseOf(w), focus, w.year) : null;
+    const colorOf = function (id) {
+      if (cols[id]) return cols[id];
+      const p = w.polities[id];
+      return (cols[id] = rgb(stance ? STANCE[stance[id] || "none"] : (p && p.color) || "#888888"));
+    };
     const at = function (x, y, o) {
       if (y < 0 || y >= VH) return o;
       const j = y * VW + ((x + VW) % VW);
@@ -640,7 +648,7 @@ function draw(canvas, world, opts) {
   canvas._aeonView = v;
 
   const fxOn = AEON.mapfx && AEON.mapfx.live(), mode = opts.mode || "political";
-  const c = getCache(world), frame = compose(c, world, mode, !!opts.showRoads, fxOn && mode === "political" ? AEON.mapfx.contested() : null);
+  const c = getCache(world), frame = compose(c, world, mode, !!opts.showRoads, fxOn && (mode === "political" || mode === "diplomacy") ? AEON.mapfx.contested() : null, opts.focus || null);
   ctx.fillStyle = DESK; ctx.fillRect(0, 0, pw, ph);
   const mw = c.VW * v.P, mh = c.VH * v.P;
   const X0 = Math.round(v.ox * v.dpr);

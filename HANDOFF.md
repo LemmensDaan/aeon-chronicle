@@ -199,6 +199,15 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   historical h.tribute is gone (tribute events read AEON.lordOf / vassalsOf). Results: historical
   about 60-70 vassals absorbed and 20-30 breaking free a history, 10 realms at the end; fantasy
   about 10, ends with 16-21 realms.
+- **Diplomacy step 5, seeing it (2026-10-24, view only):** pixelmap.js mode "diplomacy" (second in
+  MODES and the mode bar): the political wash and borders, coloured by `AEON.stancesAt(world, focus,
+  year)` (core.js; self / war / lord / vassal / alliance / truce / friend, colours in STANCE,
+  `AEON.stanceColors`); focus from ui.js `diploFocus()` (hovered realm, else selected, else
+  followed), passed as opts.focus and part of the frame key; legend lists the stances. Map tooltip:
+  a line "at war with ... · vassal of ... · lord of ... · allied with ..." for the shown year. Realm
+  page: "Wars and treaties" (all its treaties, newest first, 40 at most, dates from the events,
+  war length, joined / levy / coalition, how it ended, links "how it began" / "how it ended"). No
+  war pages yet (QUESTIONS.md 15).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

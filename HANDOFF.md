@@ -289,6 +289,14 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   ending at score >= 0.25 for the coalition calls `breakUp`: the giant's farthest third of
   provinces (not its capital's) form 2-3 new realms (spawnPolity, hostile, its heirs), event
   "empire-breaks-up" (importance 5). Historical seeds 7 / 42: 4 / 6 break-ups (seed 3: none); giants regrow.
+- **War pages (2026-10-24, view only + battle dates):** encyclopedia kind "war" (base.js ent / warById /
+  warName, shell.js route, pages.js `pageWar`): a war is its war treaty plus every war joined to it
+  (`leader`), `warFamily` sorts their realms into attackers and defenders; sections Sides, battles
+  (battleLog between the sides while it lasted, with men, winner and margin), Taken and destroyed
+  (grievances took / raided / plundered / razed), Peace (how it ended, t.score), In the chronicle
+  (entries naming a realm of each side). Atlas tab "Wars" (main wars newest first). The realm page's
+  war treaties link to their war. Battles are dated: battleLog [9] the event index at the time, [10]
+  the date given by dateTick (the event it came before or after).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

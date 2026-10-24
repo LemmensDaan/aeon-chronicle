@@ -61,7 +61,7 @@ AEON.createWorld = function (opts) {
     chronicle: [],
     ownerLog: [],             // [year, regionId, ownerId|null] — lets any year be reconstructed
     settleLog: [],            // [year, regionId, tier] whenever a settlement appears, changes size or goes (0)
-    battleLog: [],            // [year, attackerId, defenderId, attackerMen, defenderMen, regionId|null, attackerWon, atSea, margin 1-3]
+    battleLog: [],            // [year, attackerId, defenderId, attackerMen, defenderMen, regionId|null, attackerWon, atSea, margin 1-3, event index, date]
     sackLog: [],              // [year, regionId, attackerId, victimId|null, "plundered"|"razed"]
     treaties: [],             // { id, kind, a, b, start, end, ended, ... } — see AEON.treaty
     grievanceLog: [],         // [year, fromId, toId, delta, reason] — see AEON.remember
@@ -1245,6 +1245,12 @@ function dateTick(world, from) {
   const C = world.chronicle, n = C.length - from, y0 = world.year - world.timeStep;
   for (let i = from; i < C.length; i++) C[i].date = Math.round((y0 + (i - from + 1) / (n + 1) * world.timeStep) * 12) / 12;
   const dateOf = function (k) { return k != null && C[k] && C[k].year === world.year ? C[k].date : null; };
+  /* a battle takes the date of the event it came before (or after, at the end of the tick) */
+  const B = world.battleLog || [];
+  for (let i = B.length - 1; i >= 0 && B[i][0] === world.year; i--) {
+    const k = B[i][9];
+    B[i][10] = dateOf(k) != null ? dateOf(k) : dateOf(k - 1) != null ? dateOf(k - 1) : world.year;
+  }
   for (const t of world.treaties || []) {
     if (t.start === world.year && t.startDate == null) t.startDate = dateOf(t.ev) != null ? dateOf(t.ev) : world.year;
     if (t.end === world.year && t.endDate == null) {
@@ -1794,7 +1800,7 @@ AEON.battle = function (world, att, def, opts) {
   L[debt] = (L[debt] || 0) + lostL;
   let take = 0;
   if (won) take = margin === "narrow" ? 1 : margin === "clear" ? (rng.chance(0.5) ? 2 : 1) : Math.max(2, Math.min(6, Math.round((opts.frontier || 2) * 0.35)));
-  (world.battleLog || (world.battleLog = [])).push([world.year, att.id, def.id, ea, ed, r ? r.id : null, won, sea, margin === "narrow" ? 1 : margin === "clear" ? 2 : 3]);
+  (world.battleLog || (world.battleLog = [])).push([world.year, att.id, def.id, ea, ed, r ? r.id : null, won, sea, margin === "narrow" ? 1 : margin === "clear" ? 2 : 3, world.chronicle.length, null]);
   return { won: won, W: W, L: L, margin: margin, odds: odds, ratio: ratio, take: take, pushBack: !won && margin === "crushing",
            men: { att: ea, def: ed }, lost: { W: lostW, L: lostL } };
 };

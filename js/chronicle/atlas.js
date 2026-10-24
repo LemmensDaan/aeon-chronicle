@@ -34,6 +34,15 @@ function atlasRows(tab) {
       return { kind: "figure", id: f.id, name: f.name, color: pol && pol.color, line: [f.title || f.role, pol ? pol.name : null, yr(f.born) + " – " + (f.died != null ? yr(f.died) : "living")].filter(Boolean).join(", ") };
     });
   }
+  if (tab === "war") {
+    /* every war in the record, newest first, without the wars allies and vassals joined */
+    return (w.treaties || []).filter(function (t) { return t.kind === "war" && !t.leader; }).slice().reverse().map(function (t) {
+      var a = w.polities[t.a], b = w.polities[t.b], nm = C.warName(t);
+      return { kind: "war", id: t.id, name: nm, color: a && a.color,
+        line: (a ? a.name : "?") + " against " + (b ? b.name : "?") + ", " + yr(t.startDate != null ? Math.floor(t.startDate) : t.start) +
+          (t.years != null ? ", " + (t.years < 1 ? "a single season" : Math.round(t.years) + " years") : t.end == null ? ", still fought" : "") + (t.coalition ? ", a coalition's war" : "") };
+    }).filter(function (r) { return !q || r.name.toLowerCase().indexOf(q) >= 0 || r.line.toLowerCase().indexOf(q) >= 0; });
+  }
   if (tab === "artifact") {
     return objVals(w.artifacts).sort(function (a, b) { return a.created - b.created; }).filter(function (a) { return !q || String(a.name).toLowerCase().indexOf(q) >= 0; }).map(function (a) {
       return { kind: "artifact", id: a.id, name: a.name, line: (a.kind || "artifact") + ", made " + yr(a.created) + ", " + (a.destroyed ? "destroyed" : "last seen at " + regionLabel(w.regions[a.location])) + ", " + plural(derived().travel[a.id] || 0, "region") + " visited" };
@@ -50,7 +59,7 @@ function pageAtlas() {
   pg.appendChild(header("Atlas", "Index of the World", "Every power, person, relic and place the chronicle has named."));
   var tabs = h("div", "ch-tabs"), tools = h("div", "ch-filters"), list = h("div"), more = h("div", "ch-more");
   tools.style.padding = "8px 0"; tools.style.background = "transparent"; tools.style.border = "0";
-  var names = { polity: "Polities", figure: "Figures", artifact: "Artifacts", settlement: "Settlements" };
+  var names = { polity: "Polities", war: "Wars", figure: "Figures", artifact: "Artifacts", settlement: "Settlements" };
   Object.keys(names).forEach(function (k) {
     var b = h("button", "ch-btn" + (st.tab === k ? " ch-on" : ""), names[k]); b.type = "button";
     b.addEventListener("click", function () { st.tab = k; st.limit = PAGE_STEP; C.render(); });
@@ -73,7 +82,7 @@ function pageAtlas() {
     var rows = atlasRows(st.tab);
     clear(list); clear(more);
     if (!rows.length) {
-      var msgs = { polity: "No polities match.", figure: "No figures have risen yet.", artifact: "No artifacts have been made yet.", settlement: "No settlements have been founded yet." };
+      var msgs = { polity: "No polities match.", war: "No wars have been fought yet.", figure: "No figures have risen yet.", artifact: "No artifacts have been made yet.", settlement: "No settlements have been founded yet." };
       list.appendChild(empty(S.atlas.q ? "Nothing matches that filter." : msgs[st.tab]));
       return;
     }

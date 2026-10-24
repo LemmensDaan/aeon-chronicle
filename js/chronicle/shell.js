@@ -8,7 +8,7 @@ var S = C.S, h = C.h, add = C.add, clear = C.clear, ent = C.ent, indexEvents = C
   onRootClick = C.onRootClick, injectStyle = C.injectStyle, tlRender = C.tlRender,
   buildTimeline = C.buildTimeline, tlUpdate = C.tlUpdate, pagePolity = C.pagePolity,
   pageFigure = C.pageFigure, pageArtifact = C.pageArtifact, pageRegion = C.pageRegion,
-  pageEvent = C.pageEvent, pageAtlas = C.pageAtlas, pageSearch = C.pageSearch, setSel = C.setSel,
+  pageEvent = C.pageEvent, pageWar = C.pageWar, pageAtlas = C.pageAtlas, pageSearch = C.pageSearch, setSel = C.setSel,
   pageStory = C.pageStory, gBuildUI = C.gBuildUI, gControls = C.gControls, gShow = C.gShow, gHost = C.gHost;
 
 /* ---------- shell ---------- */
@@ -49,6 +49,7 @@ function render() {
   else if (en.kind === "figure") pg = pageFigure(en.id);
   else if (en.kind === "artifact") pg = pageArtifact(en.id);
   else if (en.kind === "event") pg = pageEvent(en.id);
+  else if (en.kind === "war") pg = pageWar(en.id);
   else pg = pageRegion(en.id);
   if (en.v === "entity" && pg.firstChild && ent(en.kind, en.id)) {
     var gt = h("div", "ch-tools"), gb = h("button", "ch-btn", "Show its threads in the graph");

@@ -282,7 +282,8 @@ function pagePolity(id) {
       add(li, h("b", null, kind + " "));
       if (w.polities[oid]) li.appendChild(link("polity", oid));
       var bits = [];
-      if (t.name) bits.push(t.name);
+      if (t.kind === "war") { li.appendChild(document.createTextNode(" — ")); li.appendChild(link("war", t.leader || t.id, t.name || "the war")); }
+      else if (t.name) bits.push(t.name);
       var to = t.end != null && t.end <= w.year ? t.end : null;
       /* by the dates of the events that made and ended it, where known */
       var y0 = t.startDate != null ? Math.floor(t.startDate) : t.start, y1 = to != null && t.endDate != null ? Math.floor(t.endDate) : to;
@@ -534,8 +535,90 @@ function pageEvent(id) {
   return pg;
 }
 
+/* ---------- a war: its sides, battles, land taken and peace (core.js diplomacy) ---------- */
+/* the war and every war joined to it (allies, vassals, coalition members), with each side's realms */
+function warFamily(t) {
+  var w = S.world, all = (w.treaties || []).filter(function (x) { return x.kind === "war" && (x === t || x.leader === t.id); });
+  var sideA = [t.a], sideB = [t.b];
+  all.forEach(function (x) {
+    if (x === t) return;
+    /* a joined war is fought against one of the two leaders; its other side is on the far side */
+    if (x.b === t.a || x.b === t.b) { var s2 = x.b === t.a ? sideB : sideA; if (s2.indexOf(x.a) < 0) s2.push(x.a); }
+    else if (x.a === t.a || x.a === t.b) { var s3 = x.a === t.a ? sideB : sideA; if (s3.indexOf(x.b) < 0) s3.push(x.b); }
+  });
+  return { wars: all, a: sideA, b: sideB };
+}
+function pageWar(id) {
+  var w = S.world, t = ent("war", id);
+  if (!t) return missing("war", id);
+  if (t.leader && ent("war", t.leader)) t = ent("war", t.leader);
+  var fam = warFamily(t), pg = h("div", "ch-page ch-wide"), C2 = w.chronicle;
+  var from = t.startDate != null ? t.startDate : t.start, to = t.end != null ? (t.endDate != null ? t.endDate : t.end) : null;
+  var span = C.when({ year: t.start, date: t.startDate }) + (t.end != null ? " – " + C.when({ year: t.end, date: t.endDate }) : " – still fought");
+  pg.appendChild(header("War", C.warName(t), span + (t.years != null ? " · " + (t.years < 1 ? "a single season" : Math.round(t.years) + " years") : ""), null));
+  if (t.cause) pg.appendChild(h("p", "ch-sub", "Fought over " + t.cause + "." + (t.coalition ? " A coalition's war." : "")));
+  /* the two sides */
+  var s = section(pg, "Sides"), sides = h("div", "ch-stats");
+  [[fam.a, "Attacking"], [fam.b, "Defending"]].forEach(function (pair) {
+    var d = h("div");
+    d.appendChild(h("b", null, pair[1] + ": "));
+    pair[0].forEach(function (pid, i) { if (i) d.appendChild(document.createTextNode(", ")); if (w.polities[pid]) d.appendChild(link("polity", pid)); });
+    sides.appendChild(d);
+  });
+  s.appendChild(sides);
+  /* its battles: every battle between the two sides while it lasted (core.js battleLog) */
+  var A = {}, B = {};
+  fam.a.forEach(function (x) { A[x] = 1; }); fam.b.forEach(function (x) { B[x] = 1; });
+  var last = t.end != null ? t.end : w.year, bl = (w.battleLog || []).filter(function (b) {
+    return b[0] >= t.start && b[0] <= last && ((A[b[1]] && B[b[2]]) || (B[b[1]] && A[b[2]]));
+  });
+  s = section(pg, bl.length ? plural(bl.length, "battle") : "Battles");
+  if (!bl.length) s.appendChild(empty("No battle of this war is recorded."));
+  else {
+    var ul = h("ul", "ch-ul"), MARG = ["", "narrowly", "clearly", "crushingly"];
+    bl.forEach(function (b) {
+      var li = h("li"), att = w.polities[b[1]], def = w.polities[b[2]], win = b[6] ? att : def;
+      add(li, h("b", null, C.when({ year: b[0], date: b[10] }) + " "));
+      if (b[5] != null) { li.appendChild(document.createTextNode(b[7] ? "at sea off " : "at ")); li.appendChild(link("region", b[5])); li.appendChild(document.createTextNode(": ")); }
+      else li.appendChild(document.createTextNode(b[7] ? "at sea: " : ""));
+      li.appendChild(document.createTextNode((att ? att.name : "?") + " (" + b[3].toLocaleString("en") + (b[7] ? " ships" : " men") + ") against " + (def ? def.name : "?") + " (" + b[4].toLocaleString("en") + "); " + (win ? win.name : "?") + " won " + (MARG[b[8]] || "")));
+      ul.appendChild(li);
+    });
+    s.appendChild(ul);
+  }
+  /* land and plunder: what the two sides remembered taking from each other while it lasted */
+  var took = (w.grievanceLog || []).filter(function (g) { return g[0] >= t.start && g[0] <= last && g[3] < 0 && ((A[g[1]] && B[g[2]]) || (B[g[1]] && A[g[2]])) && /^(took|raided|plundered|razed)/.test(g[4] || ""); });
+  if (took.length) {
+    s = section(pg, "Taken and destroyed");
+    var tl2 = h("ul", "ch-ul");
+    took.forEach(function (g) { var by = w.polities[g[2]], li = h("li"); add(li, h("b", null, yr(g[0]) + " "), (by ? by.name : "?") + " " + g[4]); tl2.appendChild(li); });
+    s.appendChild(tl2);
+  }
+  /* how it ended */
+  s = section(pg, "Peace");
+  if (t.end == null) s.appendChild(empty("It was still being fought."));
+  else {
+    var words = { peace: "It ended in a peace", fall: "It ended when one side fell", lapsed: "It lapsed" }[t.ended] || "It ended (" + t.ended + ")";
+    var sc = t.score != null ? (Math.abs(t.score) < 0.15 ? ", with neither side the winner" : ", " + (t.score > 0 ? w.polities[t.a] : w.polities[t.b]).name + " having the better of it") : "";
+    s.appendChild(h("p", null, words + sc + "."));
+    var e1 = t.endEv != null && C2[t.endEv] && C2[t.endEv].year === t.end ? C2[t.endEv] : null;
+    if (e1) { var pe = h("p"); pe.appendChild(link("event", e1.id, "The peace in the chronicle")); s.appendChild(pe); }
+  }
+  /* the chronicle's entries about it: those naming a realm of each side while it lasted */
+  var evs = C2.filter(function (e) {
+    if (e.year < t.start || e.year > last) return false;
+    var sa = false, sb = false;
+    e.actors.forEach(function (x) { if (x.kind === "polity") { if (A[x.id]) sa = true; if (B[x.id]) sb = true; } });
+    return sa && sb;
+  });
+  s = section(pg, "In the chronicle");
+  s.appendChild(h("p", "ch-sub", plural(evs.length, "entry", "entries")));
+  eventList(evs, s);
+  return pg;
+}
+
 /* shared with the later parts */
 C.section = section; C.empty = empty; C.header = header; C.pagePolity = pagePolity;
 C.pageFigure = pageFigure; C.pageArtifact = pageArtifact; C.pageRegion = pageRegion;
-C.pageEvent = pageEvent;
+C.pageEvent = pageEvent; C.pageWar = pageWar;
 })();

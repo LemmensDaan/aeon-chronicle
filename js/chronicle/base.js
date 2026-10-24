@@ -114,13 +114,30 @@ function ent(kind, id) {
   if (kind === "artifact") return w.artifacts[id] || null;
   if (kind === "region" || kind === "settlement") return w.regions[id] || null;
   if (kind === "event") return S.ix.byEv[id] || null;
+  if (kind === "war") return warById(id);
   return null;
+}
+/* wars are the world's war treaties (core.js diplomacy), by id */
+function warById(id) {
+  var w = S.world, c = S.warIx;
+  if (!c || c.n !== (w.treaties || []).length) {
+    c = S.warIx = { n: (w.treaties || []).length, by: {} };
+    (w.treaties || []).forEach(function (t) { if (t.kind === "war") c.by[t.id] = t; });
+  }
+  return c.by[id] || null;
+}
+/* a war's name: its own (the historical pack names its wars), else "the war of A and B" */
+function warName(t) {
+  var w = S.world, a = w.polities[t.a], b = w.polities[t.b];
+  if (t.name) return cap(t.name.replace(/^the /, "the "));
+  return "The war of " + (a ? a.name.replace(/^The /, "the ") : "?") + " and " + (b ? b.name.replace(/^The /, "the ") : "?");
 }
 function entName(kind, id) {
   var e = ent(kind, id);
   if (!e) return "(unknown " + kind + ")";
   if (kind === "region" || kind === "settlement") return regionLabel(e);
   if (kind === "event") return when(e) + ": " + trunc(e.text, 60);
+  if (kind === "war") return warName(e);
   return e.name || "(unnamed)";
 }
 function polityEnd(p) { return p.ended != null ? p.ended : S.world.year; }
@@ -346,7 +363,7 @@ function onRootClick(ev) {
 C.KIND_LABEL = KIND_LABEL; C.TIER = TIER; C.IMP_LABEL = IMP_LABEL; C.PAGE_STEP = PAGE_STEP; C.S = S;
 C.h = h; C.add = add; C.clear = clear; C.svg = svg; C.safeColor = safeColor; C.plural = plural;
 C.cap = cap; C.pct = pct; C.trunc = trunc; C.call = call; C.objVals = objVals; C.yr = yr; C.eras = eras;
-C.when = when; C.eraOf = eraOf; C.archetype = archetype; C.biomeName = biomeName; C.regionLabel = regionLabel;
+C.when = when; C.warName = warName; C.eraOf = eraOf; C.archetype = archetype; C.biomeName = biomeName; C.regionLabel = regionLabel;
 C.ent = ent; C.entName = entName; C.polityEnd = polityEnd; C.indexEvents = indexEvents;
 C.eventsOf = eventsOf; C.eventsOfRegion = eventsOfRegion; C.hasTag = hasTag; C.timeSpan = timeSpan;
 C.derived = derived; C.territory = territory; C.peakSize = peakSize; C.curEntry = curEntry;

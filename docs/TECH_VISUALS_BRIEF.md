@@ -53,6 +53,16 @@ agreement and "Verification"), then this.
 - Line endings: the files are CRLF in the working tree; edit with the Edit tool or node scripts
   that keep them.
 
+## Sprite picks (samples/tech-sprites.html)
+
+- **Round 1 (2026-10-24).** Bands: the soldiers of panel 1 (today's soldier, weapons only, no
+  helmets) with panel 3's standards unchanged (bronze bull's head, iron eagle over a cloth, pikes' flag
+  with a cross, muskets' regimental colour). The iron sword is good; the bronze weapon should look
+  like a bronze sword; pikes could be better; muskets do not read at this scale. No helmets, not
+  panel 4's whole-band formations. Ships: the oared boat with stroking oars (panel 8), the sail ship
+  with a coloured sail (panel 6), the galleon and the steam-ship with pale sails (panel 7); every
+  ship bobs and leaves a wake; the steam-ship smokes and turns its wheel.
+
 ## Suggested order
 
 1. The sample page of tech sprites (war bands by age or technology; ships by technology).

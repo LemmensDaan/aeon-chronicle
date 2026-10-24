@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Aeon — settlement sprites, round 2</title>
+<title>Aeon — settlement sprites, round 3</title>
 <link rel="stylesheet" href="../css/pixelify.css">
 <style>
   :root { --ink: #2a1a0e; --soft: #6b4a2a; --red: #8a3a22; --paper: #e9d6ad; }
@@ -27,33 +27,37 @@
 </head>
 <body>
 <main>
-<h1>Settlement sprites, round 2</h1>
-<p class="lede">A new walled city, and settlements by water: a harbour on the coast, a bridge or mill on a river,
-a jetty or stilts on a lake. Every panel is drawn on the map's own ground at the map's scale (one map pixel is
-3 screen pixels, one sprite pixel 2, as at the usual zoom), shown twice as large above and at true size below.
-Water pieces sit on the side the water is; on the map they flip when the water is on the left.
-<code>?only=N</code> shows panel N large.</p>
+<h1>Settlement sprites, round 3</h1>
+<p class="lede">Every roof is now in its realm's colour, as the capital's was, shaded on its right-hand slope. The
+settlement panels show three bands: a blue realm on plain ground (the biome map), the same realm under its
+political wash, and a red realm under its wash. The keep and bailey is the capital. Water panels use the town and
+city now on the map, to be swapped for the picks. One map pixel is 3 screen pixels and one sprite pixel 2, as at
+the usual zoom; each panel is shown twice as large, then a close-up, then true size. <code>?only=N</code> shows
+panel N large.</p>
 <div id="host"></div>
 </main>
 <script>
 "use strict";
 /* ------------------------------------------------------------ the map's palette (js/pixelmap.js) */
 const INK = "#2a1a0e";
-const MAP = { deep: "#16295f", mid: "#1f4294", shallow: "#3570c4", foam: "#a6dbff", river: "#3570c4",
+const MAP = { deep: "#16295f", mid: "#1f4294", shallow: "#3570c4", foam: "#a6dbff", river: "#3570c4", road: "#604426",
   sand: ["#d4b56c", "#e6cd88", "#f3e2a6"], grass: ["#4a9438", "#5fae45", "#80c95a"] };
 const ONLY = /[?&]only=([0-9]+)(?:-([0-9]+))?/.exec(location.search);
 const CLOSE = /[?&]close(?:=([0-9]+))?/.exec(location.search);   /* ?close=8: close-ups only, to check pixels */
 const MP = 3, U = 2;                       /* screen pixels per map pixel, per sprite pixel */
 const MW = 88, MH = 56;                    /* map pixels per panel */
+const BLUE = "#4f81bd", RED = "#c0504d";   /* two of the engine's realm colours */
 
 function sprite(rows, pal) {
   rows.forEach(function (r) { if (r.length !== rows[0].length) throw new Error("ragged sprite row: " + r); });
   return { rows: rows, pal: pal || PAL, w: rows[0].length, h: rows.length };
 }
-/* the map's roof palette, plus what water places need: q water seen under an arch, n net, d cargo,
-   s sail, o fire, R shaded roof, G shaded stone, B dark wood */
-const PAL = { k: INK, w: "#efe6d6", r: "#b5452e", R: "#7e2d1d", g: "#b7b1a4", G: "#7c766c", b: "#7a4a22", B: "#4a2e16",
-              f: "#3a6ea5", F: "#244a73", y: "#e0b84f", o: "#e8742a", q: MAP.shallow, n: "#cdbf98", d: "#c9a46a", s: "#f4ecd8" };
+/* f / F: the realm's colour and its shade (filled in when drawn); the rest fixed: w plaster, g / G
+   stone, b / B wood, e a red stripe, o fire, y gold, c sailcloth, d cargo, i iron (mapfx.js ships) */
+const PAL = { k: INK, w: "#efe6d6", g: "#b7b1a4", G: "#7c766c", b: "#7a4a22", B: "#4e2f16", f: "#888", F: "#555",
+              e: "#b5452e", o: "#e8742a", y: "#e0b84f", c: "#efe6d6", d: "#c9bc9a", i: "#8f969e" };
+function darker(hex) { const n = parseInt(hex.slice(1), 16); return "rgb(" + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (v) { return Math.round(v * 0.62); }).join(",") + ")"; }
+function realm(hex) { return { f: hex, F: darker(hex) }; }
 /* several sprites laid into one; parts are [sprite, x, y], later parts drawn over earlier ones;
    ax is the column (in the first part's frame) that stands on the water's edge or the river */
 function compose(parts, ax) {
@@ -78,141 +82,147 @@ function blit(g, sp, x, y, over, u) {
     g.fillRect(x + i * u, y + j * u, u, u);
   }
 }
+function rep(ch, n) { return new Array(n + 1).join(ch); }
+function alt(w, a, b) { return Array.from({ length: w }, function (_, i) { return i % 2 ? b : a; }).join(""); }
 
-/* ------------------------------------------------------------ what the map draws now */
-const VILLAGE = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."]);
-const TOWN = sprite(["......k....", ".....kgk...", "..k..kgk...", ".krk.kwk.k.", "krrrkkwkkrk", "kwwwkkwkkwk", "kwkwkkwkkwk", "kkkkkkkkkkk"]);
-const CITY = sprite(["k.k.....k.k", "kgk.k.k.kgk", "kgkkgkgkkgk", "kgggggggggk", "kgrrkgkrrgk", "kgwwkgkwwgk", "kgggkkkgggk", "kggkbbbkggk", "kkkkkkkkkkk"]);
-const PALACE = sprite([".......k.......", "......kyk......", ".....kfffk.....", "....kfffFFk....", "..k.kkkkkkk.k..", ".kfkkgwgwgkkfk.",
-                       ".kgkkgggggkkgk.", ".kgkkgwgwgkkgk.", "kkgkkgggggkkgkk", "kgggggkbkgggggk", "kkkkkkkkkkkkkkk"]);
+/* ------------------------------------------------------------ parts */
+/* the map's village, town and city, their roofs now in the realm's colour */
+const VILLAGE = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", ".kwkwk.", ".kkkkk."]);
+const TOWN = sprite(["......k....", ".....kgk...", "..k..kgk...", ".kfk.kwk.k.", "kffFkkwkkfk", "kwwwkkwkkwk", "kwkwkkwkkwk", "kkkkkkkkkkk"]);
+const CITY = sprite(["k.k.....k.k", "kgk.k.k.kgk", "kgkkgkgkkgk", "kgggggggggk", "kgffkgkffgk", "kgwwkgkwwgk", "kgggkkkgggk", "kggkbbbkggk", "kkkkkkkkkkk"]);
 const TREE = sprite([".kkk.", "kgglk", "kgggk", ".kbk."], { k: "#13361b", g: "#3a8f42", l: "#6cc160", b: "#5a3d22" });
 
-/* ------------------------------------------------------------ four new walled cities */
-/* built from parts: a curtain wall (merlons, a stone face, a gate), towers, a keep, houses */
-function rep(ch, n) { return new Array(n + 1).join(ch); }
-function put(rows, x, y, str) { rows[y] = rows[y].slice(0, x) + str + rows[y].slice(x + str.length); }
+const HOUSE5 = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwkwk", "kkkkk"]);
+const HOUSE7 = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwkwkwk", "kwwwwwk", "kkkkkkk"]);
+const TALL5 = sprite(["..k..", ".kfk.", ".kfk.", "kffFk", "kwkwk", "kwwwk", "kwkwk", "kwwwk", "kkkkk"]);
+const SPIRE = sprite([".k.", "kfk", "kFk", "kgk", "kwk", "kgk", "kgk", "kgk", "kkk"]);
+/* a curtain wall w wide, h tall: merlons, an ink coping, a stone face, a gate in the middle */
 function wall(w, h, gate) {
-  const rows = [Array.from({ length: w }, function (_, i) { return i % 2 ? "." : "k"; }).join(""), rep("k", w)];
-  for (let j = 2; j < h - 1; j++) rows.push("k" + rep("g", w - 2) + "k");
+  const rows = [alt(w, "k", "."), rep("k", w)];
+  while (rows.length < h - 1) rows.push("k" + rep("g", w - 2) + "k");
   rows.push(rep("k", w));
-  if (gate) { const c = w >> 1; put(rows, c - 1, h - 3, "kkk"); put(rows, c - 2, h - 2, "kbbbk"); }
+  if (gate) { const c = w >> 1; rows[h - 3] = rows[h - 3].slice(0, c - 1) + "kkk" + rows[h - 3].slice(c + 2); rows[h - 2] = rows[h - 2].slice(0, c - 2) + "kbbbk" + rows[h - 2].slice(c + 3); }
   return sprite(rows);
 }
-/* a round tower with a pointed roof wider than the tower */
+/* a round tower with a pointed roof, wider than the tower */
 function coneTower(h) {
-  const rows = ["..k..", ".krk.", "krrrk", "kkkkk"];
+  const rows = ["..k..", ".kfk.", "kffFk", "kkkkk"];
   while (rows.length < h - 1) rows.push(".kgk.");
   rows.push(".kkk.");
   return sprite(rows);
 }
-/* a drum tower, its right side in shade so it reads round */
-function drumTower(h) {
-  const rows = [".kk.", "kggk", "kkkk"];
-  while (rows.length < h - 1) rows.push(rows.length === 4 ? "kkGk" : "kgGk");
-  rows.push("kkkk");
-  return sprite(rows);
-}
 function keep(w, h) {
-  const rows = [Array.from({ length: w }, function (_, i) { return i % 2 ? "." : "k"; }).join(""), rep("k", w), "k" + rep("g", w - 2) + "k"];
-  rows.push("k" + Array.from({ length: w - 2 }, function (_, i) { return i % 2 ? "k" : "g"; }).join("") + "k");
+  const rows = [alt(w, "k", "."), rep("k", w), "k" + rep("g", w - 2) + "k", "k" + alt(w - 2, "g", "k") + "k"];
   while (rows.length < h - 1) rows.push("k" + rep("g", w - 2) + "k");
   rows.push(rep("k", w));
   return sprite(rows);
 }
-const HOUSE5 = sprite(["..k..", ".krk.", "krrrk", "kwkwk", "kwkwk", "kkkkk"]);
-const HOUSE7 = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", "kwkwkwk", "kwkwkwk", "kkkkkkk"]);
-const SPIRE = sprite([".k.", "kgk", "kgk", "kwk", "kgk", "kgk", "kgk", "kgk"]);
+const BANNER = sprite(["kff", "kfF", "k.."]);
 
+/* ------------------------------------------------------------ the capital: keep and bailey */
+const CAPITALS = [
+  { name: "Keep and bailey, houses behind", note: "The keep flies the realm's banner; the wall is 15 wide and lower than the houses, so their white fronts show over the merlons and they stand behind it.",
+    sp: compose([[HOUSE5, 0, 2], [HOUSE5, 10, 2], [keep(5, 10), 5, 1], [BANNER, 7, -1], [wall(15, 5, true), 0, 7]]) },
+  { name: "Keep and bailey, corner towers", note: "The same keep and banner between two round towers with roofs in the realm's colour; a gabled hall either side in the bailey.",
+    sp: compose([[HOUSE5, 3, 3], [HOUSE5, 7, 3], [keep(5, 10), 5, 1], [BANNER, 7, -1], [wall(15, 5, true), 0, 7], [coneTower(11), 0, 1], [coneTower(11), 10, 1]]) },
+];
+const CAPITAL = CAPITALS[0].sp;
+
+/* ------------------------------------------------------------ new cities */
+const RING_FAR = sprite(["...kkkkkkk...", ".kkgggggggkk.", "kgk.......kgk", "kgk.......kgk", "kgk.......kgk"]);
+const RING_NEAR = sprite(["kgk.......kgk", "kkkkkkkkkkkkk", "kggggkkkggggk", ".kgggkbkgggk.", "..kkkkkkkkk.."]);
+const LOWWALL = sprite([alt(13, "k", "."), rep("k", 13), "k" + rep("g", 11) + "k", rep("k", 13)]);
+const TWIN = sprite([".k...k.", "kfk.kfk", "kFk.kFk", "kgkkkgk", "kgkwkgk", "kgkgkgk", "kgkbkgk", "kkkkkkk"]);
+const BELFRY = sprite([".k.", "kfk", "kFk", "kkk", "kyk", "kkk", "kgk", "kgk", "kgk", "kkk"]);
+const HALL = sprite(["....k....", "...kfk...", "..kffFk..", ".kfffFFk.", "kffffFFFk", "kgkgkgkgk", "kk.k.k.kk"]);
 const CITIES = [
-  { name: "Gate towers", note: "Two round towers with pointed red roofs flank the gate; a spire rises behind the wall.",
-    sp: compose([[SPIRE, 5, 0], [wall(13, 6, true), 0, 4], [coneTower(10), 0, 0], [coneTower(10), 8, 0]]) },
-  { name: "Keep and bailey", note: "A tall square keep over the bailey wall, houses huddled either side of it inside.",
-    sp: compose([[HOUSE5, 0, 1], [HOUSE5, 8, 1], [keep(5, 10), 4, 0], [wall(13, 5, true), 0, 5]]) },
-  { name: "Roofs over the wall", note: "A town inside its wall: gables of different heights and a church tower over a low wall with a gate.",
-    sp: compose([[HOUSE5, 0, 1], [HOUSE7, 6, 0], [SPIRE, 4, 0], [wall(13, 5, true), 0, 5]]) },
-  { name: "Ring wall", note: "Seen a little from above: the far wall, roofs inside, the near wall with its gate, a round tower at each corner.",
-    sp: compose([[sprite(["k.k.k.k.k", "kgggggggk", "kkkkkkkkk"]), 2, 1], [HOUSE7, 3, 0],
-                 [wall(13, 5, true), 0, 5], [drumTower(10), 0, 0], [drumTower(10), 9, 0]]) },
+  { name: "Oval wall", note: "The ring wall again, simpler: a rounded wall seen a little from above, one big gabled house inside, the gate in front.",
+    sp: compose([[RING_FAR, 0, 0], [HOUSE7, 3, 1], [RING_NEAR, 0, 5]]) },
+  { name: "Hill city", note: "Houses climb in tiers to a tower at the top, a low wall at the foot of the hill.",
+    sp: compose([[SPIRE, 5, 0], [HOUSE5, 2, 1], [HOUSE5, 6, 1], [HOUSE5, 0, 3], [HOUSE5, 4, 3], [HOUSE5, 8, 3], [LOWWALL, 0, 6]]) },
+  { name: "Cathedral city", note: "A two-towered church front between houses, a low wall in front.",
+    sp: compose([[HOUSE5, 0, 2], [HOUSE5, 8, 2], [TWIN, 3, 0], [LOWWALL, 0, 6]]) },
+  { name: "Belfry and hall", note: "A market hall on arches and a tall belfry with a golden bell, behind a low wall.",
+    sp: compose([[HALL, 4, 1], [BELFRY, 1, 0], [LOWWALL, 0, 6]]) },
 ];
 
-/* ------------------------------------------------------------ pieces for water places */
+/* ------------------------------------------------------------ new towns */
+const PALISADE = sprite([alt(11, "b", "."), alt(11, "b", "k"), alt(11, "b", "k"), rep("k", 11)]);
+const WINDMILL = sprite(["kc.....ck", ".kc...ck.", "..kkfkk..", "...kfk...", "..ckgkc..", ".ckkgkkc.", "kc.kgk.ck", "..kgggk..", "..kgbgk..", "..kkkkk.."]);
+const TOWNS = [
+  { name: "Church and houses", note: "A church tower with a spire in the realm's colour between two houses; no wall.",
+    sp: compose([[HOUSE5, 0, 3], [HOUSE5, 6, 3], [SPIRE, 4, 0]]) },
+  { name: "Palisade", note: "Two houses behind a wooden stockade: wood, not stone, so a town never looks like a city.",
+    sp: compose([[HOUSE5, 1, 0], [HOUSE5, 5, 1], [PALISADE, 0, 4]]) },
+  { name: "Gabled row", note: "A street front of three narrow houses, the middle one tallest.",
+    sp: compose([[HOUSE5, 0, 3], [HOUSE5, 6, 3], [TALL5, 3, 0]]) },
+  { name: "Windmill", note: "A house and a windmill on the edge of town, its sails crossed.",
+    sp: compose([[WINDMILL, 2, 0], [HOUSE5, 0, 4]]) },
+];
+
+/* ------------------------------------------------------------ by the water */
+/* the map's own ships (js/mapfx.js SHIPS), bow to the right, sail or stripe in the realm's colour */
+const SHIPS = {
+  oared: sprite([".....k.......", ".....kff.....", ".....k.......", "k....k......k", "kb...k.....bk", "kbbbbbbbbbbbk", ".kbbbbbbbbbk.", "..kBkBkBkBk..", "...k.k.k.k.k."]),
+  sail: sprite(["......k......", "....kkkkk....", "...kfffffk...", "...kfFFffk...", "...kfffffk...", "....kkkkk....",
+                "k.....k.....k", "kbbbbbbbbbbbk", ".kbbbbbbbbbk.", "..kkkkkkkkk.."]),
+  galleon: sprite(["....kff..kff...", "...kck..kck....", "...kcd..kcd....", "..kcccd.kcccd..", "..kccdd.kccdd..", "..kcccd.kcccd..",
+                   "kkk.k....k.....", "kbk.k....k...kk", "kbkkkkkkkkkkkk.", "kfffffffffffffk", ".kbbybbbybbbbk.", "..kkkkkkkkkkk.."]),
+  steam: sprite(["......kk......", "......ff......", "......kk......", "...kkkkkkkkk..", "...kccccccck..", "...kkkkkkkkk..",
+                 "kkkkk.kkk.kkkk", "kfffkiiikffffk", ".kbbkiiikbbbk.", "..kkkkkkkkkk.."]),
+};
 const ROWBOAT = sprite(["k...k", "kbbbk", ".kkk."]);
-const SAILBOAT = sprite(["..k....", "..kk...", "..kwk..", "..kwwk.", "..kwwwk", "..kkkkk", "kkkkkkk", "kbbbbbk", ".kkkkk."]);
-const COG = sprite(["...k...", ".kkkkk.", ".kwwwk.", ".krrrk.", ".kwwwk.", ".kkkkk.", "k..k..k", "kkkkkkk", "kbbbbbk", ".kkkkk."]);
-const QUAY = sprite(["kkkkkkk", "bbbbbbb", "k..k..k"]);
-const LONGQUAY = sprite(["kkkkkkkkkk", "bbbbbbbbbb", "k..k..k..k"]);
-const LIGHT_S = sprite([".k.", "kok", "kkk", "kwk", "krk", "kwk", "kgk", "kkk"]);
-const LIGHT_L = sprite(["..k..", ".kok.", "kkkkk", ".kwk.", ".krk.", ".kwk.", ".krk.", ".kwk.", "kgggk", "kkkkk"]);
-const MOLE = sprite(["......k.", ".....kok", ".....kgk", "kkkkkkgk", "gggggggk", "kkkkkkkk"]);
-const BIGMOLE = sprite(["........k.", ".......kok", ".......kgk", ".......kgk", "kkkkkkkkgk", "gggggggggk", "kkkkkkkkkk"]);
-const NETS = sprite(["kkkkkkk", "knnnnnk", "knknknk", "k.....k"]);
-const BEACHED = sprite(["kbbbk", ".kkk."]);
+const PUNT = sprite(["..k...", ".kwk..", "..k...", "kbbbbk", ".kkkk."]);
+const LIGHT_S = sprite([".k.", "kok", "kkk", "kwk", "kek", "kwk", "kek", "kgk", "kkk"]);
+const LIGHT_L = sprite(["..k..", ".kok.", "kkkkk", ".kwk.", ".kek.", ".kwk.", ".kek.", ".kwk.", "kgggk", "kkkkk"]);
 const BRIDGE_S = sprite(["kkkkkkk", "bbbbbbb", "b.....b"]);
 const BRIDGE_M = sprite(["kkkkkkkkk", "ggggggggg", "ggkkkkkgg", "gk.....kg", "kk.....kk"]);
-const BRIDGE_L = sprite(["....k.k....", "....kkk....", "....kgk....", "kkkkkgkkkkk", "ggggggggggg", "gkkkgggkkkg", "k...kgk...k", "k...kgk...k"]);
-const WHEEL = sprite([".bkb.", "bbkbb", "kkkkk", "bbkbb", ".bkb."]);
-const MILL = sprite(["..k..", ".krk.", "krrrk", "kwwwk", "kwkwk", "kkkkk"]);
-const BIGMILL = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", "kwwkwwk", "kwwkbwk", "kkkkkkk"]);
-const BARGE = sprite(["..kkk...", ".kdddk..", "kkkkkkkk", "kbbbbbbk", ".kkkkkk."]);
-const WHARF = sprite(["kkkkk", "bbbbb", "b.b.b"]);
-const JETTY = sprite(["kkkkkkkkk", "bbbbbbbbb", "k...k...k"]);
-const STILT = sprite(["..k..", ".krk.", "krrrk", "kwkwk", "kkkkk", "b...b", "b...b"]);
-const STILT_W = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", "kwkwkwk", "kkkkkkk", "b.b.b.b", "b.b.b.b"]);
+const BRIDGE_L = sprite(["kkkkkkkkkkk", "ggggggggggg", "gkkkgggkkkg", "k...kgk...k", "k...kgk...k"]);
+const WHEEL = sprite(["..kkk..", ".kbkbk.", "kbbkbbk", "kkkkkkk", "kbbkbbk", ".kbkbk.", "..kkk.."]);
+const MILL = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwkwk", "kkkkk"]);
+const BIGMILL = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwwkwwk", "kwwkbwk", "kkkkkkk"]);
+const STILT = sprite(["..k..", ".kfk.", "kffFk", "kwkwk", "kkkkk", "b...b", "b...b"]);
+const STILT_W = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwkwkwk", "kkkkkkk", "b.b.b.b", "b.b.b.b"]);
 const WALK = sprite(["kkkkk", "bbbbb", "b...b"]);
-const PUNT = sprite(["..k...", ".kwk..", "..k...", "kbbbbk", ".kkkk."]);
-const HUT = sprite(["..k..", ".krk.", "krrrk", "kwkwk", "kkkkk"]);
 
-/* each water variant: three sizes, village, town, city; ax marks where the water begins (coast,
-   lake) or the river's middle */
+/* a quay on posts (wood) or a stone quay, n long */
+function quay(n, stone) { return sprite(stone ? [rep("k", n), rep("g", n), alt(n, "k", "g")] : [rep("k", n), rep("b", n), Array.from({ length: n }, function (_, i) { return i % 3 ? "." : "k"; }).join("")]); }
+/* a moored ship lies behind the quay, alongside it, its hull's last row on the quay's lowest; the
+   light stands on the quay's tip, past the ship's bow, or on the shore where the quay begins */
+function harbour(base, shipKind, light, lightAt, stone) {
+  const sh = SHIPS[shipKind], qx = base.w, q = quay(sh.w + (lightAt === "shore" ? 2 : 1 + light.w), stone), qy = base.h - q.h + 1;
+  const parts = [[sh, qx + 1, qy + 2 - sh.h], [base, 0, 0], [q, qx, qy]];
+  if (light) parts.push([light, lightAt === "shore" ? qx - 2 : qx + q.w - light.w, qy + 1 - light.h]);
+  return compose(parts, qx);
+}
 const COAST = [
-  { name: "Quay and boats", note: "A wooden quay on posts reaches into the sea with a boat tied up; a sailing ship at the town, a cog at the city.",
-    s: [compose([[VILLAGE, 0, 0], [ROWBOAT, 8, 3]], 7),
-        compose([[TOWN, 0, 0], [QUAY, 11, 5], [SAILBOAT, 13, -2]], 11),
-        compose([[CITY, 0, 0], [LONGQUAY, 11, 6], [COG, 14, -2]], 11)] },
-  { name: "Lighthouse", note: "A boat drawn up on the beach by the village; a small striped light at the town, a tall one with its fire at the city.",
-    s: [compose([[VILLAGE, 0, 0], [BEACHED, 7, 4]], 9),
-        compose([[TOWN, 0, 0], [LIGHT_S, 12, 0]], 12),
-        compose([[CITY, 0, 0], [LIGHT_L, 12, -1], [ROWBOAT, 18, 6]], 12)] },
-  { name: "Harbour wall", note: "A stone breakwater with a light at its tip, boats moored behind it; the village just has its jetty.",
-    s: [compose([[VILLAGE, 0, 0], [WHARF, 7, 3]], 7),
-        compose([[TOWN, 0, 0], [MOLE, 11, 2], [ROWBOAT, 12, 2]], 11),
-        compose([[CITY, 0, 0], [BIGMOLE, 11, 2], [SAILBOAT, 12, -2]], 11)] },
-  { name: "Fishing shore", note: "Net racks on the shore and boats pulled up on the sand; more of them as the place grows.",
-    s: [compose([[VILLAGE, 0, 0], [NETS, 7, 2], [BEACHED, 10, 6]], 10),
-        compose([[TOWN, 0, 0], [NETS, 11, 4], [ROWBOAT, 17, 6]], 14),
-        compose([[CITY, 0, 0], [NETS, 11, 5], [ROWBOAT, 17, 7], [SAILBOAT, 19, -1]], 14)] },
+  { name: "Quay with a light at its end", note: "A rowing boat at the village; the town and city moor the realm's own ship (the one its fleets sail on the map) at a quay with a small light at its tip.",
+    s: [compose([[VILLAGE, 0, 0], [ROWBOAT, 8, 3]], 7), harbour(TOWN, "sail", LIGHT_S), harbour(CITY, "galleon", LIGHT_L, "tip", true)] },
+  { name: "Lighthouse on the shore", note: "The light stands on the shore by the town, the quay runs out past it, the ship moored alongside.",
+    s: [compose([[VILLAGE, 0, 0], [ROWBOAT, 8, 3]], 7), harbour(TOWN, "sail", LIGHT_S, "shore"), harbour(CITY, "galleon", LIGHT_L, "shore", true)] },
 ];
+/* the ship at the quay follows what the realm knows, as its fleets do */
+const AGES = ["oared", "sail", "galleon", "steam"].map(function (k) { return harbour(TOWN, k, LIGHT_S); });
+
 const RIVER = [
-  { name: "Bridge", note: "A plank bridge at the village, a stone arch at the town, two arches and a gate tower at the city.",
+  { name: "Watermill (no road crosses)", note: "Where no road crosses the river at the place: a mill on the bank with its wheel in the stream; a bigger mill at the city.", roads: "near",
+    s: [compose([[VILLAGE, 0, 0], [MILL, 7, 0], [WHEEL, 10, 0]], 13),
+        compose([[TOWN, 0, 0], [MILL, 11, 2], [WHEEL, 14, 1]], 17),
+        compose([[CITY, 0, 0], [BIGMILL, 11, 2], [WHEEL, 16, 1]], 19)] },
+  { name: "Bridge (a road crosses)", note: "Where a road crosses: the village only gets a plank bridge; the town and the city stand on both banks, joined by a stone bridge.", roads: "across",
     s: [compose([[VILLAGE, 0, 0], [BRIDGE_S, 6, 3]], 9),
-        compose([[TOWN, 0, 0], [BRIDGE_M, 10, 3]], 14),
-        compose([[CITY, 0, 0], [BRIDGE_L, 10, 2]], 15)] },
-  { name: "Watermill", note: "A mill on the bank with its wheel in the stream; a bigger mill at the city.",
-    s: [compose([[VILLAGE, 0, 0], [MILL, 7, 0], [WHEEL, 11, 1]], 13),
-        compose([[TOWN, 0, 0], [MILL, 11, 2], [WHEEL, 15, 3]], 17),
-        compose([[CITY, 0, 0], [BIGMILL, 11, 2], [WHEEL, 17, 3]], 19)] },
-  { name: "Both banks", note: "The place stands on both sides of the river and the bridge joins them.",
-    s: [compose([[HUT, 0, 1], [BRIDGE_S, 4, 3], [HUT, 10, 1]], 7),
-        compose([[TOWN, 0, 0], [BRIDGE_S, 10, 5], [MILL, 16, 2]], 13),
-        compose([[CITY, 0, 0], [BRIDGE_M, 10, 4], [TOWN, 18, 1]], 14)] },
-  { name: "Wharf and barge", note: "A landing on the bank with a laden barge; boats on the river carry the trade.",
-    s: [compose([[VILLAGE, 0, 0], [WHARF, 7, 3], [ROWBOAT, 9, 5]], 10),
-        compose([[TOWN, 0, 0], [WHARF, 11, 5], [BARGE, 13, 4]], 15),
-        compose([[CITY, 0, 0], [LONGQUAY, 11, 6], [BARGE, 15, 5]], 16)] },
+        compose([[TOWN, 0, 0], [BRIDGE_M, 10, 3], [HOUSE5, 18, 2]], 14),
+        compose([[CITY, 0, 0], [BRIDGE_L, 10, 4], [HOUSE5, 20, 3], [HOUSE7, 24, 2]], 15)] },
 ];
 const LAKE = [
-  { name: "Jetty", note: "A long jetty out over the lake with a rowing boat; the city has a second boat with a sail.",
-    s: [compose([[VILLAGE, 0, 0], [JETTY, 6, 3]], 7),
-        compose([[TOWN, 0, 0], [JETTY, 10, 5], [ROWBOAT, 15, 7]], 11),
-        compose([[CITY, 0, 0], [JETTY, 10, 6], [ROWBOAT, 14, 9], [SAILBOAT, 19, 1]], 11)] },
-  { name: "Stilt houses", note: "Houses on piles standing in the shallows, joined to the shore by walkways.",
-    s: [compose([[VILLAGE, 0, 0], [STILT, 8, -1]], 7),
-        compose([[TOWN, 0, 0], [WALK, 10, 5], [STILT, 14, 0], [STILT, 19, 1]], 11),
-        compose([[CITY, 0, 0], [WALK, 10, 6], [STILT_W, 14, 0], [STILT, 21, 1]], 11)] },
-  { name: "Fisher folk", note: "Net racks on the shore and a punt out on the water with its fisherman.",
-    s: [compose([[VILLAGE, 0, 0], [NETS, 7, 2], [PUNT, 13, 2]], 12),
-        compose([[TOWN, 0, 0], [NETS, 11, 4], [PUNT, 18, 3]], 15),
-        compose([[CITY, 0, 0], [NETS, 11, 5], [PUNT, 18, 4], [PUNT, 24, 6]], 15)] },
+  { name: "Stilt houses and boats", note: "Houses on piles in the shallows, a walkway to the shore, punts with a fisherman out on the lake; no nets.",
+    s: [compose([[VILLAGE, 0, 0], [STILT, 8, -1], [PUNT, 14, 1]], 7),
+        compose([[TOWN, 0, 0], [WALK, 10, 5], [STILT, 14, 0], [STILT, 19, 1], [PUNT, 25, 3]], 11),
+        compose([[CITY, 0, 0], [WALK, 10, 6], [STILT_W, 14, 0], [STILT, 21, 1], [PUNT, 27, 3], [ROWBOAT, 20, 9]], 11)] },
+  { name: "All on stilts", note: "The houses out in the water stand on piles; the town and city keep their walls on the shore.",
+    s: [compose([[STILT, 0, 0], [WALK, -4, 4], [PUNT, 6, 2]], -3),
+        compose([[TOWN, 0, 0], [STILT_W, 11, 0], [PUNT, 19, 2]], 11),
+        compose([[CITY, 0, 0], [STILT_W, 11, 0], [STILT, 18, 1], [PUNT, 24, 3]], 11)] },
 ];
 
 /* ------------------------------------------------------------ ground, painted as the map does */
@@ -225,22 +235,31 @@ function grassAt(x, y) {
   const lvl = Math.min(2, Math.floor(Math.max(0, Math.min(0.999, 0.55 + (height(x - 1, y - 1) - height(x + 1, y + 1)) * 0.5 + (hash(x >> 1, y >> 1) - 0.5) * 0.25)) * 2 + bayer(x, y)));
   return MAP.grass[lvl];
 }
-/* kind: "grass", "coast" (sea to the right of shoreX), "river" (riverX, 1-2 pixels wide), "lake" */
+function rgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+/* the political mode's wash: the realm colour dithered over the ground (pixelmap.js compose) */
+function wash(col, realmHex, x, y) {
+  const a = bayer(x, y) < 0.5 ? 0.66 : 0.44, c = rgb(col), r = rgb(realmHex);
+  return "rgb(" + c.map(function (v, i) { return Math.round(v + (r[i] - v) * a); }).join(",") + ")";
+}
 const shoreX = function (y) { return 52 + Math.sin(y / 7) * 3 + Math.sin(y / 2.7) * 1.2; };
 const riverX = function (y) { return 47 + Math.sin(y / 9) * 4; };
 const lakeX = function (y) { return 53 + Math.sin(y / 6) * 2.5 + Math.sin(y / 3.1) * 1.3; };
-function paint(g, kind) {
+/* kind: "grass", "coast" (sea right of shoreX), "river", "lake"; bands: [[y0, y1, realm]] washed */
+function paint(g, kind, bands) {
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
-    let col = grassAt(x, y);
+    let col = grassAt(x, y), land = true;
     if (kind === "coast") {
       const d = x - shoreX(y);
       if (d >= 0) {
         const t = bayer(x, y);
         const coast = d < 1 || x - 1 - shoreX(y) < 0 || x - shoreX(y - 1) < 1 || x - shoreX(y + 1) < 1;
         col = coast ? (t < 0.5 ? MAP.foam : MAP.shallow) : d < 3 + t * 2 ? MAP.shallow : d < 14 + t * 5 ? MAP.mid : MAP.deep;
+        land = false;
       } else if (d > -2 || (d > -3 && bayer(x, y) < 0.5)) col = MAP.sand[Math.min(2, Math.floor(bayer(x + 1, y) * 3))];
-    } else if (kind === "lake") {
-      if (x >= lakeX(y)) col = (x + y) % 5 ? MAP.shallow : MAP.mid;
+    } else if (kind === "lake" && x >= lakeX(y)) { col = (x + y) % 5 ? MAP.shallow : MAP.mid; land = false; }
+    if (land && bands) for (const b of bands) if (y >= b[0] && y < b[1] && b[2]) {
+      /* the realm's border: two dark pixels along the band's edge, as the map draws it */
+      col = (y < b[0] + 1 && b[0] > 0) || (y >= b[1] - 1 && b[1] < MH) ? (function () { const r = rgb(b[2]); return "rgb(" + r.map(function (v) { return Math.round(v * 0.5); }).join(",") + ")"; })() : wash(col, b[2], x, y);
     }
     g.fillStyle = col;
     g.fillRect(x * MP, y * MP, MP, MP);
@@ -253,45 +272,67 @@ function paint(g, kind) {
     }
   }
 }
+/* a road (the map's solid track) at map resolution from a to b, with a slight bend */
+function road(g, a, b) {
+  g.fillStyle = MAP.road;
+  const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) * 2;
+  for (let s = 0; s <= n; s++) {
+    const t = s / n, bend = Math.sin(t * Math.PI) * 2;
+    g.fillRect(Math.round(a[0] + (b[0] - a[0]) * t) * MP, Math.round(a[1] + (b[1] - a[1]) * t + bend) * MP, MP, MP);
+  }
+}
 function trees(g, spots) { for (const p of spots) blit(g, TREE, p[0] * MP, p[1] * MP); }
 
 /* ------------------------------------------------------------ panels */
 const panels = [];
-/* the cities: village, town, the new city and the capital in a row on grassland, the city also
-   alone and larger on the right; the current city first, for comparison */
-const cityPanels = [{ name: "Now on the map", note: "The current village, town, walled city and the capital's domed palace, for comparison.", sp: CITY }].concat(CITIES);
-cityPanels.forEach(function (c, k) {
-  panels.push({ group: "The walled city", title: c.name, note: c.note, close: [VILLAGE, TOWN, c.sp, PALACE], draw: function (g) {
-    paint(g, "grass");
-    trees(g, [[4, 6], [70, 44], [80, 8], [36, 47]]);
-    const row = [VILLAGE, TOWN, c.sp, PALACE], xs = [12, 30, 50, 72], over = { f: "#c0504d", F: "#7d3432" };
-    row.forEach(function (sp, i) { blit(g, sp, xs[i] * MP - Math.round(sp.w * U / 2), 22 * MP - sp.h * U, i === 3 ? over : null); });
-    /* the city twice: next to a town, and between two villages, as cities crowd on the map */
-    blit(g, VILLAGE, 22 * MP, 42 * MP - VILLAGE.h * U);
-    blit(g, c.sp, 34 * MP, 46 * MP - c.sp.h * U);
-    blit(g, TOWN, 48 * MP, 44 * MP - TOWN.h * U);
+const BANDS = [[0, 19, null], [19, 38, BLUE], [38, 56, RED]];
+/* three bands: a blue realm on the biome map, the same under its political wash, a red realm */
+function settlementPanel(group, title, note, row, close) {
+  panels.push({ group: group, title: title, note: note, close: close, draw: function (g) {
+    paint(g, "grass", BANDS);
+    trees(g, [[3, 3], [82, 4]]);
+    const xs = [10, 28, 50, 74];
+    BANDS.forEach(function (b, bi) {
+      const over = realm(b[2] || BLUE);
+      row.forEach(function (sp, i) { blit(g, sp, xs[i] * MP - Math.round(sp.w * U / 2), (b[1] - 3) * MP - sp.h * U, over); });
+    });
   } });
-});
+}
+CAPITALS.forEach(function (c) { settlementPanel("The capital", c.name, c.note, [VILLAGE, TOWN, CITY, c.sp], [c.sp]); });
+CITIES.forEach(function (c) { settlementPanel("The city", c.name, c.note, [VILLAGE, TOWN, c.sp, CAPITAL], [TOWN, c.sp, CAPITAL]); });
+TOWNS.forEach(function (c) { settlementPanel("The town", c.name, c.note, [VILLAGE, c.sp, CITY, CAPITAL], [VILLAGE, c.sp, CITY]); });
+
+function place(g, sp, kind, edge, yb, over) {
+  const x = Math.round((edge(yb - (kind === "river" ? 1 : 2)) + (kind === "river" ? 0 : 1)) * MP) - sp.ax * U;
+  blit(g, sp, x, yb * MP - sp.h * U, over || realm(BLUE));
+}
 function waterPanels(group, kind, list, edge) {
-  list.forEach(function (v, k) {
+  list.forEach(function (v) {
     panels.push({ group: group, title: v.name, note: v.note, close: v.s, kind: kind, draw: function (g) {
       paint(g, kind);
       trees(g, kind === "river" ? [[6, 4], [72, 40], [80, 14], [10, 46]] : [[6, 4], [10, 46], [22, 24]]);
       /* village, town, city stacked along the water, each with its water piece on the water */
       const ys = [14, 32, 51];
-      v.s.forEach(function (sp, i) {
-        const y = ys[i] * MP, x = Math.round((edge(ys[i] - (kind === "river" ? 1 : 2)) + (kind === "river" ? 0 : 1)) * MP) - sp.ax * U;
-        blit(g, sp, x, y - sp.h * U);
+      if (v.roads) ys.forEach(function (y) {
+        const x = edge(y - 1);
+        road(g, [0, y - 6], [x - 4, y - 2]);
+        if (v.roads === "across") road(g, [x + 4, y - 2], [MW, y - 7]);
       });
+      v.s.forEach(function (sp, i) { place(g, sp, kind, edge, ys[i]); });
     } });
   });
 }
 waterPanels("On the coast", "coast", COAST, shoreX);
+panels.push({ group: "On the coast", title: "The ship follows the age", note: "The same harbour town in four realms: the oared boat, the sail ship, the galleon and the steam-ship, as their fleets look on the map.", close: AGES, kind: "coast", draw: function (g) {
+  paint(g, "coast");
+  const ys = [12, 25, 38, 52], cols = ["#9bbb59", BLUE, RED, "#8064a2"];
+  AGES.forEach(function (sp, i) { place(g, sp, "coast", shoreX, ys[i], realm(cols[i])); });
+} });
 waterPanels("By a river", "river", RIVER, riverX);
 waterPanels("On a lake shore", "lake", LAKE, lakeX);
 
-/* a close-up under each panel: the sprites five times larger, on the ground they stand on (water
-   from their water column on) */
+/* a close-up under each panel: the sprites larger, on the ground they stand on (water from their
+   water column on) */
 function closeUp(pn) {
   const cv = document.createElement("canvas"), Z = CLOSE && CLOSE[1] ? +CLOSE[1] : 4, gap = 6;
   let w = gap, h = 0;
@@ -307,7 +348,7 @@ function closeUp(pn) {
       if (pn.kind === "river") g.fillRect(x + sp.ax * Z - 3 * Z, 0, 6 * Z, cv.height);
       else g.fillRect(x + sp.ax * Z, 0, sp.w * Z - sp.ax * Z + gap * Z, cv.height);
     }
-    blit(g, sp, x, gap * Z + h - sp.h * Z, sp === PALACE ? { f: "#c0504d", F: "#7d3432" } : null, Z);
+    blit(g, sp, x, gap * Z + h - sp.h * Z, realm(BLUE), Z);
     x += sp.w * Z + gap * Z;
   }
   cv.style.marginTop = "8px";

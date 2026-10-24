@@ -403,15 +403,6 @@ const TREATIES = [
   "the Peace of the Burnt Harvest, agreed at {P}", "the Edict of {P}", "the Oath on the Bridge at {P}",
 ];
 
-const TECH_LOST = [
-  ["the casting of large bronze vessels", "the reckoning of the river's rise", "the construction of vaulted tombs", "the weaving of the fine linen", "the working of tin-bronze to the old specification"],
-  ["the smelting of high-grade steel", "the maintenance of the great canals", "the construction of the sea-going galley", "the engraving of the cylinder seals", "the casting of iron in large pieces"],
-  ["the making of hydraulic concrete", "the building of the large aqueducts", "the surveying of roads", "the reading of the old script", "the keeping of the census", "the casting of bronze in the lost-wax method"],
-  ["the engineering of the great domes", "the craft of the mosaic-layers", "the copying of secular texts", "the minting of fine coin", "the glassmaker's art", "the drilling of the artesian wells"],
-  ["the casting of the great bells", "the building of the high vault", "the drafting of the long charters", "the working of the fine steel blades", "the grafting of the vine", "the making of the large windows"],
-  ["the casting of the largest cannon", "the grinding of lenses", "the navigation of the long ocean crossing", "the engraving of the finest type", "the compounding of reliable powder"],
-];
-
 const ARCH_ORIGIN = {
   citystate: "when a dozen walled towns agreed to sit together each spring at {S}, and to bury their quarrels, or at least to adjourn them",
   riverkingdom: "when the villages along the flood-plain accepted a single measurer of the water, and with it a single claimant to the grain",
@@ -511,7 +502,7 @@ const FACTIONS = ["the army", "the household guard", "the great landowners", "th
 function H(w) {
   if (!w._hist) {
     w._hist = { wars: {}, tribute: {}, dynasty: {}, faiths: [], faithOf: {}, heirs: {}, regents: {}, pretenders: {}, greeted: {}, emperor: {},
-      plagues: [], bonus: {}, fatigue: {}, excavated: {}, forged: {}, marriages: [], routes: [], defeats: {}, capLost: {}, lostTech: 0, holy: 0, recovered: {} };
+      plagues: [], bonus: {}, fatigue: {}, excavated: {}, forged: {}, marriages: [], routes: [], defeats: {}, capLost: {}, holy: 0 };
   }
   return w._hist;
 }
@@ -734,10 +725,6 @@ function lastPolityActor(ev, w) {
   return null;
 }
 function hasTag(ev, t) { return !!(ev.tags && ev.tags.indexOf(t) >= 0); }
-function lostTechOf(ev) {
-  for (let i = 0; i < ev.tags.length; i++) if (ev.tags[i].indexOf("lost:") === 0) return ev.tags[i].slice(5);
-  return null;
-}
 function ruinsIn(ctx, p) { return ctx.regionsOf(p).filter(function (r) { return r.features.indexOf("ruins") >= 0 && !H(ctx.world).excavated[r.id]; }); }
 function warName(ctx, a, b) {
   return ctx.choice([
@@ -839,8 +826,17 @@ const TECH_TOLD = {
   galleon: ["the ocean-going ship", "a ship was built to cross the western ocean, and did, and came back"],
   jointstock: ["the joint-stock company", "merchants pooled their money in a company whose shares could be sold, so that a ship lost at sea ruined no one in particular"],
 };
-function techStory(w, p, t, how) {
-  if (how === "again") return null;                          /* core.js tells a rediscovery */
+function techStory(w, p, t, how, since) {
+  /* a lost craft recovered: every technology found again after the world lost it, and about one in
+     seven a realm learns again after forgetting it, is a scholar's work */
+  if (how === "again" || (how === "relearned" && w.rng.chance(0.15))) {
+    const all = how === "again", s = AEON.newFigure(w, p, "scholar");
+    p.prestige = clamp(p.prestige + 0.02, 0, 1); adjustT(p, "curiosity", 0.02);
+    return { type: "lost-technique-rediscovered", importance: all ? 4 : 3, tags: ["rediscovery", "memory", "technology"],
+      actors: [{ kind: "polity", id: p.id }, { kind: "figure", id: s.id }], regionId: p.capital,
+      text: s.title + " " + s.name + " of " + p.name + ", working from a corrupt manuscript and the evidence of a ruined workshop, found out again how to " + t.verb + ", which " + (all ? "no realm" : "no one in " + p.name) + " had known how to do since " + yl(since) + ". It took " + w.rng.int(8, 30) + " years, and the result was said to be inferior to the original." };
+  }
+  if (how === "relearned") how = "learned";
   const R = w.regions, here = R[p.capital], first = how === "first", rng = w.rng;
   const gain = function (r) {                                /* what the old invention event gave */
     p.tech = clamp(p.tech + 0.03, 0, 1); p.population = Math.round(p.population * 1.025); adjustT(p, "stability", 0.012);
@@ -1252,11 +1248,11 @@ const EVENTS = [
     const lib = ctx.pick(libs), r = w.regions[lib.location], owner = r && r.owner && w.polities[r.owner];
     const cause = ctx.choice(["a fire that began in a neighbouring bakery", "an army that had been told there was nothing of value inside", "a mob incited by a preacher who had read one book and disliked it", "the slow indifference of three successive treasurers, and then a fire", "an earthquake, followed by looters, followed by rain"]);
     lib.destroyed = ctx.year;
-    const tech = ctx.choice(pickEra(TECH_LOST, ctx));
-    if (owner) { owner.tech = clamp(owner.tech - 0.05, 0, 1); adjustT(owner, "curiosity", -0.05); AEON.techShock(w, owner, 0.5, "when " + lib.name + " burned"); }
-    H(w).lostTech++;
-    return res(4, ["destruction", "library", "lost-technique", "lost:" + tech], A(ctx, lib, owner), r ? r.id : null,
-      lib.name + " was destroyed by " + cause + ". The loss was not noticed at once, being a loss of things nobody was reading; it was noticed within a generation, when " + tech + " could no longer be done by anyone alive.");
+    const gone = owner ? AEON.forgetTech(w, owner) : null;
+    if (owner) { owner.tech = clamp(owner.tech - 0.05, 0, 1); adjustT(owner, "curiosity", -0.05); AEON.techShock(w, owner, 0.3, "after " + lib.name + " burned"); }
+    return res(4, ["destruction", "library"].concat(gone ? ["lost-knowledge", "technology", "tech:" + gone.id] : []), A(ctx, lib, owner), r ? r.id : null,
+      lib.name + " was destroyed by " + cause + ". The loss was not noticed at once, being a loss of things nobody was reading; it was noticed within a generation, when " +
+      (gone ? "no one in " + owner.name + " could " + gone.verb + " any longer" : "the questions the old scrolls had answered were asked again and could not be") + ".");
   } },
 
 { id: "wonder-destroyed", scope: "world", weight: 0.5,
@@ -1987,12 +1983,12 @@ const EVENTS = [
   test: function (ctx) { return ctx.polity.tech > 0.25 && ctx.polity.traits.stability < 0.3; },
   run: function (ctx) {
     const p = ctx.polity, h = H(ctx.world);
-    const loss = ctx.range(0.06, 0.18), lost = ctx.choice(pickEra(TECH_LOST, ctx));
+    const loss = ctx.range(0.06, 0.18), gone = AEON.forgetTech(ctx.world, p);
+    if (!gone) return null;
     p.tech = clamp(p.tech - loss, 0, 1); adjustT(p, "curiosity", -0.08); adjustT(p, "stability", 0.1);
-    AEON.techShock(ctx.world, p, 0.6, "in its dark age");
-    h.lostTech++;
-    return res(4, ["dark-age", "lost-technique", "lost:" + lost], A(ctx, p), p.capital,
-      "For about " + ctx.int(2, 6) + " generations after the troubles, no one in " + p.name + " could manage " + lost + ". The last masters of the craft had died in the famine or the wars, and their apprentices, who had been conscripted, did not return. The people continued to use the buildings and the tools of the earlier age and to attribute them, with increasing confidence, to giants.");
+    AEON.techShock(ctx.world, p, 0.4, "in its dark age");
+    return res(4, ["dark-age", "lost-knowledge", "technology", "tech:" + gone.id], A(ctx, p), p.capital,
+      "For about " + ctx.int(2, 6) + " generations after the troubles, no one in " + p.name + " could " + gone.verb + ". The last masters of the craft had died in the famine or the wars, and their apprentices, who had been conscripted, did not return. The people continued to use the buildings and the tools of the earlier age and to attribute them, with increasing confidence, to giants.");
   } },
 
 { id: "city-abandoned", scope: "polity", weight: 2, cooldown: 40,
@@ -2234,20 +2230,6 @@ const EVENTS = [
     p.prestige = clamp(p.prestige - 0.1, 0, 1); adjustT(p, "stability", -0.04);
     return res(3, ["forgery", "scholar", "memory"], A(ctx, p, s, q), p.capital,
       s.title + " " + s.name + " demonstrated that the genealogy of the House of " + p.adjective + ", put about " + (ctx.year - (ev ? ev.year : f.year)) + " years earlier, claimed descent from " + (q ? q.name : "an extinct empire") + " in a script that had not been invented when the empire fell, and in a language that had not yet separated from its neighbour's. The ruling house continued to use the descent. The scholar was not prosecuted, only not invited.");
-  } },
-
-{ id: "lost-technique-rediscovered", scope: "polity", weight: 3, cooldown: 120,
-  test: function (ctx) { const p = ctx.polity; return H(ctx.world).lostTech > 0 && p.tech < 0.75 && p.traits.curiosity > 0.4; },
-  run: function (ctx) {
-    const p = ctx.polity, w = ctx.world, h = H(w);
-    const evs = ctx.pastByTag("lost-technique", 25).filter(function (e) { return lostTechOf(e) && !h.recovered[e.id] && ctx.year - e.year >= 50; });
-    if (!evs.length) return null;
-    const ev = ctx.pick(evs), tech = lostTechOf(ev), q = lastPolityActor(ev, w);
-    h.recovered[ev.id] = true;
-    p.tech = clamp(p.tech + 0.05, 0, 1); adjustT(p, "curiosity", 0.02); p.prestige = clamp(p.prestige + 0.02, 0, 1);
-    const s = ctx.newFigure(p, "scholar");
-    return res(3, ["rediscovery", "memory", "technology"], A(ctx, p, s, q), p.capital,
-      s.title + " " + s.name + " of " + p.name + ", working from a corrupt manuscript and the evidence of a ruined workshop, recovered " + tech + ", which had been lost since " + yl(ev.year) + ". It took " + ctx.int(8, 30) + " years, and the result was said to be inferior to the original. " + (q ? "The original had been the work of " + q.name + "." : ""));
   } },
 
 { id: "lost-text-recovered", scope: "polity", weight: 3, cooldown: 80,

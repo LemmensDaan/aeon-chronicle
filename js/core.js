@@ -1528,7 +1528,7 @@ function driftRelations(world, alive) {
    partner, lord or vassal that knows it adds 12% a tick (at most 60%); the first realm to find one
    does so alone, at about 1.5% a tick for a curious realm (only living realms count: what only fallen
    realms knew is found again this way, see lost knowledge below). The first discovery is a chronicle entry (told by
-   pack.techStory(world, p, t, "first" | "again" | "learned") when the pack has one, which may also tell
+   pack.techStory(world, p, t, "first" | "again" | "relearned" | "learned", since) when the pack has one, which may also tell
    some of the later adoptions); the rest spread quietly (p.techs: id -> year, p.techLog). Effects multiply: army and navy the
    quality of its men and ships in battle, growth the people its land can feed, wealth what its
    people make. Each one also nudges p.tech up a little. */
@@ -1575,10 +1575,13 @@ function canLearn(world, p, t, known) {
   return true;
 }
 /* p takes up t: logged, and told unless quiet (the caller tells it). Returns how: "first" in the
-   world, "again" (rediscovered after it was lost to the world) or "learned" (from others). */
+   world, "again" (rediscovered after it was lost to the world), "relearned" (from others, after p
+   forgot it) or "learned" (from others). */
 function learnTech(world, p, t, known, quiet) {
   const lost = world.techLost || (world.techLost = {});
-  const again = !known[t.id] && lost[t.id] != null, how = again ? "again" : !known[t.id] ? "first" : "learned";
+  const again = !known[t.id] && lost[t.id] != null, relearn = known[t.id] && p.forgot && p.forgot[t.id] != null;
+  const how = again ? "again" : !known[t.id] ? "first" : relearn ? "relearned" : "learned";
+  const forgotAt = relearn ? p.forgot[t.id] : null;
   p.techs[t.id] = world.year;
   (p.techLog || (p.techLog = [])).push(again ? { year: world.year, tech: t.id, first: true, again: true } : { year: world.year, tech: t.id, first: !known[t.id] });
   p.tech = clamp(p.tech + 0.01, 0, 1);
@@ -1588,7 +1591,7 @@ function learnTech(world, p, t, known, quiet) {
   if (quiet) return how;
   /* the pack may tell it its own way (pack.techStory: an entry, or null to leave it to the
      defaults below); a realm merely taking up what others know gets no entry otherwise */
-  const story = world.pack.techStory ? world.pack.techStory(world, p, t, how) : null;
+  const story = world.pack.techStory ? world.pack.techStory(world, p, t, how, again ? since : forgotAt) : null;
   if (story) {
     recordEvent(world, story.type || (how === "first" ? "discovery" : how === "again" ? "rediscovery" : "adoption"), { importance: story.importance || 2,
       tags: (story.tags || []).concat(["tech:" + t.id]).concat(story.tags && story.tags.indexOf("technology") >= 0 ? [] : ["technology"]),
@@ -1646,6 +1649,7 @@ function holdersOf(alive, T) {
    other, after a generation (RELEARN_AFTER years; a technology lost to the world, too). When no living realm knows one any more, by forgetting or because the last realms that
    knew it fell, it is lost to the world (world.techLost: id -> year, a chronicle entry), and the
    next realm to find it alone rediscovers it. */
+AEON.newFigure = function (world, p, role) { return newFigure(world, p, role); };
 AEON.techShock = function (world, p, amount, cause) {
   if (!p || p.ended || !(amount > 0)) return;
   p.techShock = Math.min(1.5, (p.techShock || 0) + amount);
@@ -1664,13 +1668,8 @@ function forgetTick(world, alive, T) {
     const s = p.techShock || 0, cause = p.techCause;
     p.techShock = s < 0.05 ? 0 : s * 0.4;
     if (s < 0.05) { p.techCause = null; p.techCauseAt = 0; continue; }
-    const mine = p.techs;
-    if (!mine) continue;
-    const ids = Object.keys(mine);
-    if (!ids.length) continue;
-    const needed = {};
-    for (const id of ids) for (const nd of (byId[id] && byId[id].needs) || []) needed[nd] = true;
-    const leaves = ids.filter(function (id) { return byId[id] && !needed[id]; }).sort(function (a, b) { return byId[b].age - byId[a].age || (a < b ? -1 : 1); });
+    const leaves = leavesOf(p, byId);
+    if (!leaves.length) continue;
     const contacts = contactsOf(world, p), gone = [];
     for (const id of leaves) {
       if (gone.length >= FORGET_PER_TICK) break;
@@ -1680,23 +1679,10 @@ function forgetTick(world, alive, T) {
     }
     if (!gone.length) continue;
     for (const id of gone) forget(world, p, id);
-    p.lostSinceAge = (p.lostSinceAge || 0) + gone.length;
     const names = gone.map(function (id) { return byId[id].verb || "master " + byId[id].name.toLowerCase(); });
     recordEvent(world, "technology-lost", { importance: 2, tags: ["technology", "lost-knowledge"].concat(gone.map(function (id) { return "tech:" + id; })), actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
       text: p.name + ", " + (cause || "in its troubles") + ", lost the last of the people who knew how to " + names.join(", or to ") + ", and within a generation no one there could." });
-    /* too much forgotten: back an age */
-    if (ages && (p.age || 0) > 0 && p.lostSinceAge >= FALL_AFTER) {
-      const from = p.age, to = from - 1, lo = ages[to].at, hi = ages[from].at;
-      p.age = to;
-      p.learning = Math.round((hi - 0.15 * (hi - lo)) * 1000) / 1000;
-      p.ageLog.push({ age: to, year: world.year, fell: true });
-      p.lostSinceAge = 0;
-      const beyond = Object.keys(mine).filter(function (id) { return byId[id] && byId[id].age > to; });
-      for (const id of beyond) forget(world, p, id);
-      recordEvent(world, "age-lost", { importance: 4, tags: ["technology", "lost-knowledge", "age-lost", "age:" + ages[to].id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
-        text: p.name + " fell back from " + ages[from].name + " into " + ages[to].name + ". So much had been forgotten that what was left was the learning of an earlier time" +
-          (beyond.length ? "; " + beyond.length + " more of the newer arts went with it" : "") + ", and the buildings of its grandfathers were looked at as the work of another people." });
-    }
+    fallBack(world, p, byId);
   }
   /* lost to the world: known by some living realm last tick, by none now */
   const was = world._techHolders || {}, known = knownBy(alive, T), lost = world.techLost || (world.techLost = {});
@@ -1708,12 +1694,46 @@ function forgetTick(world, alive, T) {
       text: "No realm then living knew how to " + (t.verb || "master " + t.name.toLowerCase()) + " any longer. The last to have done it " + (last.length > 1 ? "were " + last.map(function (q) { return q.name; }).join(" and ") : last.length ? "was " + last[0].name : "are forgotten") + "; what " + (last.length > 1 ? "they" : "it") + " had made was still in use, and no one could make more." });
   }
 }
-function forget(world, p, id) {
+/* what p knows that nothing else it knows depends on, the newest age first */
+function leavesOf(p, byId) {
+  const ids = p.techs ? Object.keys(p.techs) : [], needed = {};
+  for (const id of ids) for (const nd of (byId[id] && byId[id].needs) || []) needed[nd] = true;
+  return ids.filter(function (id) { return byId[id] && !needed[id]; }).sort(function (a, b) { return byId[b].age - byId[a].age || (a < b ? -1 : 1); });
+}
+function forget(world, p, id, counts) {
   delete p.techs[id];
   (p.forgot || (p.forgot = {}))[id] = world.year;
   (p.techLog || (p.techLog = [])).push({ year: world.year, tech: id, lost: true });
   p.tech = clamp(p.tech - 0.01, 0, 1);
+  if (counts !== false) p.lostSinceAge = (p.lostSinceAge || 0) + 1;
 }
+/* too much forgotten in this age: back an age, and everything beyond it forgotten too */
+function fallBack(world, p, byId) {
+  const ages = world.pack.ages, mine = p.techs || {};
+  if (!ages || !((p.age || 0) > 0) || !(p.lostSinceAge >= FALL_AFTER)) return;
+  const from = p.age, to = from - 1, lo = ages[to].at, hi = ages[from].at;
+  p.age = to;
+  p.learning = Math.round((hi - 0.15 * (hi - lo)) * 1000) / 1000;
+  p.ageLog.push({ age: to, year: world.year, fell: true });
+  const beyond = Object.keys(mine).filter(function (id) { return byId[id] && byId[id].age > to; });
+  for (const id of beyond) forget(world, p, id, false);
+  p.lostSinceAge = 0;
+  recordEvent(world, "age-lost", { importance: 4, tags: ["technology", "lost-knowledge", "age-lost", "age:" + ages[to].id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
+    text: p.name + " fell back from " + ages[from].name + " into " + ages[to].name + ". So much had been forgotten that what was left was the learning of an earlier time" +
+      (beyond.length ? "; " + beyond.length + " more of the newer arts went with it" : "") + ", and the buildings of its grandfathers were looked at as the work of another people." });
+}
+function techsById(world) { const byId = {}; for (const t of world.pack.technologies || []) byId[t.id] = t; return byId; }
+/* for pack events (a library burned, a dark age): p forgets one technology now, the newest it can
+   lose, quietly (the event tells it); counts toward falling back an age. Returns it, or null. */
+AEON.forgetTech = function (world, p) {
+  if (!p || p.ended) return null;
+  const byId = techsById(world), leaves = leavesOf(p, byId);
+  if (!leaves.length) return null;
+  const t = byId[leaves[0]];
+  forget(world, p, t.id);
+  fallBack(world, p, byId);
+  return t;
+};
 /* the technologies p knew in a year (the current ones without a year) */
 AEON.techsOf = function (world, p, year) {
   const T = world.pack.technologies || [], out = [];

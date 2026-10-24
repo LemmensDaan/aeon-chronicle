@@ -347,10 +347,18 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   +0.03, people +2.5%, stability, food). The core `discovery` entry no longer fires in historical;
   checked on seeds 7/42/3: every technology entry matches the realm's techLog, none told twice. The
   old gunpowder battle bonus (h.bonus +0.12) is gone: the gunpowder technology's army 1.2 does that.
-  Flavour inventions with no named technology (windmill, spectacles, clock...) are gone. Not tied
-  yet: `lost-technique-rediscovered` and the TECH_LOST texts (library-destroyed, dark-age) still
-  name crafts that are not technologies; fantasy has no techStory (core texts) and `school-founded`
-  is unchanged.
+  Flavour inventions with no named technology (windmill, spectacles, clock...) are gone. Fantasy has
+  no techStory (core texts) and `school-founded` is unchanged.
+- **Lost crafts are named technologies (2026-10-24, changes every history):** TECH_LOST, lostTechOf
+  and the lostTech / recovered counters are gone. `library-destroyed` and `dark-age` make the realm
+  forget its newest technology at once (`AEON.forgetTech(world, p)`, quiet, counts toward falling
+  back an age) and name it ("no one in X could ... any longer"), plus a smaller shock (0.3 and 0.4,
+  were 0.5 and 0.6); dark-age does not fire when there is nothing to forget. `lost-technique-
+  rediscovered` is no longer a random event: core learnTech now has how `"relearned"` (learned from
+  others after forgetting it) and passes `since` to techStory; historical tells every rediscovery of
+  something lost to the world and about one in seven relearnings as the scholar who "found out again
+  how to ..." (6-9 a history). Seeds 7/42/3: every technology entry, forgetting included, matches
+  the realm's techLog. `AEON.newFigure` is exposed for pack hooks.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

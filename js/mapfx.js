@@ -28,10 +28,12 @@ const INK = "#2a1a0e", HALO = "#efe2bf", GOLD = "#e0b84f", LIGHT = "255,244,214"
 const PAL = { k: INK, w: "#efe6d6", r: "#b5452e", g: "#b7b1a4", b: "#7a4a22", y: GOLD, G: "#4f8a3a" };
 function sprite(rows, pal) { return { rows: rows, pal: pal, w: rows[0].length, h: rows.length }; }
 const CROWN = sprite(["k.k.k", "kykyk", "kyyyk", "kkkkk"], PAL);
+/* ruins of a village, a town and a city: grey stone (Daan, 2026-10-24: not brown) */
+const RUIN_PAL = { k: INK, g: "#b7b1a4", d: "#8a8478" };
 const RUINS = [null,
-  sprite(["..k....", ".kb.k..", "kbbkbk.", "kkkkkkk"], PAL),
-  sprite(["......k....", ".....kg....", "..k..kg..k.", ".kbk.kgk.kb", "kbbkkkgkkbk", "kkkkkkkkkkk"], PAL),
-  sprite(["k........k.", "kg.k.....kg", "kgkgk..k.kg", "kggg.k.kgkg", "kg.gg.kgg.g", "kkkkkkkkkkk"], PAL)];
+  sprite(["..k....", ".kd.k..", "kddkdk.", "kkkkkkk"], RUIN_PAL),
+  sprite(["......k....", ".....kg....", "..k..kg..k.", ".kdk.kgk.kd", "kddkkkgkkdk", "kkkkkkkkkkk"], RUIN_PAL),
+  sprite(["k........k.", "kg.k.....kg", "kgkgk..k.kg", "kggg.k.kgkg", "kg.gg.kgg.g", "kkkkkkkkkkk"], RUIN_PAL)];
 const RUBBLE = sprite(["....k......", "..kwk.k.kk.", ".kwgwkwkwgk", "kwgwwgwwgwk", "kkkkkkkkkkk"], PAL);
 /* the laurels with the age's numeral, I to V */
 const NUMERAL = [["..k..", "..k..", "..k.."], [".k.k.", ".k.k.", ".k.k."], ["k.k.k", "k.k.k", "k.k.k"],

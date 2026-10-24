@@ -300,17 +300,13 @@ function makeCtx(world, subject) {
     newArtifact: function (o) { return newArtifact(world, o); },
     /* where a polity can raise a wonder: each city or capital holds at most one. Its capital if
        that has a settlement and no wonder standing, else its largest city without one, else null. */
+    /* where a realm could raise a wonder: only in its capital, without one already, and only if
+       it can afford it (AEON.canBuildWonder); a capital that later becomes an ordinary city keeps
+       its wonders */
     wonderSite: function (p) {
-      if (!p) return null;
-      const free = function (rid) { return AEON.wondersAt(world, rid, world.year).length === 0; };
+      if (!p || !AEON.canBuildWonder(world, p)) return null;
       const cap = p.capital != null ? world.regions[p.capital] : null;
-      if (cap && cap.settlement && free(cap.id)) return cap;
-      let best = null;
-      for (const rid of p.regions) {
-        const r = world.regions[rid];
-        if (r.settlement && r.settlement.tier >= 3 && free(rid) && (!best || r.settlement.tier > best.settlement.tier)) best = r;
-      }
-      return best;
+      return cap && cap.settlement && AEON.wondersAt(world, cap.id, world.year).length === 0 ? cap : null;
     },
     transfer: function (region, to) { return transferRegion(world, region, to); },
     foundSettlement: function (region, tier) { return foundSettlement(world, region, tier); },
@@ -1426,6 +1422,15 @@ function techFactor(world, p, key) {
   return f;
 }
 AEON.techFactor = function (world, p, key) { return techFactor(world, p, key); };
+/* Wonders are for the very prosperous: a realm making half again the median realm's income, with
+   a treasury of at least two and a half years' income, which the wonder then costs (packs call
+   AEON.payForWonder when they raise one). */
+AEON.canBuildWonder = function (world, p) {
+  if (!p || !p.income || (p.treasury || 0) < 2.5 * p.income) return false;
+  const inc = living(world).map(function (q) { return q.income || 0; }).sort(function (a, b) { return a - b; });
+  return p.income >= 1.5 * (inc[inc.length >> 1] || 0);
+};
+AEON.payForWonder = function (world, p) { if (p) p.treasury = Math.round((p.treasury || 0) - 2.5 * (p.income || 0)); };
 AEON.currency = function (world) { return world.pack.currency || { one: "talent", many: "talents" }; };
 function economyTick(world, alive) {
   const live = alive.filter(function (p) { return !p.ended; }), base = {}, make = {}, trade = {}, paid = {}, war = {};

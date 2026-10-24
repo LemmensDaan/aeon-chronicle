@@ -2488,6 +2488,7 @@ const WONDER_EVENTS = [
       const name = tpl[0].replace("{P}", sn(c, r, p)).replace("{A}", p.adjective || pn(p));
       const place = sn(c, r, p), at = name.indexOf(place) >= 0 ? "" : " at " + place;
       const who = ruler ? fn(ruler) + " of " + pn(p) : "The rulers of " + pn(p);
+      AEON.payForWonder(w, p);
       const art = c.newArtifact({ name: name, kind: "great work", region: r, creator: ruler, power: c.range(0.3, 0.8),
         legend: "A " + tpl[1] + ", raised" + (at || " there") + " by " + (ruler ? fn(ruler) : "the rulers of " + pn(p)) + "." });
       art.wonder = true;
@@ -2499,10 +2500,11 @@ const WONDER_EVENTS = [
     }
   },
   {
-    id: "great-work-falls", scope: "world", weight: 1.6,
-    test: function (c) { return greatWorks(c.world).some(function (a) { return c.year - a.created > 30; }); },
+    id: "great-work-falls", scope: "world", weight: 0.5,
+    /* great works stand for centuries: only one at least 150 years old falls */
+    test: function (c) { return greatWorks(c.world).some(function (a) { return c.year - a.created >= 150; }); },
     run: function (c) {
-      const w = c.world, a = c.pick(greatWorks(w).filter(function (x) { return c.year - x.created > 30; }));
+      const w = c.world, a = c.pick(greatWorks(w).filter(function (x) { return c.year - x.created >= 150; }));
       const r = w.regions[a.location], owner = r && r.owner && w.polities[r.owner];
       /* as the world's magic drains, more of them simply stop being held up */
       const cause = magic(w) < 0.4 && c.chance(0.5) ? "the failing of the enchantment that had held it up, which ran out like a candle"

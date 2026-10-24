@@ -229,6 +229,19 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   p.techLog ({ year, tech, first }); first in the world is an event "discovery"; each one +0.01
   tech. `techFactor(world, p, key)` multiplies: battle quality (army / navy, AEON.battle), capacity
   (growth), economy (wealth). `AEON.techsOf(world, p, year)`. Realm page: "Technologies".
+- **Daan's feedback 2026-10-24 (morning):** slow time works; wants (1) the camera to pan to great
+  moments (an option), (2) a battle at a kingdom's edge sometimes takes a big kingdom whole: work with
+  provinces, (3) fantasy should consolidate like historical (chronicle length: later), (4) money spent
+  on armies, fleets, wonders and population (prosperity -> growth -> more economy and military, on a
+  longer scale), (5) grey ruins; wonders rarer, expensive, only for very prosperous realms and only in
+  capitals (a capital that becomes a city keeps them), (6) one road style everywhere (the solid track).
+- **Roads, ruins, wonders (2026-10-24):** pixelmap.js: every road the solid brown track (cobbles and
+  dotted tracks gone). mapfx.js RUINS in grey (RUIN_PAL). Wonders: ctx.wonderSite is the capital
+  only, and only if `AEON.canBuildWonder` (income >= 1.5x the median living realm's, treasury >= 2.5
+  years' income); raising one costs 2.5 years' income (`AEON.payForWonder`, called by historical
+  ruler-builds-wonder and great-library, fantasy great-work-raised). Destruction rarer: historical
+  wonder-destroyed and fantasy great-work-falls weight 0.5, only for one at least 150 years old.
+  Seed 7: historical 51 wonders (was 198), median life 275 years; fantasy 14 (was 29), 710 years.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

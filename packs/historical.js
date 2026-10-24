@@ -1074,7 +1074,7 @@ const EVENTS = [
   test: function (ctx) { const p = P(ctx); return !!p && p.ruler === ctx.figure.id && p.wealth > 0.5 && p.tech > 0.15 && due(ctx, "wonder", p, 140) && !!ctx.wonderSite(p); },
   run: function (ctx) {
     const p = P(ctx), f = ctx.figure, r = ctx.wonderSite(p);
-    mark(ctx, "wonder", p);
+    mark(ctx, "wonder", p); AEON.payForWonder(ctx.world, p);
     const tpl = ctx.pick(WONDERS[Math.min(eIdx(ctx), 5)]);
     const art = ctx.newArtifact({ name: fill(tpl[0], { A: p.adjective, P: locName(r) }), kind: "wonder", region: r, creator: f, power: ctx.range(0.3, 0.8), legend: "A " + tpl[1] + " raised in the reign of " + who(f) + ", at a cost that the treasury recorded and the people remembered." });
     p.prestige = clamp(p.prestige + 0.06, 0, 1); adjustT(p, "stability", -0.01);
@@ -1176,6 +1176,7 @@ const EVENTS = [
   },
   run: function (ctx) {
     const p = ctx.polity, r = ctx.wonderSite(p);
+    AEON.payForWonder(ctx.world, p);
     const art = ctx.newArtifact({ name: "The Great Library of " + locName(r), kind: "library", region: r, power: ctx.range(0.5, 0.9), legend: "A collection of " + approx(ctx.int(8000, 90000)) + " scrolls, assembled by decree and by theft." });
     p.tech = clamp(p.tech + 0.04, 0, 1); adjustT(p, "curiosity", 0.05); p.prestige = clamp(p.prestige + 0.08, 0, 1);
     return res(4, ["library", "artifact", "culture"], A(ctx, p, art), r.id,
@@ -1197,11 +1198,12 @@ const EVENTS = [
       lib.name + " was destroyed by " + cause + ". The loss was not noticed at once, being a loss of things nobody was reading; it was noticed within a generation, when " + tech + " could no longer be done by anyone alive.");
   } },
 
-{ id: "wonder-destroyed", scope: "world", weight: 2,
-  test: function (ctx) { return Object.keys(ctx.world.artifacts).some(function (k) { const a = ctx.world.artifacts[k]; return a.kind === "wonder" && !a.destroyed; }); },
+{ id: "wonder-destroyed", scope: "world", weight: 0.5,
+  /* wonders stand for centuries: only one at least 150 years old falls */
+  test: function (ctx) { return Object.keys(ctx.world.artifacts).some(function (k) { const a = ctx.world.artifacts[k]; return a.kind === "wonder" && !a.destroyed && ctx.year - a.created >= 150; }); },
   run: function (ctx) {
     const w = ctx.world;
-    const ws = Object.keys(w.artifacts).map(function (k) { return w.artifacts[k]; }).filter(function (a) { return a.kind === "wonder" && !a.destroyed; });
+    const ws = Object.keys(w.artifacts).map(function (k) { return w.artifacts[k]; }).filter(function (a) { return a.kind === "wonder" && !a.destroyed && ctx.year - a.created >= 150; });
     const a = ctx.pick(ws), r = w.regions[a.location], owner = r && r.owner && w.polities[r.owner];
     const cause = ctx.choice(["an earthquake", "a fire the wind carried", "the stone-robbers, who took it down over two generations", "a besieging army's engines", "an iconoclast mob", "a flood that undermined the foundations", "a lightning strike and a careless priest"]);
     a.destroyed = ctx.year;

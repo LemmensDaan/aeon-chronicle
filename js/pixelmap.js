@@ -379,12 +379,10 @@ function compose(c, w, mode, roads, contest, focus) {
 /* roads: within each realm its settlements are joined into a tree, grown out from the capital
    by the shortest overland links, and the capital also sends a road to each of its nearest
    neighbours, so roads fan out from the seat. A road never crosses water and is at most
-   ROAD_MAX cells long. Drawn into the map at map resolution as a dotted track with a slight
-   bend, so it zooms with the land like the rivers do. */
-/* The style follows what a road joins, by the smaller end: a dotted track wherever a village is
-   involved, a solid track between towns and cities, and a cobbled road between cities and
-   capitals (style 5 of samples/settlements.html, Daan's pick): two stones wide, light and dark in turn. */
-const ROAD = [96, 68, 38], COBBLE_A = [183, 163, 124], COBBLE_B = [143, 124, 90], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
+   ROAD_MAX cells long. Drawn into the map at map resolution as a track with a slight bend, so it zooms with the land like the rivers do. */
+/* Every road is the same solid brown track (Daan, 2026-10-24: the cobbled roads between cities and
+   capitals showed up only now and then, so one style for all). */
+const ROAD = [96, 68, 38], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
 function drawRoads(c, w, d) {
   const R = w.regions, W = w.width, VW = c.VW, VH = c.VH, land = c.land, by = {};
   for (let k = 0; k < R.length; k++) {
@@ -401,9 +399,6 @@ function drawRoads(c, w, d) {
     }
     return true;
   };
-  /* a settlement's rank: 1 village, 2 town, 3 city, 4 the capital */
-  const rank = function (k) { const p = w.polities[R[k].owner]; return p && p.capital === k ? 4 : Math.min(3, R[k].settlement.tier); };
-  let style = 1;
   const dot = function (x, y, col) {
     x = ((Math.round(x) % VW) + VW) % VW; y = Math.round(y);
     if (y < 0 || y >= VH) return;
@@ -411,24 +406,12 @@ function drawRoads(c, w, d) {
     if (!land[i]) return;                                      /* on land only */
     d[i * 4] += (col[0] - d[i * 4]) * 0.85; d[i * 4 + 1] += (col[1] - d[i * 4 + 1]) * 0.85; d[i * 4 + 2] += (col[2] - d[i * 4 + 2]) * 0.85;
   };
-  const put = function (x, y, k, horizontal) {
-    if (style === 1) { if (k % 3 !== 2) dot(x, y, ROAD); return; }
-    if (style === 2) { dot(x, y, ROAD); return; }
-    /* cobbled: two pixels wide across the direction of travel, the stones alternating */
-    const a = k % 2 ? COBBLE_A : COBBLE_B, b = k % 2 ? COBBLE_B : COBBLE_A;
-    dot(x, y, a);
-    if (horizontal) dot(x, y + 1, b); else dot(x + 1, y, b);
-  };
   const line = function (x0, y0, x1, y1, k0) {
     const n = Math.max(1, Math.round(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))));
-    const horizontal = Math.abs(x1 - x0) >= Math.abs(y1 - y0);
-    for (let s = 0; s <= n; s++) put(x0 + (x1 - x0) * s / n, y0 + (y1 - y0) * s / n, k0 + s, horizontal);
+    for (let s = 0; s <= n; s++) dot(x0 + (x1 - x0) * s / n, y0 + (y1 - y0) * s / n, ROAD);
     return k0 + n;
   };
   const road = function (a, b) {
-    /* two kinds: cobbles between cities and capitals, a solid track everywhere else (Daan: the
-       dotted track did not read well) */
-    style = Math.min(rank(a), rank(b)) >= 3 ? 3 : 2;
     const ax = R[a].x * PPC + PPC / 2, ay = R[a].y * PPC + PPC / 2;
     const bx = ax + dxw(R[a].x, R[b].x) * PPC, by2 = R[b].y * PPC + PPC / 2;
     const len = Math.hypot(bx - ax, by2 - ay) || 1, bend = (cellRand(a * 7919 + b, 11) - 0.5) * 5;

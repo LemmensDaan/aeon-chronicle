@@ -745,10 +745,12 @@ function fillTip(view, r) {
   if (where.length) tipEl.appendChild(el("div", { class: "dim", text: where.join(" · ") }));
   const more = [];
   if (live && r.population) more.push(r.population.toLocaleString() + " souls");
-  if (r.features && r.features.length) more.push(r.features.join(", "));
+  /* its features; old ruins under a standing settlement are said by "built on the ruins" instead */
+  const feats = (r.features || []).filter(function (f) { return !(s && f === "ruins"); });
+  if (feats.length) more.push(feats.join(", "));
   /* the wonders standing here in the shown year */
   const ws = AEON.wondersAt ? AEON.wondersAt(world, r.id, year) : [];
-  for (const a of ws) tipEl.appendChild(el("div", { class: "ae-tip-wonder", text: a.name + ", raised " + pack.yearLabel(a.created) }));
+  for (const a of ws) tipEl.appendChild(el("div", { class: "ae-tip-wonder", text: "Wonder: " + a.name + ", raised " + pack.yearLabel(a.created) }));
   /* a ruin standing here, a town built on one, and the sacks this place has suffered */
   const ruin = !s && AEON.ruinAt ? AEON.ruinAt(world, r.id, year) : null;
   if (ruin) tipEl.appendChild(el("div", { text: "Ruins" + (ruin.name ? " of " + ruin.name : "") + ", destroyed " + pack.yearLabel(ruin.since) }));

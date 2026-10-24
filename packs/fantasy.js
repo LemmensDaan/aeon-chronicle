@@ -2524,7 +2524,8 @@ const WONDER_EVENTS = [
     },
     run: function (c) {
       const w = c.world, p = c.polity, r = c.wonderSite(p), ruler = rulerOf(w, p);
-      const tpl = c.pick(GREAT_WORKS[Math.max(0, Math.min(GREAT_WORKS.length - 1, p.age || 0))]);
+      /* a harbour or lighthouse only in a capital on the sea */
+      const tpl = c.pick(GREAT_WORKS[Math.max(0, Math.min(GREAT_WORKS.length - 1, p.age || 0))].filter(function (x) { return coast(w, r) || !/harbour|lighthouse/i.test(x[0]); }));
       const name = tpl[0].replace("{P}", sn(c, r, p)).replace("{A}", p.adjective || pn(p));
       const place = sn(c, r, p), at = name.indexOf(place) >= 0 ? "" : " at " + place;
       const who = ruler ? fn(ruler) + " of " + pn(p) : "The rulers of " + pn(p);

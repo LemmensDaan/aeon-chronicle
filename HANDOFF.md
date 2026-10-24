@@ -297,6 +297,13 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   (entries naming a realm of each side). Atlas tab "Wars" (main wars newest first). The realm page's
   war treaties link to their war. Battles are dated: battleLog [9] the event index at the time, [10]
   the date given by dateTick (the event it came before or after).
+- **Wonder fixes (2026-10-24):** a wonder in a standing capital was never drawn: it sat 5.5 sprite pixels
+  right of the cell, overlapping the palace's box, and markers never cover each other. Now PALACE.w / 2
+  + 2 sprite pixels right (pixelmap placeWonders and the mapfx rise / fall animation alike). Harbours,
+  lighthouses and sea-walls (historical WONDERS) and the fantasy harbour / lighthouse great works only
+  in a capital on the open sea. Tooltip: "Wonder: <name>, raised <year>"; the "ruins" feature is not
+  listed under a standing settlement. Wonders still have one sprite (the obelisk); the designs of
+  samples/animations.html round 2 are not wired in (Daan: not now).
 - **Next for another agent:** technology shown on the map, knowledge lost, old invention events tied
   to the named technologies: see `docs/TECH_VISUALS_BRIEF.md`.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,

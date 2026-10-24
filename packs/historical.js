@@ -1079,7 +1079,9 @@ const EVENTS = [
   run: function (ctx) {
     const p = P(ctx), f = ctx.figure, r = ctx.wonderSite(p);
     mark(ctx, "wonder", p); AEON.payForWonder(ctx.world, p);
-    const tpl = ctx.pick(WONDERS[Math.min(eIdx(ctx), 5)]);
+    /* a harbour, lighthouse or sea-wall only in a capital on the sea */
+    const onSea = r.neighbors.some(function (n) { const q = ctx.world.regions[n]; return q && q.barren && !q.lake; });
+    const tpl = ctx.pick(WONDERS[Math.min(eIdx(ctx), 5)].filter(function (x) { return onSea || !/harbour|lighthouse|sea-walls/i.test(x[0]); }));
     const art = ctx.newArtifact({ name: fill(tpl[0], { A: p.adjective, P: locName(r) }), kind: "wonder", region: r, creator: f, power: ctx.range(0.3, 0.8), legend: "A " + tpl[1] + " raised in the reign of " + who(f) + ", at a cost that the treasury recorded and the people remembered." });
     p.prestige = clamp(p.prestige + 0.06, 0, 1); adjustT(p, "stability", -0.01);
     return res(3, ["wonder", "artifact", "culture"], A(ctx, p, f, art), r.id,

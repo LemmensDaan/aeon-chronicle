@@ -655,7 +655,7 @@ function drawOver(g, env, f, a) {
   } else if (f.kind === "rise" || f.kind === "fall") {
     if (env.pc < 2) return;
     /* where the map draws a standing wonder: right of the cell's marker, on its ground line */
-    const r = R[f.at], W = S.WONDER, x = env.sx(r.x + 0.5) + 5.5 * env.u, y = env.sy(r.y + 0.5) + 3 * env.u;
+    const r = R[f.at], W = S.WONDER, x = env.sx(r.x + 0.5) + (S.PALACE.w / 2 + 2) * env.u, y = env.sy(r.y + 0.5) + 3 * env.u;
     frameAt(g, env, x, y, function () {
       if (f.kind === "rise") {
         const h = Math.round(W.h * ease(a / 0.7));

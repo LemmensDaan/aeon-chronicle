@@ -573,8 +573,9 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
       if (AEON.mapfx && AEON.mapfx.hides(a.id)) continue;      /* still rising: mapfx.js draws it */
       seen[a.location] = true;
       const r = R[a.location];
-      /* just right of a capital-sized marker on the same cell, standing on the same ground line */
-      const x = Math.round(sx(r.x + 0.5) + 5.5 * u), y = Math.round(sy(r.y + 0.5) + 3 * u - WONDER.h * u);
+      /* just right of the capital's palace on the same cell (clear of it: a marker never covers
+         another), standing on the same ground line */
+      const x = Math.round(sx(r.x + 0.5) + (PALACE.w / 2 + 2) * u), y = Math.round(sy(r.y + 0.5) + 3 * u - WONDER.h * u);
       const b = [x - u, y - u, x + (WONDER.w + 1) * u, y + (WONDER.h + 1) * u];
       if (!free(b)) continue;
       boxes.push(b);

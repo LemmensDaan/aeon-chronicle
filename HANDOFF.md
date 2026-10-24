@@ -187,6 +187,18 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   out allies and truce partners. Events: call-to-arms, call-refused, alliance, coalition,
   alliance-betrayed. Results: historical 4-8 calls answered, 7-18 coalitions a history, but a
   2,000-3,000-region empire still forms in most historical seeds (QUESTIONS.md 8).
+- **Diplomacy step 4, vassals (2026-10-24, changes every history):** a "tribute" treaty (a pays b) is
+  vassalage. core.js: `AEON.lordOf` (indexed "lord|id" in openIndex), `AEON.vassalsOf`,
+  `AEON.makeVassal` (one lord at a time); `tributeTick` (vassal wealth -0.1, lord +0.03 each, max
+  +0.15); callToArms: vassals join every war their lord fights (`levy`, no chronicle entry), a lord
+  defends its vassal (80%, event lord-defends); `vassalTick`: absorbed after 30+ years if a third of
+  the lord's size or less (25% a tick while over realmCap, else 6%; event vassal-absorbed), breaks
+  free when as strong as 0.8 of its lord after 20 years or the lord fights 2+ wars (20%; half the
+  time the lord goes to war; event vassal-breaks-free). Historical absorb-minor and fantasy
+  fealty-sworn now make vassals; minorNeighbours / minorOf skip realms that already have a lord;
+  historical h.tribute is gone (tribute events read AEON.lordOf / vassalsOf). Results: historical
+  about 60-70 vassals absorbed and 20-30 breaking free a history, 10 realms at the end; fantasy
+  about 10, ends with 16-21 realms.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

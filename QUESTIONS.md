@@ -45,3 +45,17 @@ choice marked **(went with)** for each, so nothing is blocked; tell me where you
    early when the two come to dislike each other. **(went with: that)**
 10. **Allies and truce partners are no longer "rivals"** to the packs' events, so they are not
     picked for wars, raids or tribute demands while the treaty holds. **(went with: that)**
+
+## Diplomacy: vassals
+
+11. **Small realms become vassals first.** Historical "absorb-minor" and fantasy "fealty-sworn" now make
+    the small neighbour a vassal instead of ending it at once. After 30+ years a vassal a third of its
+    lord's size or less is folded in (25% a step while the world has more realms than its target,
+    else 6%). A vassal nearly as strong as its lord (after 20 years), or whose lord fights two wars,
+    may break free (20% a step), half the time with a war. **(went with: that)**
+12. **What a vassal owes:** -0.1 wealth to the lord (+0.03 a vassal, at most +0.15), its levies in
+    every war its lord fights (silently, no chronicle entry), and its lord defends it (80%). Tribute
+    from a peace or a demand is the same thing as vassalage now. **(went with: that)**
+13. **Fantasy has few vassals and ends with 19-21 realms** in two of four seeds (historical 10). Its
+    fealty event fires less often than historical absorb-minor. Push fantasy consolidation harder?
+    **(went with: as is)**

@@ -631,7 +631,7 @@ function pickEra(tbl, ctx) { return tbl[Math.min(eIdx(ctx), tbl.length - 1)]; }
 /* small, weak neighbours a realm could absorb */
 function minorNeighbours(ctx, p) {
   const w = ctx.world, sp = strength(w, p), lim = Math.max(4, Math.round(p.regions.length / 3));
-  return ctx.neighbors(p).filter(function (q) { return !q.ended && q.regions.length <= lim && q.regions.length < p.regions.length && strength(w, q) < sp * 0.8; });
+  return ctx.neighbors(p).filter(function (q) { return !q.ended && !AEON.lordOf(w, q) && q.regions.length <= lim && q.regions.length < p.regions.length && strength(w, q) < sp * 0.8; });
 }
 /* a coast across the sea from one of a realm's ports, held by a weaker realm it does not border */
 function invasionTarget(ctx, p) {
@@ -1654,17 +1654,16 @@ const EVENTS = [
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, c = minorNeighbours(ctx, p);
     const q = ctx.rng.weighted(c, function (x) { return 1 / x.regions.length; });
-    const regs = ctx.regionsOf(q), capName = seat(ctx, q), rl = rulerOf(ctx, q), how = ctx.int(0, 2);
-    ctx.endPolity(q, how === 0 ? "Submitted to " + p.name + " in " + yl(ctx.year) + " and was absorbed into it." :
-      how === 1 ? "Passed to " + p.name + " by marriage and treaty in " + yl(ctx.year) + "." : "Bought out by " + p.name + " in " + yl(ctx.year) + ", its lords pensioned.");
-    for (const r of regs) ctx.transfer(r, p);
+    /* it becomes a vassal; core.js folds it in decades later (vassalTick) */
+    const capName = seat(ctx, q), rl = rulerOf(ctx, q), how = ctx.int(0, 2);
+    AEON.makeVassal(w, q, p, { how: ["submission", "marriage", "purchase"][how] });
     p.prestige = clamp(p.prestige + 0.04, 0, 1);
     const txt = how === 0
-      ? q.name + " submitted to " + p.name + " without a battle. " + (rl ? who(rl) : "Its ruler") + " received the envoys at " + capName + ", read the terms twice and signed them once; the " + q.adjective + " banners were taken down before the week was out."
+      ? q.name + " submitted to " + p.name + " without a battle and became its vassal. " + (rl ? who(rl) : "Its ruler") + " received the envoys at " + capName + ", read the terms twice and signed them once; the " + q.adjective + " banners now flew beneath those of " + p.name + "."
       : how === 1
-      ? "By a marriage and a treaty that took longer to draft than the wedding took to arrange, " + q.name + " passed into the hands of " + p.name + ". " + capName + " kept its council and lost its say."
-      : p.name + " bought " + q.name + " outright: the price was " + ctx.int(3, 40) + " years of its revenue, paid in instalments the lords of " + capName + " were not alive to see completed.";
-    return res(4, ["annexation", "territory", "fall"], A(ctx, p, q, rl), q.capital, txt);
+      ? "By a marriage and a treaty that took longer to draft than the wedding took to arrange, " + q.name + " passed under the protection of " + p.name + ". " + capName + " kept its council and lost its say."
+      : p.name + " bought the allegiance of " + q.name + ": the price was " + ctx.int(3, 40) + " years of its revenue, paid in instalments the lords of " + capName + " were not alive to see completed.";
+    return res(3, ["vassal", "diplomacy"], A(ctx, p, q, rl), q.capital, txt);
   } },
 
 /* an army crosses the sea to take a weaker realm's coast */
@@ -1735,8 +1734,7 @@ const EVENTS = [
         text = t + " ended " + nm + " after " + len + ". " + L.name + " ceded " + provName(rg) + " to " + W.name + " and paid an indemnity in " + ctx.choice(["silver", "grain", "horses", "timber", "tin"]) + ".";
         annex(ctx, rg, W); tags.push("territory");
       } else {
-        h.tribute[L.id] = { lord: W.id, since: ctx.year };
-        AEON.treaty(w, "tribute", L, W, { name: t });
+        AEON.makeVassal(w, L, W, { name: t });
         text = t + " ended " + nm + " after " + len + ". " + L.name + " was made tributary to " + W.name + ", owing " + ctx.choice(["an annual payment of silver", "ten thousand measures of grain a year", "a yearly tribute of horses and hostages", "a tithe of the harvest"]) + ", and its ruler's heir was sent to the victor's court to be educated.";
         tags.push("tribute");
       }
@@ -1764,13 +1762,12 @@ const EVENTS = [
 { id: "tribute-demanded", scope: "polity", weight: 3,
   test: function (ctx) {
     const p = ctx.polity, h = H(ctx.world);
-    return ctx.rivals().some(function (q) { return !warBetween(ctx, p, q) && !h.tribute[q.id] && strength(ctx.world, p) > strength(ctx.world, q) * 1.35; });
+    return ctx.rivals().some(function (q) { return !warBetween(ctx, p, q) && !AEON.lordOf(ctx.world, q) && strength(ctx.world, p) > strength(ctx.world, q) * 1.35; });
   },
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
-    const q = ctx.pick(ctx.rivals().filter(function (x) { return !warBetween(ctx, p, x) && !h.tribute[x.id] && strength(w, p) > strength(w, x) * 1.35; }));
-    h.tribute[q.id] = { lord: p.id, since: ctx.year };
-    AEON.treaty(w, "tribute", q, p);
+    const q = ctx.pick(ctx.rivals().filter(function (x) { return !warBetween(ctx, p, x) && !AEON.lordOf(w, x) && strength(w, p) > strength(w, x) * 1.35; }));
+    AEON.makeVassal(w, q, p);
     AEON.remember(w, q, p, -0.3, "demanded tribute");
     const what = pickEra([["a yearly tribute of copper and cattle"], ["a yearly tribute of tin and hostages"], ["a yearly tribute in silver"], ["a yearly tribute of gold and horses"], ["an annual payment of silver and the right of passage for troops"], ["a yearly subsidy in coin"]], ctx)[0];
     return res(3, ["tribute", "diplomacy"], A(ctx, p, q), q.capital,
@@ -1780,12 +1777,11 @@ const EVENTS = [
 { id: "tribute-collected", scope: "polity", weight: 3,
   test: function (ctx) {
     const p = ctx.polity, h = H(ctx.world);
-    return Object.keys(h.tribute).some(function (id) { const q = ctx.world.polities[id]; return h.tribute[id].lord === p.id && q && !q.ended; });
+    return AEON.vassalsOf(ctx.world, p).length > 0;
   },
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
-    const ids = Object.keys(h.tribute).filter(function (id) { const q = w.polities[id]; return h.tribute[id].lord === p.id && q && !q.ended; });
-    const q = w.polities[ctx.pick(ids)];
+    const q = ctx.pick(AEON.vassalsOf(w, p));
     p.prestige = clamp(p.prestige + 0.03, 0, 1); adjustT(q, "stability", -0.015);
     return res(1, ["tribute"], A(ctx, p, q), p.capital,
       "The yearly tribute of " + q.name + " arrived at " + seat(ctx, p) + " " + ctx.int(10, 90) + " days late and " + ctx.int(5, 30) + " per cent short. The envoy was received with every courtesy and informed of the difference.");
@@ -1793,17 +1789,16 @@ const EVENTS = [
 
 { id: "tributary-revolt", scope: "polity", weight: 5,
   test: function (ctx) {
-    const p = ctx.polity, t = H(ctx.world).tribute[p.id], lord = t && ctx.world.polities[t.lord];
+    const p = ctx.polity, lord = AEON.lordOf(ctx.world, p);
     return !!lord && !lord.ended && (p.traits.stability < 0.6 || strength(ctx.world, p) > strength(ctx.world, lord) * 0.8) && !warBetween(ctx, p, lord);
   },
   run: function (ctx) {
-    const p = ctx.polity, h = H(ctx.world), tb = h.tribute[p.id], lord = ctx.world.polities[tb.lord];
-    delete h.tribute[p.id];
-    AEON.endTreaty(ctx.world, AEON.treatyBetween(ctx.world, p, lord, "tribute"), "revolt");
+    const p = ctx.polity, lord = AEON.lordOf(ctx.world, p), tb = AEON.treatyBetween(ctx.world, p, lord, "tribute"), since = tb.start;
+    AEON.endTreaty(ctx.world, tb, "revolt");
     const wr = startWar(ctx, p, lord, "the tribute that had become an insult");
     adjustT(p, "aggression", 0.05);
     return res(3, ["revolt", "war", "tribute"], A(ctx, p, lord), p.capital,
-      p.name + " stopped sending tribute to " + lord.name + " after " + (ctx.year - tb.since) + " years of paying it. The envoy of " + lord.name + " was sent home without a reply, which was understood in both capitals to be one. The war was called " + wr.name + ".");
+      p.name + " stopped sending tribute to " + lord.name + " after " + (ctx.year - since) + " years of paying it. The envoy of " + lord.name + " was sent home without a reply, which was understood in both capitals to be one. The war was called " + wr.name + ".");
   } },
 
 { id: "dynastic-marriage", scope: "polity", weight: 2.5, cooldown: 30,

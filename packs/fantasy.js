@@ -2387,7 +2387,7 @@ function greatWorks(w) { return Object.keys(w.artifacts).map(function (k) { retu
 /* ------------------------------------------------------------ consolidation, seas, seats */
 function minorOf(c, p) {
   const w = c.world, lim = Math.max(4, Math.round(p.regions.length / 3));
-  return c.neighbors(p).filter(function (q) { return !q.ended && q.regions.length <= lim && q.regions.length < p.regions.length && might(w, q) < might(w, p) * 0.8; });
+  return c.neighbors(p).filter(function (q) { return !q.ended && !AEON.lordOf(w, q) && q.regions.length <= lim && q.regions.length < p.regions.length && might(w, q) < might(w, p) * 0.8; });
 }
 function coast(w, r) { return r.neighbors.some(function (n) { const q = w.regions[n]; return q && q.barren && !q.lake; }); }
 function overSea(c, p, wantOwner) {
@@ -2409,14 +2409,14 @@ const ACTION_EVENTS = [
     /* only while there are more realms than the world is heading for, and then very likely */
     test: function (c) { return c.polity.regions.length >= 4 && livingPolities(c.world).length > AEON.realmCap(c.world) && minorOf(c, c.polity).length > 0; },
     run: function (c) {
-      const w = c.world, p = c.polity, q = c.pick(minorOf(c, p)), regs = c.regionsOf(q), seat = sn(c, w.regions[q.capital], q);
-      c.endPolity(q, "Swore fealty to " + pn(p) + " in " + yl(c.year) + " and was folded into it.");
-      regs.forEach(function (r) { c.transfer(r, p); });
+      /* it becomes a vassal; core.js folds it in decades later (vassalTick) */
+      const w = c.world, p = c.polity, q = c.pick(minorOf(c, p)), seat = sn(c, w.regions[q.capital], q);
+      AEON.makeVassal(w, q, p, { how: "fealty" });
       p.prestige = clamp(p.prestige + 0.04, 0, 1);
-      return mk(4, ["annexation", "fall", "territory"], [c.actor(p), c.actor(q)], q.capital,
+      return mk(3, ["vassal", "diplomacy"], [c.actor(p), c.actor(q)], q.capital,
         "The lords of " + pn(q) + " came to " + sn(c, w.regions[p.capital], p) + " and knelt to " + rulerTxt(w, p) + ", " +
         c.choice(["their hands between the hands of the ruler, as the old oath requires", "having been shown the size of the host first", "with a dowry, a hostage and a song composed for the occasion"]) + ". " +
-        "From that day " + seat + " flew the banners of " + pn(p) + ", and its own were folded into a chest no one opened again.");
+        "From that day " + seat + " flew the banners of " + pn(p) + " above its own, and sent a tithe of its harvest and its young men when called.");
     }
   },
   {

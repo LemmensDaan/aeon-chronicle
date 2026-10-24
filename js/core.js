@@ -969,6 +969,7 @@ AEON.treaty = function (world, kind, a, b, extra) {
   (world.treaties || (world.treaties = [])).push(t);
   const ix = openIndex(world), k = pairKey(t.a, t.b);
   ix[k + "|" + kind] = t; ix[k + "|*"] = t;
+  if (kind === "tribute") ix["lord|" + t.a] = t;
   if (kind === "war" && !t.joined) callToArms(world, t, a, b);
   return t;
 };
@@ -979,6 +980,7 @@ AEON.endTreaty = function (world, t, how) {
   const ix = openIndex(world), k = pairKey(t.a, t.b), T = world.treaties;
   if (ix[k + "|" + t.kind] === t) { ix[k + "|" + t.kind] = null; for (let i = T.length - 1; i >= 0; i--) if (T[i].end == null && T[i].kind === t.kind && pairKey(T[i].a, T[i].b) === k) { ix[k + "|" + t.kind] = T[i]; break; } }
   if (ix[k + "|*"] === t) { ix[k + "|*"] = null; for (let i = T.length - 1; i >= 0; i--) if (T[i].end == null && pairKey(T[i].a, T[i].b) === k) { ix[k + "|*"] = T[i]; break; } }
+  if (ix["lord|" + t.a] === t) { ix["lord|" + t.a] = null; for (let i = T.length - 1; i >= 0; i--) if (T[i].end == null && T[i].kind === "tribute" && T[i].a === t.a) { ix["lord|" + t.a] = T[i]; break; } }
 };
 /* the open treaty of a kind between two realms (any kind if kind is null), or null */
 /* the open treaties, by pair and kind ("a|b|kind", and "a|b|*" for the latest of any kind), kept
@@ -987,7 +989,7 @@ function openIndex(world) {
   let ix = world._openIx;
   if (!ix) {
     ix = {};
-    for (const t of world.treaties || []) if (t.end == null) { const k = pairKey(t.a, t.b); ix[k + "|" + t.kind] = t; ix[k + "|*"] = t; }
+    for (const t of world.treaties || []) if (t.end == null) { const k = pairKey(t.a, t.b); ix[k + "|" + t.kind] = t; ix[k + "|*"] = t; if (t.kind === "tribute") ix["lord|" + t.a] = t; }
     Object.defineProperty(world, "_openIx", { value: ix, enumerable: false, configurable: true, writable: true });
   }
   return ix;
@@ -1140,6 +1142,21 @@ function joinWar(world, ally, enemy, extra) {
 }
 function nameOf(p) { return p.name.replace(/^The /, "the "); }
 function callToArms(world, t, att, def) {
+  /* a vassal owes its lord its troops, in the lord's wars of attack as well as defence (a war of
+     its own, unrecorded in the chronicle: it is what vassals do) */
+  for (const v of AEON.vassalsOf(world, att).concat(AEON.vassalsOf(world, def))) {
+    const lord = AEON.lordOf(world, v), foe = lord === att ? def : att;
+    if (v === foe || AEON.treatyBetween(world, v, foe, "alliance")) continue;
+    joinWar(world, v, foe, { leader: t.id, levy: true, cause: "its duty to " + nameOf(lord) });
+  }
+  /* and a lord defends its vassal, being paid to */
+  const lord = AEON.lordOf(world, def);
+  if (lord && lord !== att && !AEON.treatyBetween(world, lord, att, "alliance") && world.rng.chance(0.8)) {
+    joinWar(world, lord, att, { leader: t.id, cause: "the defence of " + nameOf(def) });
+    recordEvent(world, "lord-defends", { importance: 2, tags: ["war", "vassal", "diplomacy"],
+      actors: [{ kind: "polity", id: lord.id }, { kind: "polity", id: def.id }, { kind: "polity", id: att.id }], regionId: lord.capital,
+      text: nameOf(lord).charAt(0).toUpperCase() + nameOf(lord).slice(1) + " took up the defence of its vassal " + nameOf(def) + " and went to war against " + nameOf(att) + "." });
+  }
   for (const ally of alliesOf(world, def)) {
     if (ally === att) continue;
     /* bound to the attacker by an alliance it will not march; a truce with it only makes it slower to */
@@ -1218,6 +1235,70 @@ function allianceTick(world, alive) {
   joinWar(world, lead, H, { joined: false, coalition: true, cause: "the coalition against " + nameOf(H) });
   const lt = AEON.treatyBetween(world, lead, H, "war");
   for (const q of members.slice(1)) joinWar(world, q, H, { leader: lt && lt.id, coalition: true, cause: "the coalition against " + nameOf(H) });
+}
+
+/* ---- vassals ----
+   A "tribute" treaty (a pays b) makes a the vassal of b: it pays (its wealth -0.1, the lord's
+   +0.03 a vassal, at most +0.15), sends its levies to its lord's wars and is defended by it (see
+   callToArms). After 30 years a vassal a third of its lord's size or less may be absorbed, its land
+   passing to the lord without a fight, most readily while the world holds more realms than it is
+   heading for. A vassal grown nearly as strong as its lord (0.8 of its field army) after 20 years,
+   or whose lord is fighting two wars, may break free, and the lord may go to war over it. A realm has at most one
+   lord. */
+AEON.lordOf = function (world, p) { const t = p && openIndex(world)["lord|" + p.id]; return t ? world.polities[t.b] || null : null; };
+AEON.vassalsOf = function (world, p) {
+  const out = [];
+  for (const t of world.treaties || []) if (t.end == null && t.kind === "tribute" && t.b === p.id) { const v = world.polities[t.a]; if (v && !v.ended && out.indexOf(v) < 0) out.push(v); }
+  return out;
+};
+/* make a realm the vassal of another (ending any lord it had) */
+AEON.makeVassal = function (world, v, lord, extra) {
+  const old = AEON.lordOf(world, v);
+  if (old === lord) return AEON.treatyBetween(world, v, lord, "tribute");
+  if (old) AEON.endTreaty(world, AEON.treatyBetween(world, v, old, "tribute"), "new lord");
+  return AEON.treaty(world, "tribute", v, lord, extra);
+};
+function tributeTick(world) {
+  const paid = {};
+  for (const t of world.treaties || []) {
+    if (t.end != null || t.kind !== "tribute") continue;
+    const v = world.polities[t.a], l = world.polities[t.b];
+    if (!v || !l || v.ended || l.ended) continue;
+    v.wealth = clamp(v.wealth - 0.1, 0, 1);
+    paid[l.id] = Math.min(0.15, (paid[l.id] || 0) + 0.03);
+  }
+  for (const id in paid) world.polities[id].wealth = clamp(world.polities[id].wealth + paid[id], 0, 1);
+}
+function vassalTick(world) {
+  const rng = world.rng, over = living(world).length > AEON.realmCap(world);
+  const open = (world.treaties || []).filter(function (t) { return t.end == null && t.kind === "tribute"; });
+  for (const t of open) {
+    const v = world.polities[t.a], l = world.polities[t.b];
+    if (!v || !l || v.ended || l.ended || t.end != null) continue;
+    let lordWars = 0;
+    for (const x of world.treaties) if (x.end == null && x.kind === "war" && (x.a === l.id || x.b === l.id)) lordWars++;
+    if (((world.year - t.start >= 20 && AEON.fieldArmy(world, v) >= 0.8 * AEON.fieldArmy(world, l)) || lordWars >= 2) && rng.chance(0.2)) {
+      AEON.endTreaty(world, t, "revolt");
+      AEON.remember(world, l, v, -0.4, "threw off its overlordship");
+      const war = rng.chance(0.5);
+      recordEvent(world, "vassal-breaks-free", { importance: 3, tags: ["vassal", "revolt", "diplomacy"].concat(war ? ["war"] : []),
+        actors: [{ kind: "polity", id: v.id }, { kind: "polity", id: l.id }], regionId: v.capital,
+        text: v.name + " stopped paying " + nameOf(l) + " after " + (world.year - t.start) + " years as its vassal" +
+          (lordWars >= 2 ? ", while its lord had wars enough elsewhere" : ", having grown too strong to be told") + "." +
+          (war ? " " + nameOf(l).charAt(0).toUpperCase() + nameOf(l).slice(1) + " went to war to bring it back." : " Its lord let it go.") });
+      if (war) joinWar(world, l, v, { joined: false, cause: "the defection of " + nameOf(v) });
+      continue;
+    }
+    if (world.year - t.start >= 30 && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && rng.chance(over ? 0.25 : 0.06)) {
+      const n = v.regions.length, cap = world.regions[v.capital], seat = cap && (cap.settlement ? cap.settlement.name : cap.name);
+      recordEvent(world, "vassal-absorbed", { importance: 4, tags: ["vassal", "annexation", "territory", "fall", "diplomacy"],
+        actors: [{ kind: "polity", id: l.id }, { kind: "polity", id: v.id }], regionId: v.capital,
+        text: "After " + (world.year - t.start) + " years as its vassal, " + nameOf(v) + " was folded into " + nameOf(l) + ": its " + (n === 1 ? "province was" : n + " provinces were") +
+          " governed from " + (world.regions[l.capital].settlement ? world.regions[l.capital].settlement.name : "the lord's capital") + " from then on" + (seat ? ", and " + seat + " became a provincial town" : "") + "." });
+      for (const rid of v.regions.slice()) transferRegion(world, world.regions[rid], l);
+      v.fate = "Folded into " + l.name + " in " + world.year + " after " + (world.year - t.start) + " years as its vassal.";
+    }
+  }
 }
 
 function endTreatiesOf(world, p) {
@@ -1462,6 +1543,7 @@ function baselineTick(world) {
   }
 
   driftRelations(world, alive);
+  tributeTick(world);
 
   /* record territory size occasionally for sparklines */
   if (world.chronicle.length % 1 === 0) {
@@ -1575,6 +1657,7 @@ AEON.tick = function (world) {
 
   warClock(world);
   allianceTick(world, living(world));
+  vassalTick(world);
   logSettlements(world);
 
   /* if everyone is gone, let a new polity rise from the ashes */

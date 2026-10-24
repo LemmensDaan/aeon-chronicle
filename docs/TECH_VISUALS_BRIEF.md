@@ -77,4 +77,4 @@ agreement and "Verification"), then this.
    p, year)` from the view's year).
 3. **Done (2026-10-24, see HANDOFF).** Lost knowledge in the engine (a technology held by few realms can die with them; rediscovery as
    for a first discovery), with chronicle entries.
-4. The old events tied to the named technologies.
+4. **Done (2026-10-24, see HANDOFF).** The old events tied to the named technologies.

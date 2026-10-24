@@ -333,8 +333,24 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   map's band and fleet looks follow. Realm page: "fell back into it", "regained", "forgotten",
   "learned again"; no laurels or statistics pennant for a fall. Seeds 7/42/3: historical 40-50
   forgetting entries, 0-3 falls (great realms in collapse, e.g. 1551 regions in 480 AD, back up in
-  110 years), 0-1 lost to the world; fantasy about 10 forgetting entries, 0-1 falls. Next in
-  `docs/TECH_VISUALS_BRIEF.md`: the old invention events tied to the named technologies.
+  110 years), 0-1 lost to the world; fantasy about 10 forgetting entries, 0-1 falls.
+- **Old invention events tied to the named technologies (2026-10-24, changes every history):**
+  core.js learning is now `canLearn` / `learnTech`; packs can tell it with `pack.techStory(world, p,
+  t, "first" | "again" | "learned")` (an entry, or null for the core default) and teach from an
+  event with `AEON.learnableTechs(world, p)` / `AEON.learnTech(world, p, id)` (quiet: the event tells
+  it). An event's result may carry `type` to file it under another type. Historical: INVENTIONS,
+  printing-press and gunpowder-adopted are gone as random events; `TECH_TOLD` has a line per
+  technology; the first discovery of each is an `invention` entry at the realm's seat (printing:
+  `printing-press`, gunpowder: `gunpowder-adopted`, importance 5 for the first); every realm that
+  takes up printing or gunpowder gets its entry (3); the `invention` event (weight 4, cooldown 25)
+  is now a realm taking up a named technology its neighbours know, with the old small gains (tech
+  +0.03, people +2.5%, stability, food). The core `discovery` entry no longer fires in historical;
+  checked on seeds 7/42/3: every technology entry matches the realm's techLog, none told twice. The
+  old gunpowder battle bonus (h.bonus +0.12) is gone: the gunpowder technology's army 1.2 does that.
+  Flavour inventions with no named technology (windmill, spectacles, clock...) are gone. Not tied
+  yet: `lost-technique-rediscovered` and the TECH_LOST texts (library-destroyed, dark-age) still
+  name crafts that are not technologies; fantasy has no techStory (core texts) and `school-founded`
+  is unchanged.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

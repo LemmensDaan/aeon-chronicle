@@ -464,15 +464,6 @@ const SCHOLAR_WORKS = [
   ["a treatise on the motion of projectiles", "an anatomy based on actual dissection", "a map of the world that included the western ocean, with confidence", "a manual of double-entry accounting"],
 ];
 
-const INVENTIONS = [
-  [["the ox-drawn plough", "plough"], ["the sailing ship with a true keel", "ship"], ["the potter's wheel in the temple workshops", "wheel"], ["the practice of leaving a field fallow in alternate years", "fallow"]],
-  [["the iron ploughshare", "plough"], ["the water-wheel", "mill"], ["the signal beacon system", "beacon"], ["iron-tipped drills for the deep wells", "well"]],
-  [["hydraulic cement", "cement"], ["the great water-mills", "mill"], ["the screw press", "press"], ["the paved road with side-drains", "road"]],
-  [["the heavy plough and the three-field rotation", "plough"], ["the stirrup", "stirrup"], ["the lateen sail", "sail"], ["the horse collar", "collar"]],
-  [["the windmill", "mill"], ["spectacles", "lens"], ["the mechanical clock", "clock"], ["the blast furnace", "furnace"]],
-  [["the carrack and the long ocean voyage", "ship"], ["the printing of maps from copper plates", "map"], ["the deep-shaft silver mine with drainage engines", "mine"], ["the sharply improved manufacture of paper", "paper"]],
-];
-
 const REFORMS = [
   [["the chariot arm", 0.08], ["the composite bow", 0.07], ["the bronze scale-armoured infantry", 0.06]],
   [["the iron-bladed infantry", 0.08], ["the mounted archer", 0.07], ["the compulsory enrolment of free farmers", 0.06]],
@@ -520,7 +511,7 @@ const FACTIONS = ["the army", "the household guard", "the great landowners", "th
 function H(w) {
   if (!w._hist) {
     w._hist = { wars: {}, tribute: {}, dynasty: {}, faiths: [], faithOf: {}, heirs: {}, regents: {}, pretenders: {}, greeted: {}, emperor: {},
-      plagues: [], bonus: {}, fatigue: {}, excavated: {}, forged: {}, marriages: [], routes: [], defeats: {}, capLost: {}, lostTech: 0, holy: 0, press: {}, recovered: {} };
+      plagues: [], bonus: {}, fatigue: {}, excavated: {}, forged: {}, marriages: [], routes: [], defeats: {}, capLost: {}, lostTech: 0, holy: 0, recovered: {} };
   }
   return w._hist;
 }
@@ -818,6 +809,70 @@ function archForBiome(ctx, r) {
   if (coastal(ctx, r)) pool = pool.concat(["maritime", "maritime", "citystate"]);
   if (e >= 3) pool = pool.concat(["successor", "successor"]);
   return ctx.pick(pool);
+}
+
+/* How the chronicle tells a realm taking up one of the named technologies. core.js techTick calls
+   pack.techStory: the first in the world is an invention at the realm's seat, and every realm that
+   takes up printing or gunpowder gets an entry of its own; the rest learn quietly. The invention
+   event below is a realm taking one up from its neighbours, told (adoptionStory). Besides the technology's own effects
+   (pack.technologies), a realm whose taking-up is told gains what the old invention events gave:
+   a little learning, people and stability (printing: curiosity). */
+const TECH_TOLD = {
+  bronze: ["bronze-working", "smiths who had been melting copper for a thousand years found that a tenth part of tin made it hard enough to hold an edge"],
+  writing: ["writing", "the temple accountants began to press marks into clay that stood for words and not only for numbers"],
+  wheel: ["the wheel", "the potter's wheel was turned on its side and put under a cart"],
+  chariot: ["the war chariot", "a pair of horses was put to a light car with spoked wheels, and the nobility found a new way to die"],
+  sail: ["the sail", "a square of woven reed was raised on a river boat, and the rowers were, for a while, allowed to rest"],
+  irrigation: ["the irrigation canal", "a canal was dug to carry the river to fields that had never seen it, and the men who dug it were paid in the grain it grew"],
+  iron: ["iron-working", "a smith got a furnace hot enough to smelt the red stone, and found the metal that came out of it worse than bronze, and cheaper, and everywhere"],
+  alphabet: ["the alphabet", "a scribe reduced the thousand signs to two dozen, one for each sound, and was not thanked by the other scribes"],
+  coinage: ["coined money", "the treasury began to stamp lumps of silver with a guarantee of their weight, and the merchants stopped carrying scales"],
+  trireme: ["the oared warship", "a galley with three banks of oars and a bronze ram was launched, and every harbour along the coast began to build walls on the seaward side"],
+  cement: ["hydraulic cement", "the builders found that the ash of the volcano, mixed with lime, set hard under water"],
+  roads: ["the paved road with side-drains", "the first road paved with fitted stone and drained at the sides was laid out from the capital to the frontier, and the army arrived early for the first time in its history"],
+  siege: ["the siege engine", "the engineers built a torsion engine of sinew and timber that threw a stone heavier than a man over the walls of a town that had thought itself safe"],
+  astronomy: ["the star tables", "the court astronomers published tables of the stars good enough to steer by"],
+  plough: ["the heavy plough and the three-field rotation", "a wheeled plough heavy enough to turn the wet clay was put to work on the estates, with a third of every field left to rest"],
+  stirrup: ["the stirrup", "riders began to brace their feet in loops of iron, and a man on a horse became a weapon"],
+  compass: ["the compass", "a needle rubbed on lodestone was floated in a bowl of water, and pointed north whatever the weather"],
+  banking: ["banking", "a house of money-changers began to honour the letters of credit of its partners in other cities, and gold stopped travelling"],
+  galleon: ["the ocean-going ship", "a ship was built to cross the western ocean, and did, and came back"],
+  jointstock: ["the joint-stock company", "merchants pooled their money in a company whose shares could be sold, so that a ship lost at sea ruined no one in particular"],
+};
+function techStory(w, p, t, how) {
+  if (how === "again") return null;                          /* core.js tells a rediscovery */
+  const R = w.regions, here = R[p.capital], first = how === "first", rng = w.rng;
+  const gain = function (r) {                                /* what the old invention event gave */
+    p.tech = clamp(p.tech + 0.03, 0, 1); p.population = Math.round(p.population * 1.025); adjustT(p, "stability", 0.012);
+    if (r && r.resources) r.resources.food = clamp(r.resources.food + 0.06, 0, 1);
+  };
+  const actors = [{ kind: "polity", id: p.id }].concat(here ? [{ kind: "region", id: here.id }] : []);
+  const at = locName(here);
+  if (t.id === "printing") { p.tech = clamp(p.tech + 0.05, 0, 1); adjustT(p, "curiosity", 0.06); }
+  if (t.id === "printing")
+    return { type: "printing-press", importance: first ? 5 : 3, tags: ["invention", "culture", "technology"], actors: actors, regionId: p.capital,
+      text: (first ? "The first movable-type press in the record was set up at " + at + " in " + p.name + ". " : "A press was set up at " + at + " in " + p.name + ". ") +
+        "Within a generation there were " + rng.int(12, 60) + " presses, and the price of a book had fallen to that of a pair of boots. The first books printed were ledgers, indulgences and a very long poem; the first book to be banned was printed the same year." };
+  if (t.id === "gunpowder")
+    return { type: "gunpowder-adopted", importance: first ? 5 : 3, tags: ["military", "technology", "gunpowder"], actors: actors, regionId: p.capital,
+      text: (first ? "The first recorded use of gunpowder artillery in the war of this world was at the arsenal of " + at + ". " : "") + p.name + " cast its first bombards, which burst in an unaccountable fraction of cases, killing the gunners and, on one occasion, a visiting ambassador. The engineers asked for more money. They received it, and the walls of every castle in the kingdom were thereafter, in principle, obsolete." };
+  const told = TECH_TOLD[t.id];
+  if (!told) return null;
+  if (first) gain(here);
+  if (first)
+    return { type: "invention", importance: 3, tags: ["invention", "technology", "discovery"], actors: actors, regionId: p.capital,
+      text: "At " + at + " in " + p.name + ", " + told[1] + ". It was the first time in the record, and within a few generations the neighbours were doing it too." };
+  return null;
+}
+function adoptionStory(w, p, t) {
+  const R = w.regions, here = R[p.capital], rng = w.rng, told = TECH_TOLD[t.id];
+  if (!told) return techStory(w, p, t, "learned");
+  const mine = p.regions.map(function (id) { return R[id]; }).filter(function (r) { return r && r.settlement; });
+  const r = mine.length ? rng.pick(mine) : here;
+  p.tech = clamp(p.tech + 0.03, 0, 1); p.population = Math.round(p.population * 1.025); adjustT(p, "stability", 0.012);
+  if (r && r.resources) r.resources.food = clamp(r.resources.food + 0.06, 0, 1);
+  return { type: "invention", importance: 2, tags: ["invention", "technology"], actors: [{ kind: "polity", id: p.id }].concat(r ? [{ kind: "region", id: r.id }] : []), regionId: r ? r.id : p.capital,
+    text: cap(told[0]) + " spread through " + provName(r) + " and the rest of " + p.name + " in the course of a single generation. Those who adopted it " + rng.pick(["prospered", "outgrew their neighbours", "found that their children survived at a better rate", "paid less in tribute than they had expected"]) + "; those who did not, did not." };
 }
 
 const EVENTS = [
@@ -1235,14 +1290,12 @@ const EVENTS = [
   } },
 
 { id: "invention", scope: "polity", weight: 4, cooldown: 25,
-  test: function (ctx) { return ctx.polity.tech > 0.05; },
+  test: function (ctx) { return ctx.polity.tech > 0.05 && AEON.learnableTechs(ctx.world, ctx.polity).length > 0; },
   run: function (ctx) {
-    const p = ctx.polity, inv = ctx.pick(pickEra(INVENTIONS, ctx));
-    p.tech = clamp(p.tech + 0.03, 0, 1); p.population = Math.round(p.population * 1.025); adjustT(p, "stability", 0.012);
-    const r = ctx.pick(ctx.regionsOf(p));
-    r.resources.food = clamp(r.resources.food + 0.06, 0, 1);
-    return res(2, ["invention", "technology"], A(ctx, p, r), r.id,
-      cap(inv[0]) + " spread through " + provName(r) + " and the rest of " + p.name + " in the course of a single generation. Those who adopted it " + ctx.choice(["prospered", "outgrew their neighbours", "found that their children survived at a better rate", "paid less in tribute than they had expected"]) + "; those who did not, did not.");
+    const p = ctx.polity, t = ctx.pick(AEON.learnableTechs(ctx.world, p));
+    if (!t || !AEON.learnTech(ctx.world, p, t.id)) return null;
+    const st = adoptionStory(ctx.world, p, t);
+    return { importance: st.importance, tags: st.tags.concat(["tech:" + t.id]), actors: st.actors, regionId: st.regionId, text: cap(st.text), type: st.type };
   } },
 
 { id: "military-reform", scope: "polity", weight: 1.5, cooldown: 60,
@@ -1253,31 +1306,6 @@ const EVENTS = [
     adjustT(p, "aggression", 0.03);
     return res(2, ["military", "reform"], A(ctx, p), p.capital,
       p.name + " adopted " + rf[0] + " as the core of its armies, paying for it with a new levy that was resented in proportion to its efficiency. The first campaign to use it was, by general agreement, short.");
-  } },
-
-{ id: "printing-press", scope: "polity", weight: 4, minEra: "powder", cooldown: 9999,
-  test: function (ctx) { return ctx.polity.tech > 0.4 && !H(ctx.world).press[ctx.polity.id]; },
-  run: function (ctx) {
-    const p = ctx.polity, h = H(ctx.world);
-    h.press[p.id] = true;
-    const first = ctx.pastByType("printing-press", 1).length === 0;
-    p.tech = clamp(p.tech + 0.05, 0, 1); adjustT(p, "curiosity", 0.06);
-    return res(first ? 5 : 3, ["invention", "culture", "technology"], A(ctx, p), p.capital,
-      (first ? "The first movable-type press in the record was set up at " + seat(ctx, p) + " in " + p.name + ". " : "A press was set up at " + seat(ctx, p) + " in " + p.name + ". ") +
-      "Within a generation there were " + ctx.int(12, 60) + " presses, and the price of a book had fallen to that of a pair of boots. The first books printed were ledgers, indulgences and a very long poem; the first book to be banned was printed the same year.");
-  } },
-
-{ id: "gunpowder-adopted", scope: "polity", weight: 4, minEra: "powder", cooldown: 9999,
-  test: function (ctx) { const g = H(ctx.world).gun; return ctx.polity.tech > 0.35 && !(g && g[ctx.polity.id]); },
-  run: function (ctx) {
-    const p = ctx.polity, h = H(ctx.world);
-    if (!h.gun) h.gun = {};
-    if (h.gun[p.id]) return null;
-    h.gun[p.id] = true;
-    const first = ctx.pastByType("gunpowder-adopted", 1).length === 0;
-    h.bonus[p.id] = Math.min(0.3, (h.bonus[p.id] || 0) + 0.12);
-    return res(first ? 5 : 3, ["military", "technology", "gunpowder"], A(ctx, p), p.capital,
-      (first ? "The first recorded use of gunpowder artillery in the war of this world was at the arsenal of " + seat(ctx, p) + ". " : "") + p.name + " cast its first bombards, which burst in an unaccountable fraction of cases, killing the gunners and, on one occasion, a visiting ambassador. The engineers asked for more money. They received it, and the walls of every castle in the kingdom were thereafter, in principle, obsolete.");
   } },
 
 /* ------------------------------------------------------------ economy --- */
@@ -2380,6 +2408,7 @@ AEON.registerPack({
   realmsAtEnd: 10,
 
   yearLabel: yl,
+  techStory: techStory,
 
   biomes: {
     barren:    { name: "Open Sea",         color: "#2d4a6b", habitability: 0 },

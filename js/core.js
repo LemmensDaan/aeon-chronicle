@@ -1527,8 +1527,9 @@ function driftRelations(world, alive) {
    knows what it needs. Most are learned from others: each neighbour, trade partner, ally, marriage
    partner, lord or vassal that knows it adds 12% a tick (at most 60%); the first realm to find one
    does so alone, at about 1.5% a tick for a curious realm (only living realms count: what only fallen
-   realms knew is found again this way, see lost knowledge below). The first discovery is a chronicle entry;
-   the rest spread quietly (p.techs: id -> year, p.techLog). Effects multiply: army and navy the
+   realms knew is found again this way, see lost knowledge below). The first discovery is a chronicle entry (told by
+   pack.techStory(world, p, t, "first" | "again" | "learned") when the pack has one, which may also tell
+   some of the later adoptions); the rest spread quietly (p.techs: id -> year, p.techLog). Effects multiply: army and navy the
    quality of its men and ships in battle, growth the people its land can feed, wealth what its
    people make. Each one also nudges p.tech up a little. */
 function contactsOf(world, p) {
@@ -1544,16 +1545,12 @@ function techTick(world, alive) {
   const T = world.pack.technologies;
   if (!T || !T.length) return;
   forgetTick(world, alive, T);
-  const rng = world.rng, known = knownBy(alive, T), lost = world.techLost || (world.techLost = {});
+  const rng = world.rng, known = knownBy(alive, T);
   for (const p of alive) {
     if (p.ended) continue;
-    const mine = p.techs || (p.techs = {});
     let contacts = null;
     for (const t of T) {
-      if (mine[t.id] != null || (p.age || 0) < t.age) continue;
-      if (t.needs && t.needs.some(function (n) { return mine[n] == null; })) continue;
-      if (p.forgot && p.forgot[t.id] != null && world.year - p.forgot[t.id] < RELEARN_AFTER) continue;
-      if (!known[t.id] && lost[t.id] != null && world.year - lost[t.id] < RELEARN_AFTER) continue;
+      if (!canLearn(world, p, t, known)) continue;
       let chance;
       if (!known[t.id]) chance = 0.004 + 0.02 * p.traits.curiosity * p.tech;
       else {
@@ -1562,24 +1559,66 @@ function techTick(world, alive) {
         for (const o of contacts) if (o.techs && o.techs[t.id] != null) n++;
         chance = Math.min(0.6, 0.12 * n) + 0.01;
       }
-      if (!rng.chance(chance)) continue;
-      mine[t.id] = world.year;
-      const again = !known[t.id] && lost[t.id] != null;
-      (p.techLog || (p.techLog = [])).push(again ? { year: world.year, tech: t.id, first: true, again: true } : { year: world.year, tech: t.id, first: !known[t.id] });
-      p.tech = clamp(p.tech + 0.01, 0, 1);
-      if (again) {
-        recordEvent(world, "rediscovery", { importance: 3, tags: ["technology", "rediscovery", "tech:" + t.id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
-          text: p.name + " learned again to " + (t.verb || "master " + t.name.toLowerCase()) + ", which no realm had known how to do since " + (world.pack.yearLabel ? world.pack.yearLabel(lost[t.id]) : lost[t.id]) + ". Its neighbours were soon learning it from " + p.name + "." });
-        delete lost[t.id];
-      } else if (!known[t.id]) {
-        recordEvent(world, "discovery", { importance: 3, tags: ["technology", "discovery", "tech:" + t.id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
-          text: p.name + " was the first realm in the record to " + (t.verb || "master " + t.name.toLowerCase()) + ". Within a few generations its neighbours had learned it too." });
-      }
-      known[t.id] = true;
+      if (rng.chance(chance)) learnTech(world, p, t, known, false);
     }
   }
   world._techHolders = holdersOf(alive, T);
 }
+/* whether p could take up t now: its age reached, what it needs known, not just forgotten (nor
+   lost to the world within a generation) */
+function canLearn(world, p, t, known) {
+  const mine = p.techs || (p.techs = {}), lost = world.techLost || {};
+  if (mine[t.id] != null || (p.age || 0) < t.age) return false;
+  if (t.needs && t.needs.some(function (n) { return mine[n] == null; })) return false;
+  if (p.forgot && p.forgot[t.id] != null && world.year - p.forgot[t.id] < RELEARN_AFTER) return false;
+  if (!known[t.id] && lost[t.id] != null && world.year - lost[t.id] < RELEARN_AFTER) return false;
+  return true;
+}
+/* p takes up t: logged, and told unless quiet (the caller tells it). Returns how: "first" in the
+   world, "again" (rediscovered after it was lost to the world) or "learned" (from others). */
+function learnTech(world, p, t, known, quiet) {
+  const lost = world.techLost || (world.techLost = {});
+  const again = !known[t.id] && lost[t.id] != null, how = again ? "again" : !known[t.id] ? "first" : "learned";
+  p.techs[t.id] = world.year;
+  (p.techLog || (p.techLog = [])).push(again ? { year: world.year, tech: t.id, first: true, again: true } : { year: world.year, tech: t.id, first: !known[t.id] });
+  p.tech = clamp(p.tech + 0.01, 0, 1);
+  const since = lost[t.id];
+  if (again) delete lost[t.id];
+  known[t.id] = true;
+  if (quiet) return how;
+  /* the pack may tell it its own way (pack.techStory: an entry, or null to leave it to the
+     defaults below); a realm merely taking up what others know gets no entry otherwise */
+  const story = world.pack.techStory ? world.pack.techStory(world, p, t, how) : null;
+  if (story) {
+    recordEvent(world, story.type || (how === "first" ? "discovery" : how === "again" ? "rediscovery" : "adoption"), { importance: story.importance || 2,
+      tags: (story.tags || []).concat(["tech:" + t.id]).concat(story.tags && story.tags.indexOf("technology") >= 0 ? [] : ["technology"]),
+      actors: story.actors || [{ kind: "polity", id: p.id }], regionId: story.regionId == null ? p.capital : story.regionId, text: story.text });
+  } else if (again) {
+    recordEvent(world, "rediscovery", { importance: 3, tags: ["technology", "rediscovery", "tech:" + t.id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
+      text: p.name + " learned again to " + (t.verb || "master " + t.name.toLowerCase()) + ", which no realm had known how to do since " + (world.pack.yearLabel ? world.pack.yearLabel(since) : since) + ". Its neighbours were soon learning it from " + p.name + "." });
+  } else if (how === "first") {
+    recordEvent(world, "discovery", { importance: 3, tags: ["technology", "discovery", "tech:" + t.id], actors: [{ kind: "polity", id: p.id }], regionId: p.capital,
+      text: p.name + " was the first realm in the record to " + (t.verb || "master " + t.name.toLowerCase()) + ". Within a few generations its neighbours had learned it too." });
+  }
+  return how;
+}
+function livingRealms(world) {
+  const out = [];
+  for (const id in world.polities) if (!world.polities[id].ended) out.push(world.polities[id]);
+  return out;
+}
+/* for pack events: the technologies p could take up now from a living realm that knows them */
+AEON.learnableTechs = function (world, p) {
+  const T = world.pack.technologies || [], known = knownBy(livingRealms(world), T);
+  return T.filter(function (t) { return known[t.id] && canLearn(world, p, t, known); });
+};
+/* for pack events: p takes up technology id now, quietly (the event tells it); returns how, or
+   null when it could not */
+AEON.learnTech = function (world, p, id) {
+  const T = world.pack.technologies || [], t = T.filter(function (x) { return x.id === id; })[0], known = knownBy(livingRealms(world), T);
+  if (!t || !p || p.ended || !canLearn(world, p, t, known)) return null;
+  return learnTech(world, p, t, known, true);
+};
 /* which technologies some living realm knows */
 function knownBy(alive, T) {
   const known = {};
@@ -2058,7 +2097,8 @@ function fireOne(world, scope, subject, consolidateOnly) {
   if (!out) return;
 
   if (def.cooldown) world._cooldowns[def.id + "|" + subjectKey] = world.year;
-  recordEvent(world, def.id, out);
+  /* an event may file its entry under another type (historical: an invention that is the printing press) */
+  recordEvent(world, out.type || def.id, out);
 }
 
 AEON.tick = function (world) {

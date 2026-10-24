@@ -555,20 +555,25 @@ function scatterRelics(c, p, to, how) {
   return got;
 }
 /* hand a region from `lose` to `win`, taking relics if it was the capital */
+/* land taken goes by provinces (core.js): the loser's whole part of the province passes */
 function annex(c, win, lose, region, fate) {
   const w = c.world;
+  if (win === lose || region.owner !== lose.id) return [];
   AEON.remember(w, lose, win, -0.15, "took " + sn(c, region, lose));
-  const wasCapital = region.id === lose.capital;
-  const loot = wasCapital ? held(w, lose) : [];
-  F(w).conquests.push({ win: win.id, lose: lose.id, region: region.id, year: w.year });
-  if (lose.regions.length === 1) c.endPolity(lose, fate || "Its last province fell, and with it the name.");
-  c.transfer(region, win);
-  /* conquest burns villages and shrinks towns, and a conqueror may move to a greater fallen seat */
-  const s = region.settlement;
-  if (s && c.chance(wasCapital ? 0.12 : 0.2)) { if (s.tier <= 1) ruinify(region); else s.tier--; }
-  if (wasCapital && region.settlement && !win.ended) {
-    const own = w.regions[win.capital], ownTier = own && own.settlement ? own.settlement.tier : 0;
-    if (region.settlement.tier > ownTier && c.chance(0.5)) win.capital = region.id;
+  let loot = [];
+  for (const r of AEON.provincePart(w, region, lose.id)) {
+    const wasCapital = r.id === lose.capital;
+    if (wasCapital) loot = loot.concat(held(w, lose));
+    F(w).conquests.push({ win: win.id, lose: lose.id, region: r.id, year: w.year });
+    if (lose.regions.length === 1 && !lose.ended) c.endPolity(lose, fate || "Its last province fell, and with it the name.");
+    c.transfer(r, win);
+    /* conquest burns villages and shrinks towns, and a conqueror may move to a greater fallen seat */
+    const s = r.settlement;
+    if (s && c.chance(wasCapital ? 0.12 : 0.2)) { if (s.tier <= 1) ruinify(r); else s.tier--; }
+    if (wasCapital && r.settlement && !win.ended) {
+      const own = w.regions[win.capital], ownTier = own && own.settlement ? own.settlement.tier : 0;
+      if (r.settlement.tier > ownTier && c.chance(0.5)) win.capital = r.id;
+    }
   }
   loot.forEach(function (a) { give(w, a, win, "taken at the fall of " + lose.name); });
   return loot;
@@ -894,7 +899,7 @@ const SPINE = [
           "At " + name + " the " + b.adjective + " levy stood against the host of " + pn(a) + " and broke it. " + cap(fallen(o)) + " were left on the field." +
           (back ? " The " + b.adjective + " followed the beaten host home and took " + sn(c, back, a) + "." : " " + pn(a) + " went home with its wounded."));
       }
-      const taken = [site].concat(c.shuffle(fr.filter(function (x) { return x !== site; }))).slice(0, o.take);
+      const taken = AEON.oneEach(w, [site].concat(c.shuffle(fr.filter(function (x) { return x !== site; }))), Math.min(3, o.take));
       const aim = AEON.warAim(w, a, b);
       if (aim !== "conquer") return pillage(c, a, b, taken, aim, "At " + name + " the host of " + pn(a) + " broke the " + b.adjective + " levy; " + fallen(o) + " were left on the field.");
       let loot = [], n = 0, sole = false;
@@ -2404,6 +2409,41 @@ function overSea(c, p, wantOwner) {
   return best;
 }
 const ACTION_EVENTS = [
+  {
+    /* a war won outright, as the historical pack's conquest: the stronger side presses its war to
+       an end and takes provinces (a realm of one or two provinces whole) */
+    id: "war-won", consolidate: true, scope: "polity", weight: 12,
+    test: function (c) {
+      const w = c.world, p = c.polity;
+      return AEON.treatiesOf(w, p, c.year).some(function (t) {
+        if (t.kind !== "war") return false;
+        const q = w.polities[t.a === p.id ? t.b : t.a];
+        return q && !q.ended && might(w, p) > might(w, q) * 1.3 && borderRegions(w, q, p).length > 0;
+      });
+    },
+    run: function (c) {
+      const w = c.world, p = c.polity;
+      const foes = AEON.treatiesOf(w, p, c.year).filter(function (t) { return t.kind === "war"; }).map(function (t) { return w.polities[t.a === p.id ? t.b : t.a]; })
+        .filter(function (q) { return q && !q.ended && might(w, p) > might(w, q) * 1.3 && borderRegions(w, q, p).length > 0; });
+      const q = c.pick(foes), fr = borderRegions(w, q, p), site = c.pick(fr), name = sn(c, site, q), o = fight(c, p, q, site, fr.length);
+      if (!o.won) {
+        stock(p, "population", 0.97);
+        return mk(3, ["war", "battle", "repelled"], [c.actor(q), c.actor(p), c.actor(site)], site.id,
+          "The host of " + pn(p) + " marched to finish its war with " + pn(q) + " and was stopped at " + name + ". " + cap(fallen(o)) + " were left on the field.");
+      }
+      const whole = AEON.provinceCount(w, q) <= (o.margin === "crushing" ? 2 : o.margin === "clear" ? 1 : 0);
+      const regs = whole ? c.regionsOf(q) : AEON.oneEach(w, [site].concat(c.shuffle(fr.filter(function (x) { return x !== site; }))), o.margin === "crushing" ? 3 : Math.min(2, o.take));
+      const seat = sn(c, w.regions[q.capital], q);
+      let loot = [], n = 0;
+      for (const r of regs) { if (q.ended || r.owner !== q.id) continue; loot = loot.concat(annex(c, p, q, r, "Conquered by " + pn(p) + " in " + yl(c.year) + "; " + seat + " flew its banners from then on.")); n++; }
+      if (!q.ended) peace(c, p, q);
+      p.prestige = clamp(p.prestige + 0.08, 0, 1); stab(q, -0.08);
+      return mk(q.ended ? 5 : 4, ["war", "conquest", "territory"].concat(q.ended ? ["fall"] : []), [c.actor(p), c.actor(q), c.actor(site)].concat(loot.map(function (x) { return c.actor(x); })), site.id,
+        "At " + name + " the host of " + pn(p) + " broke the last army of " + pn(q) + "; " + fallen(o) + " fell. " +
+        (q.ended ? cap(pn(q)) + " was conquered whole, and " + seat + " opened its gates to the victors." : cap(pn(q)) + " sued for peace and gave up " + (n === 1 ? "a province" : n + " provinces") + " to have it.") +
+        (loot.length ? " " + loot[0].name + " was carried off among the spoil." : ""));
+    }
+  },
   {
     id: "fealty-sworn", consolidate: true, scope: "polity", weight: 30, cooldown: 20,
     /* only while there are more realms than the world is heading for, and then very likely */

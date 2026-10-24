@@ -246,6 +246,20 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   is on (default on): when a great moment holds the year (mapfx `focusPoint()`: the newest held
   animation's region), the map zooms in to at least CAM_P = 3 device pixels a map pixel and glides
   to it (a third of the way every 350 ms). Not seen in a real browser yet (no rAF headless).
+- **Provinces (2026-10-24, changes every history):** core.js `makeProvinces()` at world creation (no
+  rng): seats are the best sites (siteSuitability) taken best first at least PROV_GAP = 3 regions
+  apart, every land region joins the seat it is fewest land steps from; islands without a seat get
+  their own. About 500 provinces of 6-14 regions (median 10). world.provinces ({ id, seat, regions
+  }), region.province; `AEON.provincePart(world, region, ownerId)`, `AEON.provinceCount`,
+  `AEON.oneEach(world, list, n)` (one region per province). Both packs' annex() take the loser's
+  whole part of the province; battles take up to 3 provinces (oneEach, crushing 3, else min(2, take));
+  historical conquest takes a realm whole only if it holds 1 (clear) or 2 (crushing) provinces. Map:
+  a war band marches only where a battle took the land (mapfx bands() returns null otherwise), so a
+  vassal folded in or a cession just flickers.
+- **Fantasy consolidation (2026-10-24):** fantasy "war-won" (consolidate, weight 12), the counterpart of
+  historical conquest: at war with a neighbour 1.3x weaker (might), a battle at the border; won: a
+  realm of 1-2 provinces whole, else 2-3 provinces, then peace. Fantasy ends with 10-15 realms (seeds
+  7, 42, 3, 11), was 10-24.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

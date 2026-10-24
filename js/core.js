@@ -83,9 +83,79 @@ AEON.createWorld = function (opts) {
     if (!r.resources) r.resources = { food: 0.5, metal: 0.3, exotic: 0.1 };
   }
 
+  makeProvinces(world);
   seedPolities(world);
   logSettlements(world);
   return world;
+};
+
+/* Provinces: fixed groups of about ten land regions, laid out once when the world is made and
+   never changed by history. Their seats are the best sites for settlement (AEON.siteSuitability),
+   taken best first at least PROV_GAP regions apart, and every land region belongs to the seat it
+   is fewest steps from over land (islands without a seat get their own). Conquest goes by
+   provinces: a won battle takes the loser's part of a province, not a single region
+   (AEON.provincePart). No randomness, so the history is drawn the same way. */
+const PROV_GAP = 3;
+function makeProvinces(world) {
+  const R = world.regions, W = world.width, prov = new Int32Array(R.length).fill(-1), seeds = [], grid = {};
+  const order = R.filter(function (r) { return !r.barren; })
+    .map(function (r) { return [AEON.siteSuitability(r, world), r]; })
+    .sort(function (a, b) { return b[0] - a[0] || a[1].id - b[1].id; });
+  const cellKey = function (x, y) { return Math.floor(((x % W) + W) % W / PROV_GAP) + "," + Math.floor(y / PROV_GAP); };
+  for (const e of order) {
+    const r = e[1];
+    let near = false;
+    for (let gx = -1; gx <= 1 && !near; gx++) for (let gy = -1; gy <= 1 && !near; gy++) {
+      for (const s of grid[cellKey(r.x + gx * PROV_GAP, r.y + gy * PROV_GAP)] || []) {
+        let dx = Math.abs(s.x - r.x); if (dx > W / 2) dx = W - dx;
+        if (dx * dx + (s.y - r.y) * (s.y - r.y) < PROV_GAP * PROV_GAP) { near = true; break; }
+      }
+    }
+    if (near) continue;
+    seeds.push(r);
+    (grid[cellKey(r.x, r.y)] || (grid[cellKey(r.x, r.y)] = [])).push(r);
+  }
+  const spread = function (from) {
+    const q = from.slice();
+    for (let i = 0; i < q.length; i++) {
+      for (const n of R[q[i]].neighbors || []) {
+        const m = R[n];
+        if (!m || m.barren || prov[n] >= 0) continue;
+        prov[n] = prov[q[i]]; q.push(n);
+      }
+    }
+  };
+  seeds.forEach(function (s, i) { prov[s.id] = i; });
+  spread(seeds.map(function (s) { return s.id; }));
+  for (const r of R) if (!r.barren && prov[r.id] < 0) { prov[r.id] = seeds.length; seeds.push(r); spread([r.id]); }
+  world.provinces = seeds.map(function (s, i) { return { id: i, seat: s.id, regions: [] }; });
+  for (const r of R) if (prov[r.id] >= 0) { r.province = prov[r.id]; world.provinces[prov[r.id]].regions.push(r.id); }
+}
+/* the regions of a region's province held by one realm (the region itself first) */
+AEON.provincePart = function (world, region, ownerId) {
+  const P = world.provinces && region.province != null ? world.provinces[region.province] : null;
+  if (!P) return region.owner === ownerId ? [region] : [];
+  const out = region.owner === ownerId ? [region] : [];
+  for (const rid of P.regions) if (rid !== region.id && world.regions[rid].owner === ownerId) out.push(world.regions[rid]);
+  return out;
+};
+/* how many provinces a realm holds land in */
+AEON.provinceCount = function (world, p) {
+  const seen = {};
+  let n = 0;
+  for (const rid of p.regions) { const k = world.regions[rid].province; if (k != null && !seen[k]) { seen[k] = true; n++; } }
+  return n;
+};
+/* up to n regions from a list, each in a different province (the first one kept first) */
+AEON.oneEach = function (world, list, n) {
+  const seen = {}, out = [];
+  for (const r of list) {
+    if (out.length >= n) break;
+    const k = r.province != null ? r.province : "r" + r.id;
+    if (seen[k]) continue;
+    seen[k] = true; out.push(r);
+  }
+  return out;
 };
 
 function seedPolities(world) {

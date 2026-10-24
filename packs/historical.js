@@ -611,15 +611,19 @@ function conquestToll(ctx, region, to, wasCapital) {
     if (region.settlement.tier > ownTier && ctx.chance(0.5)) to.capital = region.id;
   }
 }
+/* land taken goes by provinces (core.js): the loser's whole part of the province passes */
 function annex(ctx, region, to, fate) {
   const from = region.owner && ctx.world.polities[region.owner];
-  if (from && from !== to) AEON.remember(ctx.world, from, to, -0.15, "took " + provName(region));
-  const wasCapital = !!from && from.capital === region.id;
-  if (from && from.regions.length === 1 && !from.ended) {
-    ctx.endPolity(from, fate || "Its last province was taken and its name passed into the registers of the conqueror.");
+  if (from === to) return;
+  if (from) AEON.remember(ctx.world, from, to, -0.15, "took " + provName(region));
+  for (const r of from ? AEON.provincePart(ctx.world, region, from.id) : [region]) {
+    const wasCapital = !!from && from.capital === r.id;
+    if (from && from.regions.length === 1 && !from.ended) {
+      ctx.endPolity(from, fate || "Its last province was taken and its name passed into the registers of the conqueror.");
+    }
+    ctx.transfer(r, to);
+    conquestToll(ctx, r, to, wasCapital);
   }
-  ctx.transfer(region, to);
-  conquestToll(ctx, region, to, wasCapital);
 }
 function makeRuin(region) {
   if (region.settlement) region.ruinName = region.settlement.name;
@@ -1111,10 +1115,10 @@ const EVENTS = [
     if (!o.won) return repelled(ctx, wf.war, W, L, site, o, W.name + " marched to end " + (wf.war.name || "the war") + ".");
     /* the margin sets how far it goes: a crushing win takes a small realm whole, or a third of a
        large one's land; a clear one a little realm whole; a narrow one a province or two */
-    const whole = L.regions.length <= (o.margin === "crushing" ? 12 : o.margin === "clear" ? 5 : 1);
+    const whole = AEON.provinceCount(w, L) <= (o.margin === "crushing" ? 2 : o.margin === "clear" ? 1 : 0);
     let regs;
     if (whole) regs = ctx.regionsOf(L);
-    else regs = [site].concat(ctx.shuffle(fr.filter(function (x) { return x !== site; }))).slice(0, o.margin === "crushing" ? Math.max(2, Math.min(fr.length, Math.round(L.regions.length * 0.3))) : o.take);
+    else regs = AEON.oneEach(w, [site].concat(ctx.shuffle(fr.filter(function (x) { return x !== site; }))), o.margin === "crushing" ? 3 : Math.min(2, o.take));
     const n = regs.length, first = regs[0], capName = seat(ctx, L), rl = rulerOf(ctx, L);
     if (whole) {
       const oldCap = L.capital;
@@ -1532,8 +1536,8 @@ const EVENTS = [
     const o = fight(ctx, p, foe, site, fr.length);
     if (!o.won) return repelled(ctx, wf.war, p, foe, site, o, "The decisive battle of " + (wf.war.name || "the war") + " was fought at " + provName(site) + ".");
     const W = p, L = foe;
-    const taken = [site].concat(ctx.shuffle(fr.filter(function (z) { return z !== site; }))).slice(0, o.take);
-    const last = L.regions.length === taken.length;
+    const taken = AEON.oneEach(w, [site].concat(ctx.shuffle(fr.filter(function (z) { return z !== site; }))), Math.min(3, o.take));
+    const last = AEON.provinceCount(w, L) <= taken.length;
     const names = taken.map(provName);
     const aim = AEON.warAim(w, W, L);
     if (aim !== "conquer") return pillage(ctx, wf.war, W, L, taken, aim, "The decisive battle of " + (wf.war.name || "the war") + " was fought at " + names[0] + ". " + battleLine(ctx, W, L, site) + " " + bodies(o) + " were left on the field.");
@@ -1620,8 +1624,8 @@ const EVENTS = [
     const fr = frontier(ctx, p, q), site = ctx.pick(fr);
     const o = fight(ctx, p, q, site, fr.length);
     if (!o.won) return repelled(ctx, warBetween(ctx, p, q), p, q, site, o, "The horsemen of " + p.name + " came out of the grassland in the spring and were brought to battle at " + provName(site) + ".", ["invasion"]);
-    const taken = [site].concat(ctx.shuffle(fr.filter(function (z) { return z !== site; }))).slice(0, o.take);
-    const last = q.regions.length === taken.length;
+    const taken = AEON.oneEach(w, [site].concat(ctx.shuffle(fr.filter(function (z) { return z !== site; }))), Math.min(3, o.take));
+    const last = AEON.provinceCount(w, q) <= taken.length;
     const names = taken.map(provName);
     /* riders come for loot more often than for land */
     const aim = AEON.warAim(w, p, q, { conquer: 0.6 });

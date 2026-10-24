@@ -104,8 +104,8 @@ function after(list, y, yearOf) {
 }
 const Y0 = function (e) { return e[0]; }, YK = function (e) { return e.year; };
 /* how many soldiers march for each side when `to` takes land from `from` in (y0, y1]: one to
-   five by their share of the men in the battle that won it (world.battleLog), or three against
-   two when no battle is logged */
+   five by their share of the men in the battle that won it (world.battleLog), or null when no
+   battle took it (a vassal folded in, a cession, a purchase): then no war band marches */
 function bands(w, y0, y1, to, from) {
   const B = w.battleLog || [];
   for (let k = after(B, y0, Y0); k < B.length && B[k][0] <= y1; k++) {
@@ -114,7 +114,7 @@ function bands(w, y0, y1, to, from) {
     const mt = b[1] === to ? b[3] : b[4], mf = b[1] === to ? b[4] : b[3], s = mt + mf || 1;
     return [Math.max(1, Math.min(5, Math.round(6 * mt / s))), Math.max(1, Math.min(5, Math.round(6 * mf / s)))];
   }
-  return [3, 2];
+  return null;
 }
 
 /* the owner each ownerLog entry replaced, kept up to date as the log grows */
@@ -154,9 +154,9 @@ function changes(w, y0, y1) {
         for (const nb of w.regions[rid].neighbors) if (view.regions[nb].owner === g.to && g.cells.indexOf(nb) < 0) { origin = nb; break; }
         if (origin != null) { at = rid; break; }
       }
-      const m = origin != null ? MARCH : 0, men = bands(w, y0, y1, g.to, g.from);
+      const men = bands(w, y0, y1, g.to, g.from), m = origin != null && men ? MARCH : 0;
       out.push({ prio: (delay ? 5 : 2) + Math.log2(1 + n), alt: flash, fx: { kind: "take", cells: g.cells, from: g.from, to: g.to, at: at, origin: origin, delay: delay,
-        march: m, dur: m + 3300, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color, nTo: men[0], nFrom: men[1] } });
+        march: m, dur: m + 3300, flick: [m + 1000, m + 2100], colTo: tp && tp.color, colFrom: fp && fp.color, nTo: men ? men[0] : 3, nFrom: men ? men[1] : 2 } });
     }
   }
   for (const id in P) {

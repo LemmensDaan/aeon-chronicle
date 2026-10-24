@@ -17,8 +17,8 @@ const AEON = window.AEON = window.AEON || {};
 const PPC = 4;
 const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
 /* the diplomacy mode's colours: how each realm stands with the realm in focus (AEON.stancesAt) */
-/* (Daan, 2026-10-24: truce silver, trade gold; the realm in focus a pale cream wash inside a thick
-   ink border, so it is never mistaken for one of the stances) */
+/* (Daan, 2026-10-24: truce silver, trade gold; the realm in focus a pale cream wash, so it is never
+   mistaken for one of the stances; he tried a thick ink border round it and dropped it) */
 const STANCE = { self: "#f4ecd8", war: "#b5452e", lord: "#7a4f9a", vassal: "#3f8f8a", alliance: "#4f8a3a", truce: "#c9ced6", friend: "#e0b84f", none: "#a49a88" };
 AEON.stanceColors = STANCE;
 
@@ -377,10 +377,6 @@ function compose(c, w, mode, roads, contest, focus, provOf) {
         /* flickering land: solid blocks of the two colours, so the change reads on a single cell */
         const k = edge ? 0.5 : 0.9;
         d[i * 4] += (cl[0] * (edge ? 0.5 : 1) - d[i * 4]) * k; d[i * 4 + 1] += (cl[1] * (edge ? 0.5 : 1) - d[i * 4 + 1]) * k; d[i * 4 + 2] += (cl[2] * (edge ? 0.5 : 1) - d[i * 4 + 2]) * k;
-      } else if (stance && stance[o] === "self" && (edge || edge2)) {
-        /* the realm in focus: a two-pixel ink border */
-        const ink = rgb(INK);
-        d[i * 4] = ink[0]; d[i * 4 + 1] = ink[1]; d[i * 4 + 2] = ink[2];
       } else if (edge) {
         const k = tint ? 0.5 : 0.62;
         d[i * 4] = cl[0] * k; d[i * 4 + 1] = cl[1] * k; d[i * 4 + 2] = cl[2] * k;

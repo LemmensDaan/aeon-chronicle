@@ -369,6 +369,11 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   tenth of the coasts' rain), hidden by the rank-forced moisture; tropical biomes from 12 °C; no
   seasons; no vertical scale (mountains are a quantile). A prioritised plan of 10 fixes is at the
   end; Daan picks, one at a time, each changing every seed's history.
+- **World scale decided (2026-10-26):** `docs/WORLDGEN_SCALE.md`. One world chronicle at two
+  levels: a planet with a grid of regions; a world sketch at load (kingdoms per region, power and
+  technology curves, dated contacts between regions); a region's detailed history generated when
+  opened, following the sketch. Order: realism fixes 1-3, the sketch, a region prototype, the
+  planet screen.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

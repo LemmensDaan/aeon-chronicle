@@ -346,3 +346,34 @@ with this harness, before and after renders, as agreed.
 Suggested order: 1 → 2 → 3 first (they fix most of what the biome map shows, without touching
 elevation), then 4 and 5 together (both rework the height scale), then 6, 8, 7, 9, 10. Items
 1-3 could also be one combined step if Daan prefers fewer history-changing commits.
+
+## Progress
+
+### Fix 1, inland rain (2026-10-26, changes every seed's climate, biomes, rivers and history)
+
+`planetgen.js` moisture transport: lift is read from the ground smoothed over one cell with the
+sea at sea level (factor 3.5, was 9.5 on raw ground); land hands back 0-65% of its rain as
+evapotranspiration (less in the cold; was a third of the loss times temperature); at 35-60°
+moisture mixes 45% with the neighbouring cells, as cyclones carry it from every side (6% in the
+tropics); sea air starts at 85% of the saturation it can hold over land of the same temperature
+(it started above it, so every onshore coast dumped its excess in one cell). Terrain and
+temperature are unchanged. 18 seeds, medians, before -> after:
+
+| | Before | After |
+|---|---|---|
+| Land with P < 0.1 | 84% | 50% (36-69%) |
+| Mean P 0-1 / 4-6 / 11-16 cells inland, 0-15° | 0.51 / 0.07 / 0.03 | 0.63 / 0.43 / 0.27 |
+| Mean P 0-1 / 4-6 / 11-16 cells inland, 35-60° | 0.39 / 0.03 / 0.01 | 0.32 / 0.13 / 0.07 |
+| Windward / leeward ratio | 22 | 2.8 (1.8-5.2) |
+| East coasts 40-60° (west coasts) | 0.03 (0.60) | 0.13 (0.55) |
+| Jungle / savanna / desert / forest | 6 / 23 / 23 / 13% | 15 / 16 / 20 / 17% |
+| Jungle poleward of 23.5° | 11% | 2.5% |
+| Lakes, share of land | 0.1% | 0.5% |
+| River cells, share of land | 2.2% | 4.1% |
+
+The interiors of the mid-latitudes still dry out faster than on Earth: the continents rise
+inland (the missing vertical scale, fix 4) and the moisture is still rank-forced (fix 2).
+Savanna poleward of 30° rose from 13% to 29% of all savanna: the tropical cut-off at 12 °C
+(fix 3) now meets wetter subtropical land.
+
+![Biomes after fix 1](worldgen/overview-biomes-fix1.png)

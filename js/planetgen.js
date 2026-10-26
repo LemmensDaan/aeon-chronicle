@@ -458,7 +458,20 @@ function generate(world, pack, rng) {
     rainF[i] = tab(RAIN_TAB, deg);
   }
 
-  /* moisture transport: semi-Lagrangian advection to a steady state */
+  /* moisture transport: semi-Lagrangian advection to a steady state.
+     Lift is read from smoothed ground with the sea at sea level, so only sustained ascent rains
+     out (not every noise bump, nor the step up from the sea floor); land hands part of its rain
+     back to the air (evapotranspiration, less in the cold); and in the storm belts moisture also
+     mixes sideways, since passing cyclones bring it from every direction, east coasts included. */
+  const Eg = new Float32Array(N);
+  for (let i = 0; i < N; i++) Eg[i] = Math.max(0.5, E[i]);
+  const Es = blurWrap(Eg, W, H, 1);
+  const MIX_TAB = [[0, 0.06], [25, 0.06], [35, 0.45], [60, 0.45], [70, 0.15], [90, 0.1]];
+  const mix = new Float32Array(N), recycle = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    mix[i] = tab(MIX_TAB, Math.abs(latRad[i]) * 180 / Math.PI);
+    recycle[i] = 0.65 * clamp(T[i] * 1.5, 0.2, 1);
+  }
   const sampleWrap = function (arr, fx, fy) {
     fy = clamp(fy, 0, H - 1);
     const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
@@ -470,17 +483,22 @@ function generate(world, pack, rng) {
   for (let it = 0; it < 90; it++) {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = y * W + x;
-      if (isOcean(i)) { q2[i] = clamp(0.2 + 0.85 * SST[i], 0, 1); precip[i] = 0; continue; }
+      if (isOcean(i)) { q2[i] = clamp(0.85 * (0.12 + 0.88 * SST[i]), 0, 1); precip[i] = 0; continue; }
       const ux = x - U[i], uy = y - Vv[i];
       let q = sampleWrap(q1, ux, uy);
-      const eUp = sampleWrap(E, ux, uy);
+      if (mix[i] > 0) {
+        let s = 0, n = 0;
+        for (let k = 0; k < 4; k++) { const j = NB4[i * 4 + k]; if (j >= 0) { s += q1[j]; n++; } }
+        q = lerp(q, s / n, mix[i]);
+      }
+      const eUp = sampleWrap(Es, ux, uy);
       const cap = 0.12 + 0.88 * T[i];
       let p = 0;
       if (q > cap) { p += q - cap; q = cap; }
-      const rise = Math.max(0, E[i] - eUp);
-      const frac = clamp(0.045 * rainF[i] + rise * 9.5, 0, 0.8);
+      const rise = Math.max(0, Es[i] - eUp);
+      const frac = clamp(0.045 * rainF[i] + rise * 3.5, 0, 0.8);
       p += q * frac;
-      q = q - q * frac + 0.33 * q * frac * T[i];   /* forests hand some back */
+      q = q - q * frac + recycle[i] * p;   /* plants and wet ground hand part of it back */
       q2[i] = clamp(q, 0, 1);
       precip[i] = p;
     }

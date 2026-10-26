@@ -374,6 +374,11 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   technology curves, dated contacts between regions); a region's detailed history generated when
   opened, following the sketch. Order: realism fixes 1-3, the sketch, a region prototype, the
   planet screen.
+- **Realism fix 1, inland rain (2026-10-26, changes every seed's climate, biomes, rivers and
+  history):** planetgen moisture transport (lift on smoothed ground, evapotranspiration,
+  storm-belt mixing, sea air below saturation). Land with P < 0.1 of the wettest: 84% -> 50%;
+  jungle 6% -> 15%. Numbers and renders: docs/WORLDGEN_REALISM.md, Progress. Historical seed 7
+  still runs (78 realms, 4,532 events).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

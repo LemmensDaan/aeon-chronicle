@@ -62,7 +62,7 @@ function loadEngine() {
   const ctx = { console: console, Math: Math, Date: Date };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["js/rng.js", "js/core.js", "js/planetgen.js", "js/worldgen.js", "packs/historical.js", "packs/fantasy.js"]) {
+  for (const f of ["js/rng.js", "js/core.js", "js/planetgen.js", "js/worldgen.js", "js/sketch.js", "packs/historical.js", "packs/fantasy.js"]) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f });
   }
   return ctx.AEON;
@@ -391,6 +391,21 @@ function measure(world) {
     m.moisture = { quantiles: mqs.map(r2) };
   }
 
+  /* -- the world sketch (js/sketch.js) -- */
+  const sk = world.sketch;
+  if (sk) {
+    const lived = sk.squares.filter((s) => s.peoples.length);
+    const kinds = {}, arch = {};
+    for (const p of sk.peoples) { kinds[p.kind] = (kinds[p.kind] || 0) + 1; arch[p.archetype] = (arch[p.archetype] || 0) + 1; }
+    const seaL = sk.links.filter((l) => l.kind === "sea");
+    m.sketch = { squaresLived: lived.length, openSea: sk.squares.filter((s) => s.openSea).length, peoples: sk.peoples.length,
+      nomads: kinds.nomads || 0, kingdoms: kinds.kingdom || 0, tribes: kinds.tribes || 0, archetypesUsed: Object.keys(arch).length,
+      landLinks: sk.links.filter((l) => l.kind === "land").length,
+      seaLinks6: seaL.filter((l) => l.lane <= 6).length, seaLinks15: seaL.filter((l) => l.lane <= 15).length,
+      seaLinks40: seaL.filter((l) => l.lane <= 40).length, seaLinksAll: seaL.length,
+      livedWithoutLandLink: lived.filter((s) => !sk.links.some((l) => l.kind === "land" && (sk.squares[l.a] === s || sk.squares[l.b] === s))).length };
+  }
+
   Object.defineProperty(m, "_x", { enumerable: false, value: { LAT, edgeType, CD } });
   return m;
 }
@@ -629,6 +644,45 @@ function biomeLatChart(worlds) {
   savePNG(img, path.join(OUT, "chart-biome-latitude.png"));
 }
 
+/* the world sketch: grid squares, land links (green, thicker = wider border), sea links (blue:
+   solid up to 6 cells, dashed up to 15, dotted up to 40), peoples' seats with their names */
+function renderSketch(world) {
+  const g = world._gen, sk = world.sketch, W = world.width, H = world.height, S = 6, R = world.regions;
+  const ocean = (i) => g.E[i] <= 0.5;
+  const base = mapLayer(world, S, (i) => {
+    const c = g.lake[i] ? C.biome.lake : ocean(i) ? C.biome.barren : C.biome[R[i].biome] || [255, 0, 255];
+    return c.map((v) => Math.round(v * 0.55 + 235 * 0.45));
+  }, { coastColor: [90, 90, 90], lats: false });
+  const img = Img(base.w, base.h + 22, [245, 242, 235]);
+  text(img, 6, 5, "WORLD SKETCH, SEED " + world.seed + ": " + sk.peoples.length + " PEOPLES IN " + sk.squares.filter((s) => s.peoples.length).length + " SQUARES", [30, 30, 30]);
+  img.blit(base, 0, 22);
+  const oy = 22;
+  for (const s of sk.squares) {
+    img.rect(s.x0 * S, oy + s.y0 * S, (s.x1 - s.x0) * S, 1, [60, 60, 60]); img.rect(s.x0 * S, oy + s.y0 * S, 1, (s.y1 - s.y0) * S, [60, 60, 60]);
+    text(img, s.x0 * S + 4, oy + s.y0 * S + 4, s.id + (s.openSea ? " SEA" : ""), [60, 60, 60]);
+  }
+  const ctr = (s) => [((s.x0 + s.x1) / 2) * S, oy + ((s.y0 + s.y1) / 2) * S];
+  for (const l of sk.links) {
+    const A = sk.squares[l.a], B = sk.squares[l.b];
+    if (A.openSea || B.openSea) continue;
+    let [ax, ay] = ctr(A), [bx, by] = ctr(B);
+    if (bx - ax > img.w / 2) bx -= img.w; if (ax - bx > img.w / 2) bx += img.w;   /* across the seam: draw toward the edge */
+    if (l.kind === "land") { img.line(ax, ay, bx, by, [40, 130, 50], Math.min(7, 1 + Math.round(Math.log2(l.width + 1)))); continue; }
+    if (l.lane > 40) continue;
+    const n = Math.ceil(Math.hypot(bx - ax, by - ay) / 4), step = l.lane <= 6 ? 1 : l.lane <= 15 ? 3 : 6;
+    for (let k = 0; k <= n; k++) if (k % step === 0 || step === 1) img.rect(Math.round(lerp(ax, bx, k / n)) + 3, Math.round(lerp(ay, by, k / n)) + 3, 2, 2, [30, 80, 200]);
+  }
+  const KC = { kingdom: [180, 30, 30], tribes: [120, 80, 30], nomads: [200, 140, 0] };
+  for (const p of sk.peoples) {
+    const r = R[p.seat], x = r.x * S + 3, y = oy + r.y * S + 3;
+    img.rect(x - 3, y - 3, 7, 7, [20, 20, 20]); img.rect(x - 2, y - 2, 5, 5, KC[p.kind] || [0, 0, 0]);
+    const label = p.name.replace(/[^A-Za-z0-9 -]/g, "");
+    img.rect(x + 5, y - 4, textW(label, 1) + 3, 8, [250, 248, 240]);
+    text(img, x + 6, y - 3, label, [20, 20, 20], 1);
+  }
+  savePNG(img, path.join(OUT, "sketch-" + world.seed + ".png"));
+}
+
 /* ------------------------------------------------------------------ main ----------- */
 const results = [], worlds = [], tiles = { elev: [], biome: [] };
 const sameTerrain = [];
@@ -643,7 +697,7 @@ for (const seed of SEEDS) {
       first = world;
       const m = measure(world); m.genMs = world._gen.ms; m.createMs = ms;
       results.push(m); worlds.push(world);
-      if (PNG) { const t = renderSeed(world, m); tiles.elev.push(t.elev); tiles.biome.push(t.biome); }
+      if (PNG) { const t = renderSeed(world, m); tiles.elev.push(t.elev); tiles.biome.push(t.biome); if (world.sketch) renderSketch(world); }
     } else {
       /* the generator only reads the pack for habitability: the terrain should be identical */
       const a = first._gen, b = world._gen; let diff = 0, hab = 0;

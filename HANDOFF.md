@@ -389,6 +389,11 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   floodplains get +0.3 habitability, +0.25 food. Savanna poleward of 30 degrees 27% -> 0.2%.
   Rules and numbers: docs/WORLDGEN_REALISM.md, Progress. Next in the agreed order: the world
   sketch (docs/WORLDGEN_SCALE.md); realism fixes 4-10 still open.
+- **World sketch step 1 (2026-10-26, histories unchanged, checked):** `js/sketch.js`,
+  `AEON.makeSketch` at the end of createWorld, its own RNG (seed + ":sketch"); `world.sketch`
+  (not enumerable): a 6 x 4 grid of squares, land and sea links, 1-4 peoples a square (~55 a
+  world) named by the pack. Design and progress: docs/WORLD_SKETCH.md. Next: step 2, development
+  curves and dated contacts.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

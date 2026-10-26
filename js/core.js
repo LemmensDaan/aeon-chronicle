@@ -86,6 +86,8 @@ AEON.createWorld = function (opts) {
   makeProvinces(world);
   seedPolities(world);
   logSettlements(world);
+  /* the world sketch (js/sketch.js) has its own random stream: it never changes the history */
+  if (AEON.makeSketch) AEON.makeSketch(world);
   return world;
 };
 

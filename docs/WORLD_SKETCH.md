@@ -120,3 +120,41 @@ Then the region prototype (`WORLDGEN_SCALE.md`).
   peoples? I'd say no, until regions exist, so that steps 1-3 leave histories unchanged.
 - **Pace:** should the sketch's timeline be eventful (dozens of contacts per world), or sparse
   (a handful of great migrations and invasions per world)?
+
+## Progress
+
+### Step 1, grid, squares, links, peoples (2026-10-26, histories unchanged)
+
+`js/sketch.js`, `AEON.makeSketch(world)`, called at the end of `createWorld` (loaded after
+`worldgen.js` in `index.html`). `world.sketch` = `{ cols: 6, rows: 4, squares, links, peoples }`:
+
+- **squares:** `{ id: "c,r", x0, x1, y0, y1, cells, land, habitable, coast, river, mountains,
+  biomes (shares), openSea, peoples (ids) }`. Under 4% land is open sea.
+- **links:** `{ a, b, kind: "land" | "sea", width, rough, lane }`.
+  - Land: `width` counts the land cells facing each other across the border, `rough` the share
+    of them that are mountain or ice.
+  - Sea: `lane` is the shortest lane in cells over open water from one square's coast to the
+    other's, recorded up to 120 cells.
+- **peoples:** `{ id, name, adjective, culture, archetype, square, seat, cells, kind }`, with 1-4
+  per square by its habitable land.
+  - **Seats:** the best sites (river x1.3, coast x1.1), at least 6 cells apart; each people
+    holds the square's land nearest its seat.
+  - **Archetype:** weighted by the land. A pack archetype's `ground` biomes filling its area
+    add up to x7, a sea-going archetype (navy >= 1.5) on a long coast up to x7, a river seat
+    x2.2 for river archetypes. Successor states are left out at the start.
+  - **Names:** the pack's own namer.
+  - **Kind:** nomads (grassland archetype on mostly its ground), kingdom (seat habitability
+    0.55+) or tribes.
+
+Checked: same-seed histories identical with and without the sketch (historical and fantasy,
+seeds 7 and 42, chronicle and owner log hashed). 18 seeds (historical): 47-66 peoples (median
+55) in 16-21 lived squares, 3-8 open-sea squares, 21-29 land links, 17-40 sea links of 6 cells or
+less and 44-97 of 40 or less. All seven seeding archetypes appear in every world. Nearly every
+people is a "kingdom", since seats take the best land; development (step 2) should decide
+kingdom versus tribes instead. The harness draws `tools/out/sketch-<seed>.png`.
+
+![The sketch of seed 42](worldgen/sketch-42.png)
+
+*Seed 42: squares with their ids, peoples' seats (red kingdom, ochre nomads, brown tribes),
+land links (green, thicker for a wider border) and sea links (blue: solid up to 6 cells, dashed
+up to 15, dotted up to 40).*

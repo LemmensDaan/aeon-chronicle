@@ -512,9 +512,9 @@ function generate(world, pack, rng) {
     if (isOcean(i)) continue;
     if (T[i] < 0.34 && E[i] < 0.62) Eh[i] += (nf(noise3, i, 0.5, 2, 0.5) + 0.5) * 0.012;
   }
-  let pLand = [];
-  for (let i = 0; i < N; i++) if (!isOcean(i)) pLand.push(precip[i]);
-  const pRef = quantile(pLand, 0.97) || 1;
+  /* rain on one fixed scale for every world (the median wettest-3% level over many seeds),
+     so a dry world stays dry and a wet one wet */
+  const pRef = 0.097;
   const P = new Float32Array(N);
   for (let i = 0; i < N; i++) P[i] = isOcean(i) ? 1 : clamp(precip[i] / pRef, 0, 1);
   const runoff = new Float32Array(N);
@@ -566,10 +566,9 @@ function generate(world, pack, rng) {
     hyd.acc = acc2;
   }
 
-  /* rivers: the top few percent of land cells by accumulated runoff */
-  const accLand = [];
-  for (let i = 0; i < N; i++) if (!isOcean(i) && !lake[i] && !basin[i]) accLand.push(hyd.acc[i]);
-  const riverT = quantile(accLand, 0.935);
+  /* rivers: land cells that gather enough runoff, on one fixed scale (about the top 6.5% of land
+     in a typical world), so a dry world has fewer rivers and a wet one more */
+  const riverT = 0.96;
   const isRiver = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (!isOcean(i) && !lake[i] && !basin[i] && hyd.acc[i] >= riverT) isRiver[i] = 1;
   /* Prune short channels. A wet mountain coast gives every shoreline cell its own
@@ -613,18 +612,9 @@ function generate(world, pack, rng) {
     let m = P[i];
     if (!basin[i] && hyd.acc[i] >= riverT) m += 0.12 + 0.08 * Math.min(1, Math.log(hyd.acc[i] / riverT + 1) / 2);
     for (let k = 0; k < 8; k++) { const j = NB8[i * 8 + k]; if (j >= 0 && lake[j]) { m += 0.1; break; } }
-    M[i] = clamp(m, 0, 1);
-  }
-  /* blend toward rank so every world gets a usable spread of biomes,
-     without disturbing where the wet and dry places are */
-  {
-    const idx = [];
-    for (let i = 0; i < N; i++) if (!isOcean(i) && !lake[i]) idx.push(i);
-    idx.sort((a, b) => M[a] - M[b]);
-    for (let k = 0; k < idx.length; k++) {
-      const u = idx.length > 1 ? k / (idx.length - 1) : 0.5;
-      M[idx[k]] = clamp(0.45 * M[idx[k]] + 0.55 * u, 0, 1);
-    }
+    /* rain is skewed (most land gets little, wet coasts a lot): a power spreads it out so
+       the biome cut-offs fall at a typical world's old shares, without ranking each world */
+    M[i] = Math.pow(clamp(m, 0, 1), 0.47);
   }
 
   /* ================================================== 7. biomes ======== */

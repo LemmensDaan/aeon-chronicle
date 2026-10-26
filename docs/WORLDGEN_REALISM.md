@@ -377,3 +377,25 @@ Savanna poleward of 30° rose from 13% to 29% of all savanna: the tropical cut-o
 (fix 3) now meets wetter subtropical land.
 
 ![Biomes after fix 1](worldgen/overview-biomes-fix1.png)
+
+### Fix 2, no more rank forcing (2026-10-26, changes every seed's biomes, rivers and history)
+
+Rain is divided by one fixed reference for every world (0.097, the median of each world's
+wettest-3% level over the 18 seeds; it was each world's own 97th percentile). Biome moisture is
+rain plus the river and lake bonuses raised to the power 0.47, no longer 55% rank: the power
+spreads the skewed rain so the classifier's cut-offs fall where a typical world had them, so
+its thresholds are unchanged. Rivers are cells with accumulated runoff of 0.96 or more on that
+scale (was the top 6.5% of each world's land). Calibration: for each old cut-off, the raw
+moisture at the rank where the blended value crossed it, median over 18 seeds.
+
+| 18 seeds | Fix 1 median (range) | Fix 2 median (range) |
+|---|---|---|
+| Desert | 20% (11-27) | 18% (7-33) |
+| Jungle | 15% (8-20) | 13% (5-20) |
+| Forest | 17% (13-19) | 17% (9-24) |
+| River cells | 4.1% (3.1-5.5) | 4.5% (2.4-6.0) |
+
+The medians hardly move; the spread between worlds widens, as it should: seed 99 (high, dry
+plateaus) has 33% desert, seed 512 (small, wet continents) 7%.
+
+![Biomes after fix 2](worldgen/overview-biomes-fix2.png)

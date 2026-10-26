@@ -399,3 +399,49 @@ The medians hardly move; the spread between worlds widens, as it should: seed 99
 plateaus) has 33% desert, seed 512 (small, wet continents) 7%.
 
 ![Biomes after fix 2](worldgen/overview-biomes-fix2.png)
+
+### Fix 3, biomes in °C and mm (2026-10-26, changes every seed's biomes, habitability and history)
+
+The classifier now works in physical units. Temperature: °C = -22.4 + 55.6 × T (the fit to
+Earth's zonal means). Rain: mm = 2680 × (rain / 0.097)^0.635, fitted so the 18 seeds' pooled
+land rain matches Earth's spread (quartiles 241 / 608 / 1,173 mm against Earth's ~250 / 580 /
+1,100; land mean 819 mm against ~800). Regions carry `tempC` and `rainMm`.
+
+| Biome | Rule |
+|---|---|
+| mountain / ice | above the mountain line (unchanged); ice below -14.5 °C |
+| ice | below -17 °C |
+| tundra | -17 to -8 °C; or -8 to -2 °C with under 300 mm |
+| grassland (cold steppe) | -2 to 3 °C with under 300 mm |
+| taiga | -8 to 3 °C (swamp if flat, by water and over 500 mm) |
+| desert | over 3 °C and under 10 × °C + 70 mm (Köppen's arid line, 5 × (2T + 14)) |
+| grassland | 3-20 °C, under 25 × °C + 150 mm |
+| forest | 3-20 °C, wetter (swamp if flat, by water and over 1,000 mm) |
+| savanna | from 20 °C, under 1,300 mm |
+| forest (seasonal tropical) | from 20 °C, 1,300-1,500 mm |
+| jungle | from 20 °C, 1,500 mm or more (swamp if flat and by water) |
+
+Rivers no longer turn desert green (a desert river cell stays desert, as the Nile valley is at
+this scale), but such a floodplain gets +0.3 habitability and +0.25 food over other river cells,
+so river valleys in deserts stay cradles of civilisation.
+
+| 18 seeds, median (range) | Fix 2 | Fix 3 | Earth |
+|---|---|---|---|
+| Desert | 18% | 16% (4-30) | 20% |
+| Savanna | 16% | 15% (8-22) | 15% |
+| Jungle | 13% | 11% (3-14) | 14% |
+| Forest | 17% | 21% (13-28) | 16% |
+| Grassland | 7% | 11% (6-14) | 8% |
+| Taiga | 5% | 8% (4-12) | 12% |
+| Tundra | 11% | 8% (3-12) | 7% |
+| Savanna poleward of 30° | 27% of savanna | 0.2% | ~0 |
+| Jungle poleward of 23.5° | 2.4% of jungle | 0.7% | small |
+| Mean °C of savanna / jungle / taiga / tundra | 19 / 24 / -2.5 / -7.5 | 23 / 24 / -1.3 / -9.7 | 20-30 / 20-30 / -5-5 / -15 to -5 |
+| River cells in desert | 0% | 7% | Nile, Indus, Tigris |
+
+Jungle is still a little short and forest a little long: the tropical land is not as wet as
+Earth's, and the map has more mid-latitude land than Earth (land share, fix 5).
+
+![Biomes after fix 3](worldgen/overview-biomes-fix3.png)
+
+![Biome share by latitude after fix 3](worldgen/chart-biome-latitude-fix3.png)

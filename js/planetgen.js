@@ -629,24 +629,37 @@ function generate(world, pack, rng) {
     slope[i] = m;
   }
 
+  /* physical units for the classifier: annual mean temperature in deg C (T fitted to Earth's
+     zonal means at sea level, within 1.5 C) and annual rain in mm (fitted to the spread of
+     Earth's land rainfall: quartiles 250 / 580 / 1100 mm, mean ~800) */
+  const tempC = new Float32Array(N), rainMm = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    tempC[i] = -22.4 + 55.6 * T[i];
+    rainMm[i] = isOcean(i) ? 0 : 2680 * Math.pow(precip[i] / pRef, 0.635);
+  }
+
+  /* Whittaker's biomes by temperature and rain, with Koppen's aridity line (desert below
+     5 x (2T + 14) mm). Rivers do not turn a desert green at this scale (the Nile valley is a
+     desert with a river in it); they only make wet lowland into swamp. */
   function classify(i) {
-    const t = T[i], m = M[i], e = E[i];
-    if (e >= mtnLine) return t < 0.14 ? "ice" : "mountain";
-    if (t < 0.1) return "ice";
-    if (t < 0.22) return "tundra";
-    const soggy = slope[i] < 0.035 && e < 0.6 && m > 0.62 &&
+    const c = tempC[i], mm = rainMm[i], e = E[i];
+    if (e >= mtnLine) return c < -14.5 ? "ice" : "mountain";
+    if (c < -17) return "ice";
+    if (c < -8) return "tundra";
+    const soggy = slope[i] < 0.035 && e < 0.6 &&
                   (hyd.acc[i] >= riverT || coastDist[i] <= 2 || basin[i]);
-    if (t < 0.43) return m > 0.28 ? (soggy && m > 0.8 ? "swamp" : "taiga") : "tundra";
-    if (t < 0.62) {
-      if (m < 0.17) return "desert";
-      if (m < 0.42) return "grassland";
-      if (soggy) return "swamp";
-      return "forest";
+    if (c < 3) {                                     /* boreal */
+      if (mm < 300) return c >= -2 ? "grassland" : "tundra";   /* cold steppe, polar desert */
+      return soggy && mm > 500 ? "swamp" : "taiga";
     }
-    if (m < 0.2) return "desert";
-    if (m < 0.46) return "savanna";
+    if (mm < 10 * c + 70) return "desert";
+    if (c < 20) {                                    /* temperate */
+      if (mm < 25 * c + 150) return "grassland";
+      return soggy && mm > 1000 ? "swamp" : "forest";
+    }
+    if (mm < 1300) return "savanna";                 /* tropical */
     if (soggy) return "swamp";
-    return m > 0.62 && t > 0.66 ? "jungle" : "forest";
+    return mm >= 1500 ? "jungle" : "forest";
   }
 
   const hab = (key) => {
@@ -663,6 +676,7 @@ function generate(world, pack, rng) {
       elevation: r3(lake[i] ? Math.max(E[i], lakeLevel[i]) : E[i]),
       temperature: r3(T[i]), moisture: r3(M[i]),
       precipitation: r3(P[i]),
+      tempC: Math.round(tempC[i] * 10) / 10, rainMm: Math.round(rainMm[i]),
       biome: "barren", habitability: 0,
       resources: { food: 0, metal: 0, exotic: 0 },
       barren: true, lake: false, owner: null, population: 0, settlement: null,
@@ -692,6 +706,7 @@ function generate(world, pack, rng) {
       reg.river = r3(hyd.acc[i]);
       reg.flowTo = hyd.parent[i];
       h += 0.1 + 0.05 * Math.min(1, Math.log(hyd.acc[i] / riverT) / Math.log(8));
+      if (biome === "desert") h += 0.3;          /* a floodplain in the desert: Egypt, Sumer */
     } else if (hyd.parent[i] >= 0) {
       reg.flowTo = hyd.parent[i];
     }
@@ -709,7 +724,7 @@ function generate(world, pack, rng) {
     const nr = nf(noise3, i, 0.12, 3, 0.5);
     const foodBase = { grassland: 0.78, forest: 0.6, jungle: 0.58, savanna: 0.55, swamp: 0.42, taiga: 0.32, tundra: 0.14, desert: 0.08, mountain: 0.12, ice: 0.02 };
     let food = (foodBase[biome] !== undefined ? foodBase[biome] : 0.4) + 0.12 * nr;
-    if (reg.river) food += 0.2;
+    if (reg.river) food += biome === "desert" ? 0.45 : 0.2;
     if (coastal || lakeside) food += 0.08;
     const metal = (biome === "mountain" ? 0.6 : E[i] > 0.62 ? 0.28 : 0.06) + 0.25 * clamp(uplift[i] / 0.3, 0, 1) + 0.15 * nr;
     const exo = clamp((nf(noise2, i, 0.08, 3, 0.5) - 0.1) * 1.8, 0, 1) + (stress[i] > 0.8 ? 0.2 : 0) + (biome === "desert" || biome === "jungle" ? 0.06 : 0);
@@ -723,7 +738,7 @@ function generate(world, pack, rng) {
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
     value: { plateOf, plates, cont, uplift, E, T, P, M, U, V: Vv, acc: hyd.acc, lake, basin, hotspots,
-             riverT, mtnLine, ms: Date.now() - t0 },
+             riverT, mtnLine, precip, ms: Date.now() - t0 },
   });
 }
 

@@ -383,6 +383,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   history):** rain on a fixed scale (pRef 0.097), moisture = (rain + river/lake bonus)^0.47
   instead of 55% rank, river threshold a fixed 0.96. Medians unchanged, worlds now differ
   (desert 7-33%).
+- **Realism fix 3, biomes in degrees C and mm (2026-10-26, changes every seed's biomes,
+  habitability and history):** planetgen `classify()` on `tempC` / `rainMm` (both now on every
+  region), Whittaker bands with Koppen's aridity line; rivers no longer green deserts, desert
+  floodplains get +0.3 habitability, +0.25 food. Savanna poleward of 30 degrees 27% -> 0.2%.
+  Rules and numbers: docs/WORLDGEN_REALISM.md, Progress. Next in the agreed order: the world
+  sketch (docs/WORLDGEN_SCALE.md); realism fixes 4-10 still open.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

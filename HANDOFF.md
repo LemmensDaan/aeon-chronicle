@@ -411,7 +411,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
 - **Region step 1, the map (2026-10-27, planet and histories unchanged):** `AEON.regiongen(world, square)`
   in js/planetgen.js (planetgen's later stages now in `finish()`, any grid). Harness
   `node tools/region-report.js`: 54 regions match the planet's coast (98-100%) and biome shares (3%
-  median); 0.3 s each. Next: step 2, the region's history from the sketch.
+  median); 0.3 s each.
+- **Region step 2, the history (2026-10-27, planet and histories unchanged):** `AEON.createRegion(world,
+  square)` in js/region.js: starting realms from the sketch's peoples, ages held to the square's curve,
+  the sketch's contacts told and their outcomes enforced (newcomer campaigns). Harness
+  `node tools/region-history.js`. core.js: `newWorld()`, `AEON._core`, `world.onTick`,
+  `world.expandTries`. Next: step 3, open a region in the app and drop the old planet history.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

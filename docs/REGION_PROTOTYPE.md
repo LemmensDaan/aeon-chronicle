@@ -180,3 +180,70 @@ Known limits:
   shaped by the finer relief (no rain shadows of the finer ranges).
 - Plates, faults and rifts are the planet's, cell by cell, so those features are blocky.
 - Regions where the planet has big lakes get big lake districts.
+
+### Step 2, the region's history (2026-10-27, planet and histories unchanged)
+
+`AEON.createRegion(world, squareIndex)` (js/region.js) makes a world of its own for a square:
+the region map, its own random stream (seed + ":history:" + square), and a history the ordinary
+engine plays (`AEON.tick` / `AEON.runAll`), following the sketch:
+
+- **The beyond band** is drawn but held by no one: its land is marked barren (and lake, so it
+  is not a shore), keeping its biome in `r.beyondBiome`; the square's cells have no links to it.
+- **Starting realms**: each sketch people gets a realm at its seat, named as in the sketch, and
+  more realms of its culture in the land nearest its seat. In all as many as the square's good
+  land is worth against the planet's, up to the pack's seedPolities (median 13 of 16).
+- **Ages**: each turn a realm's learning is pulled towards the square's curve (8% of the gap
+  from behind, 25% from ahead, as the engine's growth keeps pushing). The region reaches each
+  age within the century the sketch names for it.
+- **Incoming contacts**, in the sketch's year, at the border facing their homeland or on the
+  coast facing it:
+  - trade: a chronicle line
+  - raids that only plundered: up to three towns there plundered
+  - newcomers: a realm of their own, with their homeland's learning and a stronger army. Over
+    3-10 turns they take the share of the land the outcome says (foothold 3%, settled 8%, colony
+    15%, partial 35%, conquest 75%), outward from where they came in. If they are wiped out
+    before that, a fresh wave comes. Repelled newcomers are driven out after 15 years. Then the
+    engine is free.
+  - more of a people already there join their kin
+- **Outgoing contacts**: a chronicle line from the realm on the side facing the target, and
+  some of its people gone.
+- **Dark ages**: every realm loses knowledge (`AEON.techShock`), with a chronicle line.
+- **Room**: a region has about 2.8 times the planet map's land, so its realms spread that many
+  times faster (`world.expandTries`, read by core.js's natural expansion; 1 on the planet).
+- core.js: `newWorld()` split out of createWorld, `AEON._core` exposes the engine's pieces,
+  and the tick calls `world.onTick` if a world has one. The planet's maps and the histories of
+  seeds 7 and 42 in both packs are unchanged.
+
+Harness: `node tools/region-history.js` (18 seeds x the 3 largest lived squares;
+`--pack fantasy`, `--show <square>` prints a region's chronicle). Results in
+tools/out/regions/history.txt. Over 54 historical regions (min / median / max):
+
+| | |
+|---|---|
+| realms at the start / at the peak / at the end | 7 / 13 / 16, 45 / 47 / 49, 8 / 10 / 38 |
+| inner land held at the end (planet map, seed 7: 84%) | 58% / 72% / 100% |
+| largest realm's share of the land at the end | 13% / 30% / 83% |
+| sketch contacts told in the chronicle | all, in every region |
+| campaigns holding the sketch's share at their end | all but one (a foothold on a small island, 9%) |
+| fresh waves needed | none |
+| newcomers lasting after their campaign | 25 / 630 / 4,145 years |
+| age reached, region minus the sketch's century | -5 / 60 / 145 years (p10 20, p90 100) |
+| make the region / play its history | 0.34 s / 7.6 s |
+
+Fantasy (6 seeds, 18 regions): 12 realms at the start, 29 at the peak, 16 at the end; 38% of
+the land held at the end (planet map, seed 7: 43%); ages -195 / 40 / 95 years; 3.1 s a history.
+
+From seed 42, square 3,1:
+
+> 2660 BC: Skolremustgardian herders came over the south border with their herds at Trobang
+> Baliq, in the lands of Nashimia. 2645 BC: The Skolremustgardian newcomers settled the country
+> round Trobang Baliq, and stayed. ... 5 AD: A dark age fell on the land. ... 1425 AD:
+> Skolremustgard sent ships south-east across the open sea to the lands of Tidalghuular.
+
+Known limits:
+
+- A newcomer's campaign spreads over connected land only, so newcomers landing on a small
+  island hold just that island.
+- After their campaign the engine may destroy newcomers quickly (25 years at the least), so a
+  region can tell "conquered" and then lose the conquerors soon after.
+- Region histories are not in the app yet (step 3).

@@ -42,13 +42,36 @@ AEON.createWorld = function (opts) {
   const seed = opts.seed == null ? Date.now() % 1000000 : opts.seed;
   const rng = AEON.RNG(seed);
 
-  const world = {
+  const world = newWorld(pack, seed, rng, opts.width || 150, opts.height || 95);
+
+  if (!AEON.worldgen || !AEON.worldgen.generate) throw new Error("worldgen missing");
+  AEON.worldgen.generate(world, pack, rng);
+
+  for (const r of world.regions) {
+    if (r.owner === undefined) r.owner = null;
+    if (r.population === undefined) r.population = 0;
+    if (!r.features) r.features = [];
+    if (!r.settlement) r.settlement = null;
+    if (!r.resources) r.resources = { food: 0.5, metal: 0.3, exotic: 0.1 };
+  }
+
+  makeProvinces(world);
+  seedPolities(world);
+  logSettlements(world);
+  /* the world sketch (js/sketch.js) has its own random stream: it never changes the history */
+  if (AEON.makeSketch) AEON.makeSketch(world);
+  return world;
+};
+
+/* the empty record of a world: a map of width x height regions is put on it by a generator */
+function newWorld(pack, seed, rng, width, height) {
+  return {
     seed: seed,
     packId: pack.id,
     pack: pack,
     scale: pack.scale,
-    width: opts.width || 150,
-    height: opts.height || 95,
+    width: width,
+    height: height,
     startYear: pack.startYear,
     endYear: pack.endYear,
     timeStep: pack.timeStep,
@@ -71,25 +94,7 @@ AEON.createWorld = function (opts) {
     _colorIdx: 0,
     stats: { wars: 0, foundings: 0, collapses: 0, deaths: 0 },
   };
-
-  if (!AEON.worldgen || !AEON.worldgen.generate) throw new Error("worldgen missing");
-  AEON.worldgen.generate(world, pack, rng);
-
-  for (const r of world.regions) {
-    if (r.owner === undefined) r.owner = null;
-    if (r.population === undefined) r.population = 0;
-    if (!r.features) r.features = [];
-    if (!r.settlement) r.settlement = null;
-    if (!r.resources) r.resources = { food: 0.5, metal: 0.3, exotic: 0.1 };
-  }
-
-  makeProvinces(world);
-  seedPolities(world);
-  logSettlements(world);
-  /* the world sketch (js/sketch.js) has its own random stream: it never changes the history */
-  if (AEON.makeSketch) AEON.makeSketch(world);
-  return world;
-};
+}
 
 /* Provinces: fixed groups of about ten land regions, laid out once when the world is made and
    never changed by history. Their seats are the best sites for settlement (AEON.siteSuitability),
@@ -2017,19 +2022,23 @@ function baselineTick(world) {
     /* natural expansion into adjacent unclaimed ground */
     const kind = typeOf(world, p);
     const expansionChance = (0.07 + p.traits.aggression * 0.10 + p.wealth * 0.05) * (kind && kind.expansion != null ? kind.expansion : 1);
-    if (rng.chance(expansionChance)) {
-      const open = [];
-      for (const r of rs) {
-        for (const nid of (r.neighbors || [])) {
-          const n = world.regions[nid];
-          if (n && !n.barren && !n.owner && n.habitability > 0.03) open.push(n);
+    /* a region has more land than the planet map holds (js/region.js): its realms spread over it
+       as many times faster, so it fills as the planet does */
+    for (let t = 0; t < (world.expandTries || 1); t++) {
+      if (rng.chance(expansionChance)) {
+        const open = [];
+        for (const r of rs) {
+          for (const nid of (r.neighbors || [])) {
+            const n = world.regions[nid];
+            if (n && !n.barren && !n.owner && n.habitability > 0.03) open.push(n);
+          }
         }
-      }
-      if (open.length) {
-        /* harsh land is settled too, only far less eagerly: a soft frontier, not a wall */
-        const target = rng.weighted(open, function (r) { return r.habitability * r.habitability + 0.004; });
-        transferRegion(world, target, p);
-        if (rng.chance(0.07 * Math.min(1, AEON.siteSuitability(target, world) * 1.6))) foundSettlement(world, target, rng.int(1, 2));
+        if (open.length) {
+          /* harsh land is settled too, only far less eagerly: a soft frontier, not a wall */
+          const target = rng.weighted(open, function (r) { return r.habitability * r.habitability + 0.004; });
+          transferRegion(world, target, p);
+          if (rng.chance(0.07 * Math.min(1, AEON.siteSuitability(target, world) * 1.6))) foundSettlement(world, target, rng.int(1, 2));
+        }
       }
     }
 
@@ -2195,6 +2204,10 @@ AEON.tick = function (world) {
     }
   }
 
+  /* a region's history follows the world sketch (js/region.js): its contacts arrive, and its
+     ages are held near the square's curve */
+  if (world.onTick) world.onTick(world);
+
   dateTick(world, ev0);
   return true;
 };
@@ -2230,6 +2243,10 @@ function finish(world) {
   });
 }
 AEON.finish = finish;
+
+/* the engine's own pieces, for the region history (js/region.js) */
+AEON._core = { newWorld: newWorld, makeProvinces: makeProvinces, logSettlements: logSettlements, spawnPolity: spawnPolity,
+  transferRegion: transferRegion, endPolity: endPolity, callName: callName, living: living, regionsOf: regionsOf };
 
 /* ---------------------------------------------------------- derived info */
 

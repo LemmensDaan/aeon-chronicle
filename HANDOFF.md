@@ -404,6 +404,9 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   css/worldview.css, wired in js/ui.js): grid, age wash per square, peoples, trade lines and contact
   arrows up to the shown year, square plaque on hover, and a world timeline beside the map (hover
   picks out the arrow, click jumps to the year). Next: the region prototype (docs/WORLDGEN_SCALE.md).
+- **Region prototype design (2026-10-27):** docs/REGION_PROTOTYPE.md. One square regenerated 5x finer
+  (~15,000 cells, as today) from the planet layers, history run by the existing engine and steered by
+  the sketch. Three build steps; four questions for Daan at the end, waiting on his answers.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

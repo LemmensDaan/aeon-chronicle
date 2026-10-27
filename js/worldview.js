@@ -70,7 +70,7 @@ function washOf(world, v, t) {
     const k = sk.curves[s].age[t];
     if (k < 0) continue;
     const c = rgb[Math.min(rgb.length - 1, k)];
-    d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = 135;
+    d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = 85;
   }
   ctx.putImageData(img, 0, 0);
   v.wash = cv; v.washStep = t;
@@ -94,9 +94,6 @@ function draw(canvas, world, year, opts) {
   ctx.setTransform(vw.dpr, 0, 0, vw.dpr, 0, 0);
   ctx.beginPath(); ctx.rect(X(0), Y(0), W * s, H * s); ctx.clip();
 
-  /* the base map a little paler, so the sketch reads over it */
-  ctx.fillStyle = "rgba(243, 228, 196, 0.35)";
-  ctx.fillRect(X(0), Y(0), W * s, H * s);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(washOf(world, v, t), X(0), Y(0), W * s, H * s);
 

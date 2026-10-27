@@ -416,7 +416,14 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   square)` in js/region.js: starting realms from the sketch's peoples, ages held to the square's curve,
   the sketch's contacts told and their outcomes enforced (newcomer campaigns). Harness
   `node tools/region-history.js`. core.js: `newWorld()`, `AEON._core`, `world.onTick`,
-  `world.expandTries`. Next: step 3, open a region in the app and drop the old planet history.
+  `world.expandTries`.
+- **Region step 3, regions in the app (2026-10-27):** the app opens on the planet (no old planet history;
+  `createWorld({ planetOnly })`), World mode, world timeline in the sidebar. Click a square, Open this region:
+  made and played once, kept for the session; Back to the world. Beyond band drawn hatched
+  (worldview.js drawBeyond). Link: `#...&region=4,2&mode=political&year=500`. Conquest toned down on
+  Daan's request: sketch outcomes take far less land, conquest leaves vassals; core.js overreach
+  (`world.reach`, regions only) caps a realm near 30% of the land. Next: the planet screen work, or
+  tuning regions.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

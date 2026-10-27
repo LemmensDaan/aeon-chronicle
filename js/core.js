@@ -56,8 +56,12 @@ AEON.createWorld = function (opts) {
   }
 
   makeProvinces(world);
-  seedPolities(world);
-  logSettlements(world);
+  /* opts.planetOnly: the planet as the app shows it, its sketch and no realms of its own (each
+     region opened from it has its history, js/region.js) */
+  if (!opts.planetOnly) {
+    seedPolities(world);
+    logSettlements(world);
+  }
   /* the world sketch (js/sketch.js) has its own random stream: it never changes the history */
   if (AEON.makeSketch) AEON.makeSketch(world);
   return world;
@@ -1420,6 +1424,18 @@ AEON.makeVassal = function (world, v, lord, extra) {
   return AEON.treaty(world, "tribute", v, lord, extra);
 };
 
+/* Overreach (worlds with a reach, the regions of js/region.js): a realm holding more than
+   world.reach of the land has outgrown what it can rule. 0 below half of that, 1 at it, up to 2.
+   Its wars of conquest mostly stall, its vassals are no longer folded in and break away more
+   easily, and it spreads into empty land more slowly. The planet has no reach, so its history is
+   untouched. */
+function overreach(world, p) {
+  if (!world.reach || !p || !p.regions) return 0;
+  if (!world._landCells) { let n = 0; for (const r of world.regions) if (!r.barren) n++; world._landCells = n || 1; }
+  return clamp((p.regions.length / world._landCells / world.reach - 0.5) * 2, 0, 2);
+}
+AEON.overreach = overreach;
+
 function vassalTick(world) {
   const rng = world.rng, over = living(world).length > AEON.realmCap(world);
   const open = (world.treaties || []).filter(function (t) { return t.end == null && t.kind === "tribute"; });
@@ -1428,7 +1444,9 @@ function vassalTick(world) {
     if (!v || !l || v.ended || l.ended || t.end != null) continue;
     let lordWars = 0;
     for (const x of world.treaties) if (x.end == null && x.kind === "war" && (x.a === l.id || x.b === l.id)) lordWars++;
-    if (((world.year - t.start >= 20 && AEON.fieldArmy(world, v) >= 0.8 * AEON.fieldArmy(world, l)) || lordWars >= 2) && rng.chance(0.2)) {
+    const lordOver = overreach(world, l);
+    if (((world.year - t.start >= 20 && AEON.fieldArmy(world, v) >= 0.8 * AEON.fieldArmy(world, l)) || lordWars >= 2 ||
+         (lordOver > 1 && world.year - t.start >= 20 && rng.chance(0.15 * (lordOver - 1)))) && rng.chance(0.2)) {
       AEON.endTreaty(world, t, "revolt");
       AEON.remember(world, l, v, -0.4, "threw off its overlordship");
       const war = rng.chance(0.5);
@@ -1440,7 +1458,7 @@ function vassalTick(world) {
       if (war) joinWar(world, l, v, { joined: false, cause: "the defection of " + nameOf(v) });
       continue;
     }
-    if (world.year - t.start >= 30 && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && rng.chance(over ? 0.25 : 0.06)) {
+    if (world.year - t.start >= 30 && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && lordOver < 1 && rng.chance((over ? 0.25 : 0.06) * (1 - lordOver))) {
       const n = v.regions.length, cap = world.regions[v.capital], seat = cap && (cap.settlement ? cap.settlement.name : cap.name);
       recordEvent(world, "vassal-absorbed", { importance: 4, tags: ["vassal", "annexation", "territory", "fall", "diplomacy"],
         actors: [{ kind: "polity", id: l.id }, { kind: "polity", id: v.id }], regionId: v.capital,
@@ -2021,7 +2039,7 @@ function baselineTick(world) {
 
     /* natural expansion into adjacent unclaimed ground */
     const kind = typeOf(world, p);
-    const expansionChance = (0.07 + p.traits.aggression * 0.10 + p.wealth * 0.05) * (kind && kind.expansion != null ? kind.expansion : 1);
+    const expansionChance = (0.07 + p.traits.aggression * 0.10 + p.wealth * 0.05) * (kind && kind.expansion != null ? kind.expansion : 1) * (1 - 0.4 * Math.min(1, overreach(world, p)));
     /* a region has more land than the planet map holds (js/region.js): its realms spread over it
        as many times faster, so it fills as the planet does */
     for (let t = 0; t < (world.expandTries || 1); t++) {
@@ -2121,6 +2139,8 @@ function fireOne(world, scope, subject, consolidateOnly) {
 
   const def = world.rng.weighted(ok, function (d) { return d.weight || 1; });
   if (!def) return;
+  /* an overreached realm's conquests mostly stall */
+  if (def.consolidate && world.reach && subject && subject.kind === "polity" && world.rng.chance(Math.min(0.95, 0.6 * overreach(world, subject.obj)))) return;
 
   let out = null;
   try { out = def.run(ctx); }

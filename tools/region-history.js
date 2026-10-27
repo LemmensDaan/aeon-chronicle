@@ -59,8 +59,7 @@ function play(planet, si) {
   const expected = S.contacts.length, told = new Set(w.chronicle.filter((e) => e.sketch).map((e) => e.sketch.year + e.sketch.kind + e.sketch.from + e.sketch.to)).size;
   const done = S.done || [];
   /* the outcome held: the newcomers holding about the share the sketch gives when their campaign ends */
-  const SH = { foothold: 0.03, settled: 0.08, colony: 0.15, partial: 0.35, conquest: 0.75 };
-  const held = done.map((d) => d.held / land / SH[d.c.outcome]);
+  const held = done.map((d) => d.got / d.target);
   const lasted = done.map((d) => { const p = w.polities[d.p]; return (p.ended == null ? w.year : p.ended) - d.year; });
   const ageDiff = ages.map((a, k) => (k && reached[k] != null && sq.ageYears[k] != null ? reached[k] - sq.ageYears[k] : null)).filter((v) => v != null);
   const alive = living();
@@ -68,6 +67,7 @@ function play(planet, si) {
     w: w, square: sq.id, peoples: sq.peoples.length, createMs: tCreate, runMs: tRun, events: w.chronicle.length,
     realmsStart: start, realmsPeak: peak, realmsEnd: alive.length, polities: Object.keys(w.polities).length,
     ownedEnd: r2(w.regions.filter((r) => !r.beyond && !r.barren && r.owner).length / land),
+    vassalsAfterConquest: done.filter((d) => d.c.outcome === "conquest").map((d) => d.vassals).join(",") || null,
     largestEnd: r2(Math.max(0, ...alive.map((p) => p.regions.length / land))), largestEver: r2(peakShare),
     contacts: expected, told: told, campaigns: done.length, heldMin: held.length ? r2(Math.min(...held)) : null,
     waves: done.reduce((s, d) => s + d.waves - 1, 0), lastedMedian: lasted.length ? lasted.sort((a, b) => a - b)[Math.floor(lasted.length / 2)] : null,

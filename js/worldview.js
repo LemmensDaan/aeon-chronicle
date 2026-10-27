@@ -105,6 +105,12 @@ function draw(canvas, world, year, opts) {
     if (q.row > 0) { ctx.moveTo(X(q.x0), Math.round(Y(q.y0)) + 0.5); ctx.lineTo(X(q.x1), Math.round(Y(q.y0)) + 0.5); }
   }
   ctx.stroke(); ctx.setLineDash([]);
+  /* the square picked to open */
+  if (opts.pick != null && sk.squares[opts.pick]) {
+    const q = sk.squares[opts.pick];
+    ctx.strokeStyle = "#8e1d1d"; ctx.lineWidth = 3;
+    ctx.strokeRect(X(q.x0) + 1.5, Y(q.y0) + 1.5, (q.x1 - q.x0) * s - 3, (q.y1 - q.y0) * s - 3);
+  }
 
   /* the contacts up to the year: trade routes as thin lines, the rest as arrows */
   const pick = opts.highlight || null;
@@ -233,7 +239,7 @@ function fillLegend(L, world, el) {
 /* the world timeline: every contact of the sketch, those after the shown year dimmed */
 function Timeline(host, world, opts, el) {
   const sk = world.sketch, pack = world.pack;
-  const root = el("div", { class: "wv-line" });
+  const root = el("div", { class: "wv-line" + (opts.side ? " wv-side" : "") });
   let showTrade = false, year = null;
   const list = el("div", { class: "wv-list" });
   const tradeBtn = el("button", { class: "ae-btn wv-chip", text: "trade", title: "Show first trade contacts too",
@@ -280,6 +286,57 @@ function Timeline(host, world, opts, el) {
   };
 }
 
-AEON.worldView = { draw: draw, squareAt: squareAt, fillTip: fillTip, fillLegend: fillLegend, Timeline: Timeline };
+/* one line about a square in a year: its age and its peoples */
+function squareLine(world, si, year) {
+  const sk = world.sketch, k = sk.curves[si].age[stepOf(sk, world, year)], ages = world.pack.ages || [];
+  const ps = peoplesIn(world, si, year).map(function (p) { return p.name; });
+  return (ages[k] ? ages[k].name : "") + " · " + ps.slice(0, 3).join(", ") + (ps.length > 3 ? " and " + (ps.length - 3) + " more" : "");
+}
+
+/* a region's "beyond" band (region.js): the neighbouring land, dimmed and hatched over the map,
+   with a dark rule along the square's edge */
+function drawBeyond(canvas, world) {
+  const vw = canvas && canvas._aeonView;
+  if (!vw || !world.square) return;
+  const W = world.width, H = world.height;
+  if (!world._beyondImg) {
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d"), img = ctx.createImageData(W, H), d = img.data, biomes = world.pack.biomes || {};
+    for (const r of world.regions) {
+      if (!r.beyond) continue;
+      const b = biomes[r.beyondBiome || (r.lake ? "lake" : "barren")];
+      let c = r.beyondBiome && b ? hexRgb(b.color) : [45, 70, 105];
+      const shade = (r.x + r.y) % 4 === 0 ? 0.5 : 0.72;
+      const i = (r.y * W + r.x) * 4;
+      d[i] = c[0] * shade; d[i + 1] = c[1] * shade; d[i + 2] = c[2] * shade; d[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    Object.defineProperty(world, "_beyondImg", { enumerable: false, configurable: true, writable: true, value: cv });
+  }
+  const ctx = canvas.getContext("2d"), s = vw.s;
+  ctx.save();
+  ctx.setTransform(vw.dpr, 0, 0, vw.dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(world._beyondImg, vw.ox, vw.oy, W * s, H * s);
+  let x0 = W, x1 = 0, y0 = H, y1 = 0;
+  for (const r of world.regions) if (!r.beyond) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x + 1); y0 = Math.min(y0, r.y); y1 = Math.max(y1, r.y + 1); }
+  ctx.strokeStyle = "#3a2614"; ctx.lineWidth = 2;
+  ctx.strokeRect(vw.ox + x0 * s, vw.oy + y0 * s, (x1 - x0) * s, (y1 - y0) * s);
+  ctx.restore();
+}
+
+/* what lies beyond a region at a cell: the neighbouring square's first people */
+function beyondLine(world, r) {
+  const planet = world.planet, sk = planet && planet.sketch;
+  if (!sk) return "Another land";
+  const si = prep(planet).sqOf[r.planet];
+  const q = si >= 0 ? sk.squares[si] : null;
+  const p = q && sk.peoples.find(function (x) { return x.square === q.id && !x.arrived; });
+  return r.barren && !r.beyondBiome ? "The open sea" : p ? "The lands of " + p.name + " (square " + q.id + ")" : "Land no one lives in";
+}
+
+AEON.worldView = { draw: draw, squareAt: squareAt, fillTip: fillTip, fillLegend: fillLegend, Timeline: Timeline,
+  squareLine: squareLine, drawBeyond: drawBeyond, beyondLine: beyondLine };
 
 })();

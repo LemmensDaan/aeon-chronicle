@@ -247,3 +247,46 @@ Known limits:
 - After their campaign the engine may destroy newcomers quickly (25 years at the least), so a
   region can tell "conquered" and then lose the conquerors soon after.
 - Region histories are not in the app yet (step 3).
+
+### Step 3, regions in the app (2026-10-27)
+
+- **The old whole-planet history is gone** (decision 4). "Forge the world" makes the planet and
+  its sketch (`createWorld({ planetOnly: true })`: no realms of its own) and opens straight away
+  on the World mode. The planet's modes are world, biome, elevation and habitability; the header
+  shows the year, the inhabited lands, the peoples living then and the clashes and crossings so
+  far; the world timeline fills the right sidebar. Play, scrub and the great-moment buttons
+  step through the sketch's years and contacts.
+- **Opening a region**: click a square in the World mode. A plaque names it (age, peoples) with
+  **Open this region**; the first time it makes the region and plays its history with the usual
+  progress bar, after that it opens at once (regions are kept for the session; one left half
+  played resumes). A region is the app as before: political, diplomacy and the other modes, the
+  chronicle, statistics and export. **Back to the world** returns to the planet in the same year.
+- **The beyond band** is drawn over the region as the neighbouring land, dimmed and hatched, with
+  a dark rule along the square's edge; hovering it names the land beyond.
+- The link keeps the place: `#pack=historical&seed=7&region=4,2&mode=political&year=500` opens
+  that region in that year.
+
+**Conquest toned down (Daan: a conquest is not full control of a land).** Two changes to step 2:
+
+- A sketch outcome now takes much less outright, over longer (a turn is 5 years): foothold 2%
+  over 4 turns, settled 5% over 6, colony 8% over 10, partial 12% over 12, conquest 25% over 20.
+  The share is of the land people hold at the time (at least a tenth of the land), so an early
+  conquest of a thinly settled land is a small one. After a conquest the realms beaten, and those
+  whose capitals lie near the conquerors' new lands, become their vassals; the engine decides
+  how long that lasts. A campaign that runs out of land on its own landmass goes on across the
+  water to the nearest land. Seed 7's "Narmanat conquered Saneustirnis" (2724 BC) is now 3% of
+  the land and two vassals; seed 42's conquests in the 2300s BC take 2-4% and five to twelve
+  vassals.
+- **Overreach** (core.js, worlds with `world.reach`; regions use 0.3): a realm holding more
+  than half the reach starts to overreach, fully at the reach (30% of the land). Its conquests
+  mostly stall, its vassals are no longer folded in and break away more easily, and it spreads
+  into empty land more slowly. The largest realm in a region now peaks at 21-36% of the land
+  (median 31%), down from up to 80%. Big powers rise over centuries and fall back: seed 99's
+  largest held 27% at 0 AD and 17% by 500 AD. The planet has no reach, so its history engine is
+  unchanged (same-seed planet histories still identical).
+
+Over 54 historical regions with these rules (`node tools/region-history.js`): realms 13 at the
+start, 47 at the peak, 11 at the end; 73% of the land held at the end; largest realm 12-34% at
+the end; every sketch contact told; every campaign held its share; ages 60 years into the
+sketch's century (median). Making a region takes 0.3-0.9 s and its history 6-13 s here (in the
+app a little longer, as the map is drawn while it plays).

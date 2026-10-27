@@ -19,3 +19,15 @@
 .wv-row.now { background: rgba(142, 29, 29, .12); box-shadow: inset 3px 0 0 var(--pp-ribbon, #8e1d1d); }
 .wv-dot { width: 8px; height: 8px; display: inline-block; outline: 1px solid var(--pp-ink, #3a2614); }
 .wv-year { font-family: var(--ae-pixel, Georgia, serif); font-size: 12px; white-space: nowrap; }
+/* on the planet the timeline fills the sidebar */
+.wv-line.wv-side { position: static; inset: auto; width: auto; height: 100%; flex: 1; min-height: 0; border: 0; box-shadow: none; background: transparent; }
+/* a square picked on the planet, with the button that opens it */
+.wv-pick {
+  position: absolute; z-index: 7; left: 50%; transform: translateX(-50%); bottom: calc(var(--plaque-gap, 12px) + 150px);
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px; max-width: 90%;
+  background: #f3e4c4; border: 2px solid var(--pp-ink, #3a2614); box-shadow: 2px 2px 0 rgba(0, 0, 0, .35);
+  font-family: var(--ae-serif); color: var(--pp-ink, #3a2614); font-size: 13px;
+}
+.wv-pick.hidden { display: none; }
+.wv-pick b { font-family: var(--ae-pixel, Georgia, serif); font-size: 14px; white-space: nowrap; }
+.wv-pick span { color: var(--pp-soft, #6b4a2a); font-style: italic; }

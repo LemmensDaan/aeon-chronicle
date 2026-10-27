@@ -22,8 +22,13 @@ const AEON = window.AEON = window.AEON || {};
 /* share of the gap to the sketch's learning closed each turn: gently from behind, firmly from
    ahead, since the engine's own growth keeps pushing realms forward */
 const PULL = 0.08, PULL_AHEAD = 0.25;
-const SHARE = { foothold: 0.03, settled: 0.08, colony: 0.15, partial: 0.35, conquest: 0.75 };
-const TURNS = { foothold: 3, settled: 4, colony: 5, partial: 7, conquest: 10, repelled: 3 };
+/* what each outcome means inside the region (Daan: a conquest is not full control of a land).
+   The newcomers hold a share of the land outright, taken over some turns (a turn is 5 years);
+   after a conquest the realms they beat and the realms whose capitals lie near their new lands
+   pay them tribute, as vassals, and the engine decides how long that lasts. */
+const SHARE = { foothold: 0.02, settled: 0.05, colony: 0.08, partial: 0.12, conquest: 0.25 };
+const TURNS = { foothold: 4, settled: 6, colony: 10, partial: 12, conquest: 20, repelled: 3 };
+AEON.regionShares = SHARE;
 const DIRS = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"];
 
 AEON.createRegion = function (planet, si) {
@@ -50,6 +55,8 @@ AEON.createRegion = function (planet, si) {
   /* its realms spread as many times faster as it has more land than the planet map */
   const landOf = function (rs) { return rs.filter(function (r) { return !r.barren; }).length; };
   world.expandTries = Math.max(1, Math.round(landOf(R) / Math.max(1, landOf(planet.regions))));
+  /* no realm rules much more than a third of the land for long (core.js overreach) */
+  world.reach = 0.3;
 
   C.makeProvinces(world);
   seedFromSketch(world, planet, si);
@@ -237,7 +244,10 @@ function contact(world, c) {
     [{ kind: "polity", id: p.id }].concat(holder ? [{ kind: "polity", id: holder.id }] : []), entry.id, c);
 
   const share = SHARE[c.outcome] || 0;
-  const order = spread(world, entry, Math.round(share * land.length));
+  /* a share of the land people hold (and a little of the empty land round it): an early conquest
+     of a thinly settled land is a small one */
+  const settled = land.filter(function (r) { return r.owner; }).length;
+  const order = spread(world, entry, Math.round(share * Math.max(settled, 0.1 * land.length)));
   world._sketch.campaigns.push({ c: c, people: people, p: p, entry: entry, cells: order, turns: TURNS[c.outcome] || 4,
     left: TURNS[c.outcome] || 4, waves: 1, losers: {}, from: index(c.from), holder: holder ? holder.id : null, prev: {} });
 }
@@ -246,12 +256,25 @@ function contact(world, c) {
 function spread(world, entry, n) {
   const R = world.regions, seen = {}, q = [entry.id];
   seen[entry.id] = true;
-  for (let h = 0; h < q.length && q.length < n; h++) {
-    for (const nb of R[q[h]].neighbors) {
-      const r = R[nb];
-      if (seen[nb] || r.barren || r.beyond) continue;
-      seen[nb] = true; q.push(nb);
+  let h = 0;
+  while (q.length < n) {
+    for (; h < q.length && q.length < n; h++) {
+      for (const nb of R[q[h]].neighbors) {
+        const r = R[nb];
+        if (seen[nb] || r.barren || r.beyond) continue;
+        seen[nb] = true; q.push(nb);
+      }
     }
+    if (q.length >= n) break;
+    /* their landmass is all taken: on across the water to the nearest land not yet theirs */
+    let next = null, bd = Infinity;
+    for (const r of R) {
+      if (r.barren || r.beyond || seen[r.id]) continue;
+      const d = Math.hypot(r.x - entry.x, r.y - entry.y);
+      if (d < bd) { bd = d; next = r; }
+    }
+    if (!next) break;
+    seen[next.id] = true; q.push(next.id);
   }
   return q.slice(0, Math.max(1, n));
 }
@@ -330,7 +353,10 @@ function campaignTick(world, cp) {
   }
   if (cities.length) record(world, "sketch-campaign", 3, cp.p.name + " took " + cities.slice(0, 3).join(", ") + ".", [{ kind: "polity", id: cp.p.id }], null, null);
   if (cp.left > 0) return;
-  const held = cp.p.ended ? 0 : cp.p.regions.length;
+  /* what they hold, in the land's provinces (core.js makeProvinces) */
+  const provs = {};
+  if (!cp.p.ended) for (const id of cp.p.regions) provs[R[id].province != null ? R[id].province : "c" + id] = true;
+  const held = Object.keys(provs).length;
   const losers = Object.keys(cp.losers).map(function (id) { return world.polities[id]; }).filter(Boolean);
   const names = losers.slice(0, 4).map(nameIn).join(", ") + (losers.length > 4 ? " and " + (losers.length - 4) + " more" : "");
   const end = {
@@ -338,12 +364,31 @@ function campaignTick(world, cp) {
     foothold: "The " + cp.people.adjective + " newcomers held on to a strip of coast round " + placeName(cp.entry, world) + ".",
     colony: cp.p.name + " had grown into a colony of " + held + " provinces round " + placeName(cp.entry, world) + ".",
     partial: cp.p.name + " held " + held + " provinces taken from " + (names || "the people of the land") + ".",
-    conquest: cp.p.name + " had made itself master of the land" + (names ? ": " + names + " fell to it" : "") + ".",
-  }[c.outcome];
+    conquest: null,
+  }[c.outcome] || conquered(world, cp, losers, held);
   record(world, "sketch-outcome", c.outcome === "conquest" ? 5 : 3, end, [{ kind: "polity", id: cp.p.id }], cp.entry.id, c);
   cp.done = world.year;
   world._sketch.campaigns.splice(world._sketch.campaigns.indexOf(cp), 1);
-  (world._sketch.done || (world._sketch.done = [])).push({ c: c, p: cp.p.id, held: held, waves: cp.waves, year: world.year });
+  (world._sketch.done || (world._sketch.done = [])).push({ c: c, p: cp.p.id, held: held, waves: cp.waves, year: world.year, vassals: cp.vassals || 0,
+    target: cp.cells.length, got: cp.cells.filter(function (id) { return R[id].owner === cp.p.id; }).length });
+}
+
+/* the end of a conquest: the realms beaten, and those whose capitals lie near the conquerors'
+   new lands, become their vassals; the story says how far their rule reached */
+function conquered(world, cp, losers, held) {
+  const R = world.regions, p = cp.p, C = AEON._core;
+  if (p.ended) return "The " + cp.people.adjective + " conquest fell apart as soon as it was made.";
+  const mine = p.regions.map(function (id) { return R[id]; });
+  const near = function (q) {
+    const c = R[q.capital];
+    return mine.some(function (r) { return Math.abs(r.x - c.x) + Math.abs(r.y - c.y) <= 12; });
+  };
+  const subject = C.living(world).filter(function (q) { return q !== p && (cp.losers[q.id] || near(q)); });
+  for (const q of subject) AEON.makeVassal(world, q, p, { since: "conquest" });
+  cp.vassals = subject.length;
+  const names = subject.slice(0, 4).map(nameIn).join(", ") + (subject.length > 4 ? " and " + (subject.length - 4) + " more" : "");
+  return p.name + " had broken the power of the land: it ruled " + held + " provinces itself" +
+    (subject.length ? ", and " + names + " paid it tribute" : "") + ".";
 }
 
 /* an expedition leaving for another square: told from the realm on the side facing it */

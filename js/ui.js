@@ -44,6 +44,8 @@ let camera = true;
 const CAM_P = 3;
 let rafId = 0;
 let mapMode = "political";
+/* the World mode (worldview.js): the contact picked out from the world timeline, and the timeline */
+let worldPick = null, worldLine = null;
 let view = { zoom: 1, panX: 0, panY: 0 };
 let hoverRegion = null, selectedRegion = null;
 
@@ -130,7 +132,7 @@ function start(packId, seed) {
   selectedRegion = null;
   mapMode = "political";
   const mm = /mode=([a-z]+)/.exec(location.hash);
-  if (mm && AEON.render && AEON.render.modes.indexOf(mm[1]) >= 0) mapMode = mm[1];
+  if (mm && AEON.render && (AEON.render.modes.indexOf(mm[1]) >= 0 || (mm[1] === "world" && AEON.worldView && world.sketch))) mapMode = mm[1];
   buildApp();
   simulateAll();
 }
@@ -227,6 +229,7 @@ function setPlaybackYear(y, how) {
   drawMap();
   if (AEON.chronicle && AEON.chronicle.setYear) AEON.chronicle.setYear(playbackYear);
   if (AEON.stats && AEON.stats.isOpen()) AEON.stats.setYear(playbackYear);
+  if (worldLine && mapMode === "world") worldLine.setYear(playbackYear);
   if (how !== "play") runFx();
 }
 
@@ -374,6 +377,11 @@ function diploFocus() {
 function updateLegend() {
   const L = dom.legend, spec = LEGENDS[mapMode], ramp = AEON.mapRamps && AEON.mapRamps[mapMode];
   if (!L) return;
+  if (mapMode === "world" && AEON.worldView) {
+    if (L._mode !== "world") { L._mode = "world"; AEON.worldView.fillLegend(L, world, el); }
+    L.classList.remove("hidden");
+    return;
+  }
   if (mapMode === "diplomacy" && AEON.stanceColors) {
     const f = diploFocus(), key = "diplomacy|" + f;
     if (L._mode === key) { L.classList.remove("hidden"); return; }
@@ -405,8 +413,9 @@ function drawMap() {
   updateLegend();
   clampView();
   try {
+    const worldMode = mapMode === "world";
     AEON.render.draw(dom.canvas, shown(), {
-      mode: mapMode,
+      mode: worldMode ? "biome" : mapMode,
       focus: mapMode === "diplomacy" ? diploFocus() : null,
       /* the provinces of the realm under the cursor (else the selected land's) are outlined */
       provincesOf: realmAt(hoverRegion) || realmAt(selectedRegion),
@@ -418,6 +427,7 @@ function drawMap() {
       time: ambientOn() ? performance.now() : null,
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
+    if (worldMode && AEON.worldView) AEON.worldView.draw(dom.canvas, world, simulating ? world.year : playbackYear, { highlight: worldPick });
   } catch (e) {
     console.error("[aeon] render failed", e);
   }
@@ -439,6 +449,7 @@ function buildApp() {
   mapWrap.appendChild(dom.progress);
 
   const modes = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
+  if (AEON.worldView && world.sketch) modes.push("world");
   const modeBar = el("div", { class: "ae-modes" });
   modes.forEach(function (m) {
     modeBar.appendChild(el("button", {
@@ -448,6 +459,8 @@ function buildApp() {
         toggleStats(false);
         modeBar.querySelectorAll(".ae-mode").forEach(function (b) { b.classList.remove("on"); });
         e.target.classList.add("on");
+        if (worldLine) worldLine.show(m === "world");
+        if (worldLine && m === "world") worldLine.setYear(playbackYear, true);
         drawMap();
       },
     }));
@@ -455,6 +468,16 @@ function buildApp() {
 
   dom.legend = el("div", { class: "ae-legend hidden" });
   mapWrap.appendChild(dom.legend);
+
+  /* the world timeline, beside the map in the World mode */
+  worldLine = null; worldPick = null;
+  if (AEON.worldView && world.sketch) {
+    worldLine = AEON.worldView.Timeline(mapWrap, world, {
+      onSetYear: function (y) { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(y); },
+      onHighlight: function (c) { worldPick = c; drawMap(); },
+    }, el);
+    worldLine.show(mapMode === "world");
+  }
 
   dom.playBtn = el("button", { class: "ae-btn round", text: "▶", onclick: togglePlay });
   dom.scrub = el("input", { class: "ae-scrub", type: "range",
@@ -684,8 +707,12 @@ function showTip(e, id) {
   const r = view.regions[id];
   if (!r) { hideTip(); return; }
   if (!tipEl) { tipEl = el("div", { class: "ae-tip" }); document.body.appendChild(tipEl); }
-  const key = id + "@" + view.year;
-  if (tipEl._for !== key) { tipEl._for = key; fillTip(view, r); }
+  const key = id + "@" + view.year + mapMode;
+  if (tipEl._for !== key) {
+    tipEl._for = key;
+    if (mapMode === "world" && AEON.worldView) { tipEl.replaceChildren(); if (!AEON.worldView.fillTip(tipEl, world, id, playbackYear, el)) fillTip(view, r); }
+    else fillTip(view, r);
+  }
   tipEl.style.display = "block";
   const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
   tipEl.style.left = (e.clientX + 18 + w > window.innerWidth ? e.clientX - 12 - w : e.clientX + 18) + "px";

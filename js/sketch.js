@@ -303,7 +303,7 @@ function runSketch(world, sk, rng) {
 function storyOf(world, sk, byId, c) {
   const P = (id) => (id && byId[id] ? byId[id] : null);
   const by = P(c.by), against = P(c.against);
-  const yr = (y) => (y < 0 ? -y + " BC" : y + " AD");
+  const yr = (y) => (world.pack.yearLabel ? world.pack.yearLabel(y) : y < 0 ? -y + " BC" : y + " AD");
   const people = (p) => (p ? p.name : "a people");
   const adj = (p) => (p ? p.adjective : "foreign");
   const land = (id) => { const p = sk.peoples.find((q) => q.square === id && !q.arrived); return p ? "the lands of " + p.name : "square " + id; };

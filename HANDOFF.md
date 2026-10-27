@@ -400,6 +400,10 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   chronicle line. Median world: 185 contacts, 64 hostile, 11 conquests, first ocean crossing
   ~750 AD. Harness: tools/out/sketch-<seed>.txt and -development.png. Next: step 3, a "World"
   map mode in the app (view only).
+- **World sketch step 3 (2026-10-27, view only):** a "world" map mode (js/worldview.js,
+  css/worldview.css, wired in js/ui.js): grid, age wash per square, peoples, trade lines and contact
+  arrows up to the shown year, square plaque on hover, and a world timeline beside the map (hover
+  picks out the arrow, click jumps to the year). Next: the region prototype (docs/WORLDGEN_SCALE.md).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

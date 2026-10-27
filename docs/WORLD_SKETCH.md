@@ -239,4 +239,27 @@ Known limits:
 - Every arrival copies the leading people's name, so a people that migrates several times
   appears several times.
 - Colonisation can link two squares on one continent whose coasts are far apart.
-- Nothing yet shows the sketch in the app (step 3).
+- Nothing yet shows the sketch in the app (step 3; done, see below).
+
+### Step 3, the World map mode (2026-10-27, view only, histories unchanged)
+
+`js/worldview.js` and `css/worldview.css`; `js/ui.js` adds a **world** button to the map
+modes (also `#mode=world` in the link). For the shown year it draws over the biome map:
+
+- the grid of squares, dashed
+- each lived square's land washed in the colour of the age it has reached (legend plaque: the
+  pack's ages and the kinds of contact)
+- the peoples' seats as diamonds: first peoples in ink, newcomers in the colour of how they came
+- trade routes opened so far as thin dotted lines; migrations, invasions, raids (dashed) and
+  colonisations as arrows, strong for the last 300 years and faint before
+- a label per square: its age ("· dark age" for 200 years after one) and its leading people
+  with how many others live there; smaller labels as the map zooms out
+
+Hovering a square gives its age, the years it reached the earlier ages, its peoples (and how
+newcomers came) and its last contact. The **world timeline** sits beside the map, not in the
+chronicle panel: every contact in order, those after the shown year dimmed, the latest one
+marked and scrolled to; trade contacts behind a toggle. Hovering a line picks its arrow out on
+the map, clicking it goes to its year.
+
+The sketch's chronicle lines now use the pack's own year labels (fantasy said BC/AD before).
+Checked in the app on historical 7 and fantasy 42; same-seed histories identical.

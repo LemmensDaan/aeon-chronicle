@@ -75,8 +75,13 @@ unchanged.
   - **trade:** a chronicle entry, and a trade bonus for the coastal or border realms.
   - **dark age:** the engine's fall-back for the realms of the square.
 
-  The sketch's outcome steers the strength. The region's own result is what its chronicle
-  tells.
+  **The world history stays correct** (decided by Daan): the sketch's outcome is where the
+  region must end up; the region decides only how it gets there. The newcomers' strength is set
+  from the outcome. If after about 50 years the region falls short (the invaders were beaten
+  although the sketch says "conquered"), the engine sends further waves and weakens the defenders
+  until the outcome is reached. If the newcomers do better than the sketch allows (they would
+  conquer where the sketch says "repelled"), they stall and fall apart. Which cities fall, how
+  long it takes and who holds out are the region's own story.
 - **Outgoing contacts**: an expedition entry in the chronicle, the fleet or host setting out
   for the target square from the realm that holds the coast or border facing it, at a cost in
   ships or men. The arrival is told only by the target region, when it is opened.
@@ -117,10 +122,8 @@ this one). Until then, the world mode and the regions sit beside it.
 1. **Straight edges.** Borders stop at the square's edge, with hatched "beyond" land past it.
    Fine for the prototype? (Recommended: yes. Nicer region shapes come with the grid tuning
    later.)
-2. **The sketch's outcome: steer or force?** If the sketch says "conquered" and the defenders
-   win inside the region, the two disagree. (Recommended: steer strongly, so they agree most of
-   the time, and let the region's result be its story. Forcing makes the region's wars
-   scripted.)
+2. ~~Steer or force the sketch's outcome?~~ Decided: the region is nudged until the sketch's
+   outcome holds (see the incoming contacts above).
 3. **Starting realms per square.** Several realms per sketch people, scaled by habitable land,
    up to today's 14-16. Or only the sketch's 1-4 peoples, with the engine founding more over
    time? (Recommended: several per people; one realm alone in a region is dull for centuries.)

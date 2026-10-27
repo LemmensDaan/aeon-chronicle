@@ -53,6 +53,14 @@ AEON.makeSketch = function (world) {
     s.openSea = s.land < OPEN_SEA * s.cells;
     for (const b of Object.keys(s.biomes)) s.biomes[b] = Math.round(1000 * s.biomes[b] / (s.land || 1)) / 1000;
   }
+  /* how quickly a square's land lets it develop, against the median lived square (1): good land
+     and river floodplains count, the amount of land does not (that is its power, not its pace) */
+  {
+    const qual = (s) => (s.habitable + 2 * s.river) / (s.land || 1);
+    const qs = squares.filter((s) => !s.openSea).map(qual).sort((a, b) => a - b);
+    const med = qs.length ? qs[(qs.length / 2) | 0] || 1e-6 : 1;
+    for (const s of squares) s.fertile = s.openSea ? 0 : Math.round(100 * clamp(0.6 + 0.4 * qual(s) / med, 0.5, 1.6)) / 100;
+  }
 
   /* ---- land links: neighbouring squares with land on both sides of their border ---- */
   const links = [];
@@ -145,7 +153,7 @@ AEON.makeSketch = function (world) {
       const naming = nameOf(world, rng, seat, arch);
       const groundShare = arch && arch.ground ? arch.ground.reduce((t, b) => t + (area.biomes[b] || 0), 0) / (area.cells || 1) : 0;
       const kind = arch && arch.ground && arch.ground.indexOf("grassland") >= 0 && groundShare > 0.4 ? "nomads"
-                 : seat.habitability >= 0.55 ? "kingdom" : "tribes";
+                 : s.fertile >= 1 && seat.habitability >= 0.55 ? "kingdom" : "tribes";
       const p = {
         id: "s" + peoples.length, name: naming.name, adjective: naming.adjective || naming.name, culture: naming.culture || null,
         archetype: arch ? arch.id : null, square: s.id, seat: seat.id, cells: area.cells, kind: kind,
@@ -156,9 +164,162 @@ AEON.makeSketch = function (world) {
   }
 
   const sketch = { cols: COLS, rows: ROWS, squares: squares, links: links, peoples: peoples };
+  runSketch(world, sketch, rng);
   Object.defineProperty(world, "sketch", { enumerable: false, configurable: true, writable: true, value: sketch });
   return sketch;
 };
+
+/* ------------------------------------------------------------------ the sketch's history --
+   Century by century, every lived square develops on the pack's own "learning" scale (the
+   engine's: pack.ages[k].at is where age k begins), so the sketch's ages line up with a
+   realm's. The median square reaches the last age near the end of the timeline; good land
+   develops faster; knowledge leaks along links from more developed neighbours, more so once
+   they trade; now and then a dark age knocks a square back. Power is people x development x
+   cohesion. Contacts follow from the links, the ages (sea reach) and the power ratio. */
+const SEA_BY_AGE = [6, 15, 40, 999, 999];        /* longest sea crossing, in cells, by age */
+const STEP = 100;
+
+function runSketch(world, sk, rng) {
+  const pack = world.pack, ages = pack.ages && pack.ages.length ? pack.ages : [{ at: 0 }];
+  const atLast = ages[ages.length - 1].at || 1000;
+  const start = pack.startYear, end = pack.endYear, span = end - start;
+  const years = [];
+  for (let y = start; y < end; y += STEP) years.push(y);
+  const R0 = 0.8 * atLast / (0.95 * span);   /* 0.72: the leak from neighbours supplies the rest */               /* learning a year for the median square */
+  const ageOf = (L) => { let k = 0; while (k + 1 < ages.length && L >= ages[k + 1].at) k++; return k; };
+  const reachOf = (L) => SEA_BY_AGE[Math.min(SEA_BY_AGE.length - 1, ageOf(L))];
+  const sq = sk.squares, lived = sq.map((s) => s.peoples.length > 0);
+  const byId = {};
+  sk.peoples.forEach((p) => { byId[p.id] = p; });
+  const n = sq.length;
+  const L = new Float64Array(n), coh = new Float64Array(n).fill(1), pace = new Float64Array(n);
+  for (let i = 0; i < n; i++) if (lived[i]) { pace[i] = sq[i].fertile * (0.75 + 0.5 * rng.next()); L[i] = 0; }
+  const traded = {}, lastHostile = {}, struck = {};
+  const key = (a, b) => Math.min(a, b) + "|" + Math.max(a, b);
+  const nomadic = (i) => sq[i].peoples.length && sq[i].peoples.filter((id) => byId[id].kind === "nomads").length * 2 >= sq[i].peoples.length;
+  const sailors = (i) => sq[i].peoples.some((id) => { const a = (pack.archetypes || []).find((x) => x.id === byId[id].archetype); return a && (a.navy || 1) >= 1.5; });
+  const power = (i) => lived[i] ? sq[i].habitable * (1 + ageOf(L[i]) + (L[i] - ages[ageOf(L[i])].at) / ((ages[ageOf(L[i]) + 1] || { at: atLast * 1.3 }).at - ages[ageOf(L[i])].at || 1)) * coh[i] : 0;
+  const leader = (i) => sq[i].peoples.map((id) => byId[id]).sort((a, b) => b.cells - a.cells)[0];
+  const curves = sq.map(() => ({ learning: [], age: [], power: [] }));
+  const contacts = [];
+  const contact = (c) => { contacts.push(c); return c; };
+
+  for (let t = 0; t < years.length; t++) {
+    const y0 = years[t], frac = (y0 - start) / span;
+    /* develop: own pace rising through the timeline (as the engine's tech does), plus knowledge
+       leaking from more developed linked squares */
+    const gain = new Float64Array(n);
+    for (let i = 0; i < n; i++) if (lived[i]) gain[i] = R0 * STEP * pace[i] * (0.4 + 1.2 * frac) * (0.6 + 0.4 * coh[i]);
+    for (const l of sk.links) {
+      if (!lived[l.a] || !lived[l.b]) continue;
+      const open = l.kind === "land" ? (l.width >= 2 ? 1 : 0.5) * (1 - 0.6 * l.rough)
+                 : l.lane <= Math.max(reachOf(L[l.a]), reachOf(L[l.b])) ? (l.lane <= 15 ? 0.6 : l.lane <= 40 ? 0.25 : 0.05) : 0;
+      if (!open) continue;
+      const w = open * (traded[key(l.a, l.b)] ? 0.12 : 0.05);
+      if (L[l.a] > L[l.b]) gain[l.b] += w * (L[l.a] - L[l.b]); else gain[l.a] += w * (L[l.b] - L[l.a]);
+    }
+    for (let i = 0; i < n; i++) {
+      if (!lived[i]) continue;
+      L[i] += gain[i];
+      coh[i] = clamp(coh[i] + (rng.next() - 0.5) * 0.25 + (1 - coh[i]) * 0.15, 0.4, 1.6);
+      /* a dark age: the square falls back part of the way; more likely when cohesion is low */
+      if (ageOf(L[i]) >= 1 && rng.chance(0.012 + 0.03 * Math.max(0, 1 - coh[i]))) {
+        const was = ageOf(L[i]);
+        L[i] = Math.max(0, L[i] - (ages[was].at - ages[was - 1].at) * (0.3 + 0.4 * rng.next()));
+        coh[i] = Math.max(0.4, coh[i] - 0.3);
+        contact({ year: y0 + rng.int(0, STEP - 1), kind: "dark-age", from: sq[i].id, to: sq[i].id, by: null, outcome: ageOf(L[i]) < was ? "fell-back" : "shaken", strength: 0 });
+      }
+    }
+
+    /* contacts along every link */
+    const hit = {};
+    for (const l of rng.shuffle(sk.links)) {
+      if (!lived[l.a] || !lived[l.b]) continue;
+      const k = key(l.a, l.b);
+      for (const [a, b] of [[l.a, l.b], [l.b, l.a]]) {
+        const byLand = l.kind === "land";
+        if (!byLand && l.lane > reachOf(L[a])) continue;
+        const aa = ageOf(L[a]), ab = ageOf(L[b]);
+        /* first trade: both past their first age, or the stronger one reaching out by sea */
+        if (!traded[k] && aa >= 1 && ab >= 1 && rng.chance(byLand ? 0.5 : l.lane <= 40 ? 0.3 : 0.06)) {
+          traded[k] = true;
+          contact({ year: y0 + rng.int(0, STEP - 1), kind: "trade", from: sq[a].id, to: sq[b].id, by: leader(a).id, via: l.kind, outcome: "opened", strength: 0 });
+          continue;
+        }
+        if (hit[b] || (lastHostile[k] && y0 - lastHostile[k] < 300) || (struck[b] && y0 - struck[b] < 200)) continue;
+        const pa = power(a), pb = power(b) || 1, ratio = pa / pb;
+        const gap = (L[a] - L[b]) / ((ages[1] && ages[1].at) || 1);
+        let kind = null, chance = 0;
+        if (!byLand && aa >= 3 && aa - ab >= 1 && l.lane > 15) { kind = "colonisation"; chance = 0.07 * (aa - ab); }
+        else if (byLand && nomadic(a) && ratio > 0.9) { kind = "migration"; chance = 0.03 * Math.min(2, ratio); }
+        else if (ratio >= 1.8) {
+          kind = byLand ? "invasion" : "raid";
+          chance = 0.014 * Math.min(3, ratio - 0.8) * (byLand ? 1 : sailors(a) ? 1.2 : 0.4);
+        }
+        if (!kind || !rng.chance(chance)) continue;
+        const roll = ratio * (0.6 + 0.8 * rng.next());
+        let outcome;
+        if (kind === "migration") outcome = roll < 1.2 ? "repelled" : roll < 3.5 ? "settled" : "conquest";
+        else if (kind === "colonisation") outcome = roll < 1.5 ? "foothold" : roll < 4 ? "colony" : "conquest";
+        else if (kind === "raid") outcome = roll < 2.2 ? "repelled" : roll < 5 ? "raided" : "foothold";
+        else outcome = roll < 2 ? "repelled" : roll < 3 ? "raided" : roll < 4.5 ? "partial" : "conquest";
+        const c = contact({ year: y0 + rng.int(0, STEP - 1), kind: kind, from: sq[a].id, to: sq[b].id, by: leader(a).id, against: leader(b).id,
+                            via: l.kind, outcome: outcome, strength: Math.round(100 * ratio) / 100 });
+        hit[b] = true; lastHostile[k] = y0; struck[b] = y0;
+        /* consequences: newcomers who stay become a people of the square; conquest carries the
+           conqueror's knowledge and shakes the conquered; a failed attack costs the attacker */
+        if (outcome === "repelled") { coh[a] = Math.max(0.4, coh[a] - 0.1); continue; }
+        if (outcome === "raided") { coh[b] = Math.max(0.4, coh[b] - 0.15); continue; }
+        if (outcome === "settled" || outcome === "foothold" || outcome === "colony" || outcome === "partial" || outcome === "conquest") {
+          const from = leader(a);
+          const np = { id: "s" + sk.peoples.length, name: from.name, adjective: from.adjective, culture: from.culture, archetype: from.archetype,
+                       square: sq[b].id, seat: null, cells: 0, kind: from.kind, arrived: c.year, from: from.id, how: kind + ":" + outcome };
+          sk.peoples.push(np); byId[np.id] = np; sq[b].peoples.push(np.id);
+          c.people = np.id;
+          const share = { settled: 0.3, foothold: 0.15, colony: 0.3, partial: 0.5, conquest: 0.85 }[outcome];
+          if (L[a] > L[b]) L[b] += (L[a] - L[b]) * share * 0.6;
+          coh[b] = Math.max(0.4, coh[b] - 0.4 * share);
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      curves[i].learning.push(Math.round(L[i]));
+      curves[i].age.push(lived[i] ? ageOf(L[i]) : -1);
+      curves[i].power.push(Math.round(power(i)));
+    }
+  }
+  contacts.sort((x, y) => x.year - y.year);
+  for (const c of contacts) c.text = storyOf(world, sk, byId, c);
+  sk.years = years;
+  sk.curves = curves;
+  sk.contacts = contacts;
+  /* each square: the year it reached each age (first time), for the regions to follow */
+  sk.squares.forEach((s, i) => {
+    s.ageYears = ages.map((a, k) => { const t = curves[i].age.findIndex((v) => v >= k); return lived[i] && t >= 0 ? years[t] : null; });
+  });
+}
+
+/* one line for the world chronicle */
+function storyOf(world, sk, byId, c) {
+  const P = (id) => (id && byId[id] ? byId[id] : null);
+  const by = P(c.by), against = P(c.against);
+  const yr = (y) => (y < 0 ? -y + " BC" : y + " AD");
+  const people = (p) => (p ? p.name : "a people");
+  const adj = (p) => (p ? p.adjective : "foreign");
+  const land = (id) => { const p = sk.peoples.find((q) => q.square === id && !q.arrived); return p ? "the lands of " + p.name : "square " + id; };
+  const at = "In " + yr(c.year) + " ";
+  switch (c.kind) {
+    case "dark-age": return at + "a dark age fell on " + land(c.to) + (c.outcome === "fell-back" ? ", and much that had been known was lost." : ".");
+    case "trade": return at + (c.via === "sea" ? adj(by) + " ships first came to trade with " : adj(by) + " traders first reached ") + land(c.to) + ".";
+    case "migration": return at + adj(by) + " herders moved into " + land(c.to) + ({ repelled: ", but were driven back.", settled: " and settled there.", conquest: " and took it for their own." }[c.outcome] || ".");
+    case "colonisation": return at + adj(by) + " fleets crossed the open sea to " + land(c.to) + ({ foothold: " and held a strip of its coast.", colony: " and founded colonies there.", conquest: " and conquered it." }[c.outcome] || ".");
+    case "raid": return at + adj(by) + " sea-raiders struck " + land(c.to) + ({ repelled: ", and were beaten off.", raided: " and sailed home with plunder.", foothold: " and stayed on its shore." }[c.outcome] || ".");
+    case "invasion": return at + people(by) + " invaded " + land(c.to) + ({ repelled: ", and " + people(against) + " threw them back.", raided: " and plundered its borderlands.", partial: " and took part of it.", conquest: " and conquered it." }[c.outcome] || ".");
+  }
+  return at + people(by) + " met " + land(c.to) + ".";
+}
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* the land decides the people: archetypes whose home ground fills the area, sea-going ones on
    long coasts, river ones on a river seat; anything else stays possible */

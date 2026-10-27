@@ -404,6 +404,28 @@ function measure(world) {
       seaLinks6: seaL.filter((l) => l.lane <= 6).length, seaLinks15: seaL.filter((l) => l.lane <= 15).length,
       seaLinks40: seaL.filter((l) => l.lane <= 40).length, seaLinksAll: seaL.length,
       livedWithoutLandLink: lived.filter((s) => !sk.links.some((l) => l.kind === "land" && (sk.squares[l.a] === s || sk.squares[l.b] === s))).length };
+    if (sk.contacts) {
+      const C = sk.contacts, by = (k) => C.filter((c) => c.kind === k).length;
+      const hostile = C.filter((c) => /invasion|raid|migration|colonisation/.test(c.kind));
+      const touched = {};
+      for (const c of C) if (c.kind !== "dark-age") { touched[c.from] = 1; touched[c.to] = 1; }
+      const conquered = {};
+      for (const c of C) if (c.outcome === "conquest") conquered[c.to] = (conquered[c.to] || 0) + 1;
+      const lane = (c) => { const a = sk.squares.findIndex((s) => s.id === c.from), b = sk.squares.findIndex((s) => s.id === c.to);
+        const l = sk.links.find((x) => x.kind === "sea" && x.a === Math.min(a, b) && x.b === Math.max(a, b)); return l ? l.lane : 0; };
+      const ocean = C.filter((c) => c.via === "sea" && c.kind !== "trade" && lane(c) > 40);
+      const ages = world.pack.ages || [];
+      const medAge = (k) => { const ys = lived.map((s) => s.ageYears[k]).filter((y) => y != null).sort((a, b) => a - b); return ys.length ? ys[(ys.length / 2) | 0] : null; };
+      Object.assign(m.sketch, {
+        contacts: C.length, trade: by("trade"), hostile: hostile.length, invasions: by("invasion"), raids: by("raid"),
+        migrations: by("migration"), colonisations: by("colonisation"), darkAges: by("dark-age"),
+        conquests: C.filter((c) => c.outcome === "conquest").length, mostConquered: Math.max(0, ...Object.values(conquered)),
+        untouched: lived.filter((s) => !touched[s.id]).length, firstOceanCrossing: ocean.length ? ocean[0].year : null,
+        arrivals: sk.peoples.filter((p) => p.arrived != null).length,
+      });
+      ages.forEach((a, k) => { if (k) m.sketch["medianAge" + k + "Year"] = medAge(k); });
+      m.sketch.lastAgeReached = lived.filter((s) => s.ageYears[ages.length - 1] != null).length;
+    }
   }
 
   Object.defineProperty(m, "_x", { enumerable: false, value: { LAT, edgeType, CD } });
@@ -672,8 +694,27 @@ function renderSketch(world) {
     const n = Math.ceil(Math.hypot(bx - ax, by - ay) / 4), step = l.lane <= 6 ? 1 : l.lane <= 15 ? 3 : 6;
     for (let k = 0; k <= n; k++) if (k % step === 0 || step === 1) img.rect(Math.round(lerp(ax, bx, k / n)) + 3, Math.round(lerp(ay, by, k / n)) + 3, 2, 2, [30, 80, 200]);
   }
+  /* hostile contacts as arrows from square to square, offset so both directions show:
+     invasion red, raid purple, migration ochre, colonisation black; thick = conquest */
+  if (sk.contacts) {
+    const CC = { invasion: [200, 30, 30], raid: [140, 40, 170], migration: [210, 140, 0], colonisation: [10, 10, 10] };
+    for (const c of sk.contacts) {
+      if (!CC[c.kind] || c.outcome === "repelled") continue;
+      const A = sk.squares.find((s) => s.id === c.from), B = sk.squares.find((s) => s.id === c.to);
+      let [ax, ay] = ctr(A), [bx, by] = ctr(B);
+      if (bx - ax > img.w / 2) bx -= img.w; if (ax - bx > img.w / 2) bx += img.w;
+      const d = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / d * 8, ny = (bx - ax) / d * 8;
+      ax += nx; ay += ny; bx += nx; by += ny;
+      const ex = lerp(ax, bx, 0.8), ey = lerp(ay, by, 0.8);
+      img.line(lerp(ax, bx, 0.2), lerp(ay, by, 0.2), ex, ey, CC[c.kind], c.outcome === "conquest" ? 3 : 1);
+      const ux = (bx - ax) / d, uy = (by - ay) / d;
+      img.line(ex, ey, ex - ux * 7 - uy * 4, ey - uy * 7 + ux * 4, CC[c.kind], 2);
+      img.line(ex, ey, ex - ux * 7 + uy * 4, ey - uy * 7 - ux * 4, CC[c.kind], 2);
+    }
+  }
   const KC = { kingdom: [180, 30, 30], tribes: [120, 80, 30], nomads: [200, 140, 0] };
   for (const p of sk.peoples) {
+    if (p.seat == null) continue;
     const r = R[p.seat], x = r.x * S + 3, y = oy + r.y * S + 3;
     img.rect(x - 3, y - 3, 7, 7, [20, 20, 20]); img.rect(x - 2, y - 2, 5, 5, KC[p.kind] || [0, 0, 0]);
     const label = p.name.replace(/[^A-Za-z0-9 -]/g, "");
@@ -681,6 +722,21 @@ function renderSketch(world) {
     text(img, x + 6, y - 3, label, [20, 20, 20], 1);
   }
   savePNG(img, path.join(OUT, "sketch-" + world.seed + ".png"));
+  if (!sk.contacts) return;
+  /* the world timeline as text, and each lived square's development over time */
+  fs.writeFileSync(path.join(OUT, "sketch-" + world.seed + ".txt"), sk.contacts.map((c) => c.text).join("\n") + "\n");
+  const ages = world.pack.ages || [{ at: 0 }], top = ages[ages.length - 1].at * 1.15;
+  const series = [];
+  sk.squares.forEach((s, i) => {
+    if (!s.peoples.length) return;
+    const h = (i * 0.618) % 1, col = hsl(h, 0.6, 0.45);
+    series.push({ pts: sk.years.map((y, t) => [y, sk.curves[i].learning[t]]), c: col, w: 1 });
+  });
+  for (let k = 1; k < ages.length; k++) series.push({ pts: [[sk.years[0], ages[k].at], [world.pack.endYear, ages[k].at]], c: [150, 150, 150], w: 1 });
+  const y0 = world.pack.startYear, y1 = world.pack.endYear, xt = [];
+  for (let y = Math.ceil(y0 / 1000) * 1000; y <= y1; y += 1000) xt.push(y);
+  chart("sketch-" + world.seed + "-development.png", "SEED " + world.seed + ": DEVELOPMENT PER SQUARE (GREY: AGE THRESHOLDS)", [y0, y1], [0, top],
+    series, xt, ages.slice(1).map((a) => a.at), []);
 }
 
 /* ------------------------------------------------------------------ main ----------- */

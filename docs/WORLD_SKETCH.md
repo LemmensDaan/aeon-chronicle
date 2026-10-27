@@ -158,3 +158,85 @@ kingdom versus tribes instead. The harness draws `tools/out/sketch-<seed>.png`.
 *Seed 42: squares with their ids, peoples' seats (red kingdom, ochre nomads, brown tribes),
 land links (green, thicker for a wider border) and sea links (blue: solid up to 6 cells, dashed
 up to 15, dotted up to 40).*
+
+### Step 2, development curves and dated contacts (2026-10-27, histories unchanged)
+
+`runSketch` in `js/sketch.js`, century by century over the pack's timeline:
+
+- **Development** is the engine's own "learning" scale, so `pack.ages[k].at` marks where age k
+  begins, as for a realm. Each century a square gains
+  `R0 x 100 x pace x (0.4 + 1.2 x the share of the timeline gone) x (0.6 + 0.4 x cohesion)`.
+  - `R0` = 0.8 x the last age's threshold / (0.95 x the timeline).
+  - `pace` = the square's fertility (good land and floodplains against the median square,
+    0.5-1.6) x a random 0.75-1.25.
+  - Knowledge also leaks from more developed linked squares:
+    - land links: 5% of the gap a century, 12% once they trade, less over narrow or
+      mountainous borders
+    - sea links within the reach of either side: 60% of that for up to 15 cells, 25% up to 40,
+      5% beyond (so far continents can lag behind)
+- **Cohesion** drifts randomly between 0.4 and 1.6 and drops after raids and conquest.
+- **Dark ages:** 1.2% a century (plus up to 3% more at low cohesion), only after the first age.
+  A dark age knocks a square back 30-70% of its current age's span.
+- **Power** = habitable cells x (1 + age, fractional) x cohesion.
+- **Sea reach by age:** 6, 15, 40 cells, then any sea from age IV.
+- **Contacts**, checked along every link each century in random order. A square is struck at
+  most once a century and once every 200 years; a pair fights at most once every 300 years.
+  - **trade:** once per pair, when both are past age I (by land 50% a century, by sea 30%, over
+    the ocean 6%). Trade speeds the leak.
+  - **migration:** nomads (half or more of the square's peoples) into a land neighbour of at
+    least 0.9 their power.
+  - **invasion** (by land) **or raid** (by sea): at 1.8x the target's power.
+  - **colonisation:** by sea over 15+ cells, from age IV, against a square at least an age
+    behind (7% a century per age of difference).
+  - **Outcomes** come from the power ratio times a random 0.6-1.4:
+    - repelled, raided, settled, foothold, colony, partial, conquest
+    - newcomers who stay become a new people of the target square (`arrived`, `from`, `how`)
+    - a conquest carries part of the conqueror's knowledge and shakes the conquered
+- `world.sketch` gains:
+  - `years` (one a century)
+  - `curves[square]` = `{ learning, age, power }`
+  - `contacts` = `[{ year, kind, from, to, by, against, via, outcome, strength, people, text }]`
+  - `squares[i].ageYears`: the year each age was first reached
+  - peoples' kind is now kingdom (fertile square and a good seat), tribes or nomads
+- The harness writes `tools/out/sketch-<seed>.txt` (the world timeline),
+  `sketch-<seed>-development.png`, and arrows on `sketch-<seed>.png`.
+
+18 seeds (historical), median (range):
+
+| | |
+|---|---|
+| Contacts | 185 (114-236), of which trade 110 |
+| Hostile | 64 (35-86): invasions 13, raids 31, migrations 9, colonisations 13 |
+| Conquests | 11 (2-20); the most conquered square 4 times (1-7) in 4,500 years |
+| Dark ages | 7 (2-14) |
+| Squares never touched | 0 |
+| First ocean crossing (over 40 cells) | 757 AD (226-1135) |
+| Peoples | 95 (75-128), of which 40 arrived during the timeline |
+| Median square reaches iron / classical / medieval / powder | 1000 BC / 200 BC / 900 AD / 1300 AD (pack eras: 1200 BC / 500 BC / 700 AD / 1300 AD) |
+| Squares reaching the last age by the end | 16 of ~19 |
+
+Fantasy behaves alike (seed 42: 209 contacts, 17 colonisations). The sketch takes 140-175 ms a
+world. Histories are unchanged (hashed, both packs, seeds 7 and 42).
+
+![Seed 7, contacts](worldgen/sketch-7-contacts.png)
+
+*Seed 7: invasions red, raids purple, migrations ochre, colonisations black; thick arrows are
+conquests (repelled attempts are not drawn).*
+
+![Seed 7, development](worldgen/sketch-7-development.png)
+
+*Development of each lived square of seed 7; grey lines are the historical pack's age
+thresholds. The dips are dark ages and conquests.*
+
+From seed 7's timeline:
+
+> In 2724 BC Narmanat invaded the lands of Saneustirnis and conquered it.
+> In 190 BC Tikamushuan sea-raiders struck the lands of Vithianona and stayed on its shore.
+> In 48 BC a dark age fell on the lands of Staslotrornea, and much that had been known was lost.
+
+Known limits:
+
+- Every arrival copies the leading people's name, so a people that migrates several times
+  appears several times.
+- Colonisation can link two squares on one continent whose coasts are far apart.
+- Nothing yet shows the sketch in the app (step 3).

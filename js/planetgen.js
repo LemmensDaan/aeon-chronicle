@@ -99,6 +99,35 @@ function Heap(n) {
   };
 }
 
+/* priority-flood from the sea: Ef = depression-filled surface; parent = the downstream
+   neighbour; order = pop order (low to high). Guarantees drainage. */
+function floodFill(N, NB8, E, sea, runoff) {
+  const Ef = new Float32Array(N), parent = new Int32Array(N).fill(-1), order = new Int32Array(N);
+  const done = new Uint8Array(N), heap = Heap(N * 8 + 8);
+  let o = 0;
+  for (let i = 0; i < N; i++) if (E[i] <= sea) { Ef[i] = E[i]; heap.push(E[i], i); done[i] = 1; }
+  while (heap.size()) {
+    const c = heap.pop();
+    order[o++] = c;
+    for (let k = 0; k < 8; k++) {
+      const n = NB8[c * 8 + k];
+      if (n < 0 || done[n]) continue;
+      done[n] = 1;
+      Ef[n] = Math.max(E[n], Ef[c] + 1e-5);
+      parent[n] = c;
+      heap.push(Ef[n], n);
+    }
+  }
+  const acc = new Float32Array(N);
+  for (let k = o - 1; k >= 0; k--) {
+    const c = order[k];
+    if (E[c] <= sea) continue;
+    acc[c] += runoff ? runoff[c] : 1;
+    if (parent[c] >= 0) acc[parent[c]] += acc[c];
+  }
+  return { Ef: Ef, parent: parent, order: order, count: o, acc: acc };
+}
+
 function quantile(arr, q) {
   const s = Float32Array.from(arr).sort();
   return s[clamp(Math.floor(s.length * q), 0, s.length - 1)];
@@ -311,34 +340,7 @@ function generate(world, pack, rng) {
   /* ================================================== 4. erosion ======= */
   const oceanFrac = rng.range(0.58, 0.7);
   let sea = quantile(elev, oceanFrac);
-  const flood = function (E, runoff) {
-    /* priority-flood from the sea: Ef = depression-filled surface; parent = the
-       downstream neighbour; order = pop order (low to high). Guarantees drainage. */
-    const Ef = new Float32Array(N), parent = new Int32Array(N).fill(-1), order = new Int32Array(N);
-    const done = new Uint8Array(N), heap = Heap(N * 8 + 8);
-    let o = 0;
-    for (let i = 0; i < N; i++) if (E[i] <= sea) { Ef[i] = E[i]; heap.push(E[i], i); done[i] = 1; }
-    while (heap.size()) {
-      const c = heap.pop();
-      order[o++] = c;
-      for (let k = 0; k < 8; k++) {
-        const n = NB8[c * 8 + k];
-        if (n < 0 || done[n]) continue;
-        done[n] = 1;
-        Ef[n] = Math.max(E[n], Ef[c] + 1e-5);
-        parent[n] = c;
-        heap.push(Ef[n], n);
-      }
-    }
-    const acc = new Float32Array(N);
-    for (let k = o - 1; k >= 0; k--) {
-      const c = order[k];
-      if (E[c] <= sea) continue;
-      acc[c] += runoff ? runoff[c] : 1;
-      if (parent[c] >= 0) acc[parent[c]] += acc[c];
-    }
-    return { Ef: Ef, parent: parent, order: order, count: o, acc: acc };
-  };
+  const flood = (E, runoff) => floodFill(N, NB8, E, sea, runoff);
   for (let pass = 0; pass < 3; pass++) {
     const f = flood(elev, null);
     for (let k = 0; k < f.count; k++) {
@@ -505,12 +507,41 @@ function generate(world, pack, rng) {
     const s = q1; q1 = q2; q2 = s;
   }
 
+  const fin = finish(world, pack, {
+    W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, T: T, precip: precip, coastDist: coastDist, latRad: latRad,
+    uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont,
+    nf2: (i, f, o, g) => nf(noise2, i, f, o, g), nf3: (i, f, o, g) => nf(noise3, i, f, o, g),
+    K: 1, area: 1, minLen: 4, inflow: null, mtnLine: null,
+  });
+
+  /* debug layers for the inspector page; not enumerable so nothing copies them */
+  Object.defineProperty(world, "_gen", {
+    enumerable: false, configurable: true,
+    value: { plateOf, plates, cont, uplift, E, T, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, hotspots,
+             riverT: fin.riverT, mtnLine: fin.mtnLine, precip, stress, srcAmp, ms: Date.now() - t0 },
+  });
+}
+
+/* Hydrology, biomes and the regions, on any grid: the planet's (wrapping, a planet cell a cell)
+   or a region's (not wrapping, K x K cells a planet cell). L carries the grid and the layers
+   made before this point: W, H, N, NB4, NB8, E, T, precip, coastDist (in planet cells), latRad,
+   uplift, stress, srcAmp, plateOf, cont; nf2 and nf3, noise at a cell; K (cells a planet cell
+   across), area (planet cells a cell, 1 / K^2), minLen (shortest river kept, in cells), inflow
+   (runoff entering from outside the grid, or null), mtnLine (null: worked out here) and
+   riverT (null: 0.96, the planet's); minLake, the fewest cells a lake or basin has (null: 1). The
+   regions go on target.regions; the debug layers are returned. */
+function finish(world, pack, L) {
+  const W = L.W, H = L.H, N = L.N, NB4 = L.NB4, NB8 = L.NB8, E = L.E, T = L.T, precip = L.precip;
+  const coastDist = L.coastDist, latRad = L.latRad, uplift = L.uplift, stress = L.stress, srcAmp = L.srcAmp;
+  const plateOf = L.plateOf, cont = L.cont;
+  const isOcean = (i) => E[i] <= 0.5;
+
   /* ================================================== 6. hydrology ===== */
   /* roughen cold lowlands slightly: glacial scour leaves lake districts */
   const Eh = Float32Array.from(E);
   for (let i = 0; i < N; i++) {
     if (isOcean(i)) continue;
-    if (T[i] < 0.34 && E[i] < 0.62) Eh[i] += (nf(noise3, i, 0.5, 2, 0.5) + 0.5) * 0.012;
+    if (T[i] < 0.34 && E[i] < 0.62) Eh[i] += (L.nf3(i, 0.5, 2, 0.5) + 0.5) * 0.012;
   }
   /* rain on one fixed scale for every world (the median wettest-3% level over many seeds),
      so a dry world stays dry and a wet one wet */
@@ -519,7 +550,9 @@ function generate(world, pack, rng) {
   for (let i = 0; i < N; i++) P[i] = isOcean(i) ? 1 : clamp(precip[i] / pRef, 0, 1);
   const runoff = new Float32Array(N);
   for (let i = 0; i < N; i++) runoff[i] = isOcean(i) ? 0 : Math.max(0.01, P[i] * (1.05 - 0.75 * T[i]));
-  const hyd = flood(Eh, runoff);
+  if (L.area !== 1) for (let i = 0; i < N; i++) runoff[i] *= L.area;
+  if (L.inflow) for (let i = 0; i < N; i++) if (!isOcean(i)) runoff[i] += L.inflow[i];
+  const hyd = floodFill(N, NB8, Eh, 0.5, runoff);
 
   /* depressions -> lakes when the water balance is positive, dry basins otherwise */
   const lake = new Uint8Array(N), basin = new Uint8Array(N);
@@ -545,9 +578,10 @@ function generate(world, pack, rng) {
         const p = hyd.parent[c];
         if (p < 0 || comp[p] !== nc) inflow = Math.max(inflow, hyd.acc[c]);
       }
-      const evap = cells.length * (0.12 + 0.75 * tsum / cells.length);
+      const evap = cells.length * L.area * (0.12 + 0.75 * tsum / cells.length);
       const wet = inflow > evap * 0.85;
-      for (const c of cells) { if (wet) { lake[c] = 1; lakeLevel[c] = level; } else basin[c] = 1; }
+      /* a hollow smaller than minLake cells is a pond the rivers fill and run on through */
+      if (cells.length >= (L.minLake || 1)) for (const c of cells) { if (wet) { lake[c] = 1; lakeLevel[c] = level; } else basin[c] = 1; }
       nc++;
     }
   }
@@ -568,12 +602,12 @@ function generate(world, pack, rng) {
 
   /* rivers: land cells that gather enough runoff, on one fixed scale (about the top 6.5% of land
      in a typical world), so a dry world has fewer rivers and a wet one more */
-  const riverT = 0.96;
+  const riverT = L.riverT != null ? L.riverT : 0.96;
   const isRiver = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (!isOcean(i) && !lake[i] && !basin[i] && hyd.acc[i] >= riverT) isRiver[i] = 1;
   /* Prune short channels. A wet mountain coast gives every shoreline cell its own
      torrent straight to the sea; at map scale those read as hatching, not rivers.
-     Keep a system only if its longest chain, mouth to source, is 4+ cells. */
+     Keep a system only if its longest chain, mouth to source, is 4+ planet cells long. */
   {
     const len = new Uint16Array(N), ups = new Array(N);
     for (let k = hyd.count - 1; k >= 0; k--) {
@@ -590,7 +624,7 @@ function generate(world, pack, rng) {
       if (!isRiver[i]) continue;
       const p = hyd.parent[i];
       if (p >= 0 && isRiver[p]) continue;          /* not a mouth */
-      if (len[i] >= 4) continue;
+      if (len[i] >= L.minLen) continue;
       const stack = [i];
       while (stack.length) {
         const c = stack.pop();
@@ -618,15 +652,18 @@ function generate(world, pack, rng) {
   }
 
   /* ================================================== 7. biomes ======== */
-  const hLand = [];
-  for (let i = 0; i < N; i++) if (!isOcean(i) && !lake[i]) hLand.push(E[i]);
-  const mtnLine = Math.max(0.66, quantile(hLand, 0.9));
+  let mtnLine = L.mtnLine;
+  if (mtnLine == null) {
+    const hLand = [];
+    for (let i = 0; i < N; i++) if (!isOcean(i) && !lake[i]) hLand.push(E[i]);
+    mtnLine = Math.max(0.66, quantile(hLand, 0.9));
+  }
 
   const slope = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     let m = 0;
     for (let k = 0; k < 4; k++) { const j = NB4[i * 4 + k]; if (j >= 0) m = Math.max(m, Math.abs(E[i] - E[j])); }
-    slope[i] = m;
+    slope[i] = m * L.K;                   /* per planet cell, whatever the grid */
   }
 
   /* physical units for the classifier: annual mean temperature in deg C (T fitted to Earth's
@@ -721,25 +758,225 @@ function generate(world, pack, rng) {
     if (uplift[i] > 0.2 && stress[i] > 0) reg.features.push("fault");
     if (srcAmp[i] < -0.05 && cont[i]) reg.features.push("rift");
 
-    const nr = nf(noise3, i, 0.12, 3, 0.5);
+    const nr = L.nf3(i, 0.12, 3, 0.5);
     const foodBase = { grassland: 0.78, forest: 0.6, jungle: 0.58, savanna: 0.55, swamp: 0.42, taiga: 0.32, tundra: 0.14, desert: 0.08, mountain: 0.12, ice: 0.02 };
     let food = (foodBase[biome] !== undefined ? foodBase[biome] : 0.4) + 0.12 * nr;
     if (reg.river) food += biome === "desert" ? 0.45 : 0.2;
     if (coastal || lakeside) food += 0.08;
     const metal = (biome === "mountain" ? 0.6 : E[i] > 0.62 ? 0.28 : 0.06) + 0.25 * clamp(uplift[i] / 0.3, 0, 1) + 0.15 * nr;
-    const exo = clamp((nf(noise2, i, 0.08, 3, 0.5) - 0.1) * 1.8, 0, 1) + (stress[i] > 0.8 ? 0.2 : 0) + (biome === "desert" || biome === "jungle" ? 0.06 : 0);
+    const exo = clamp((L.nf2(i, 0.08, 3, 0.5) - 0.1) * 1.8, 0, 1) + (stress[i] > 0.8 ? 0.2 : 0) + (biome === "desert" || biome === "jungle" ? 0.06 : 0);
     reg.resources = { food: r3(clamp(food, 0, 1)), metal: r3(clamp(metal, 0, 1)), exotic: r3(clamp(exo, 0, 1)) };
     regions.push(reg);
   }
   /* rivers only flow into land/lake/sea cells that exist; drop flowTo for non-rivers
      that drain into the sea directly — the renderer only draws river cells anyway */
 
-  /* debug layers for the inspector page; not enumerable so nothing copies them */
-  Object.defineProperty(world, "_gen", {
-    enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, E, T, P, M, U, V: Vv, acc: hyd.acc, lake, basin, hotspots,
-             riverT, mtnLine, precip, ms: Date.now() - t0 },
+  return { acc: hyd.acc, lake: lake, basin: basin, riverT: riverT, mtnLine: mtnLine, P: P, M: M, isRiver: isRiver };
+}
+
+/* ============================================================== region === */
+/* A region (docs/REGION_PROTOTYPE.md): one square of the world sketch made RK times finer, with
+   a margin of MARGIN planet cells of the squares around it ("beyond"). The planet decides
+   everything at its own scale and the region only adds what lies below it:
+   - elevation: the planet's, smoothly upsampled, plus fine noise, ridged under the mountain
+     belts so a mountain cell becomes ranges and valleys; coasts get their wiggle from it
+   - temperature and rain: the planet's, from its land cells, with temperature corrected for the
+     finer relief (the planet's own height term); no climate run of its own
+   - rivers, lakes, biomes, habitability, resources: finish() on the fine grid, with the rivers
+     that rise outside the window flowing in at its edge
+   It has its own random stream (seed + ":region:" + square), so it never changes the planet. */
+const RK = 5, MARGIN = 2;
+function region(world, si) {
+  const t0 = Date.now();
+  const g = world._gen, sq = world.sketch.squares[si], PW = world.width, PH = world.height;
+  const pwx = (x) => ((x % PW) + PW) % PW;
+  const K = RK;
+  const px0 = sq.x0 - MARGIN, px1 = sq.x1 + MARGIN;
+  const py0 = Math.max(0, sq.y0 - MARGIN), py1 = Math.min(PH, sq.y1 + MARGIN);
+  const W = (px1 - px0) * K, H = (py1 - py0) * K, N = W * H;
+  const rng = AEON.RNG(world.seed + ":region:" + sq.id);
+
+  /* the planet position of a cell's centre, in planet cells (planet cell x has its centre at x) */
+  const FX = new Float32Array(N), FY = new Float32Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    FX[y * W + x] = px0 - 0.5 + (x + 0.5) / K;
+    FY[y * W + x] = py0 - 0.5 + (y + 0.5) / K;
+  }
+  const near = (i) => clamp(Math.round(FY[i]), 0, PH - 1) * PW + pwx(Math.round(FX[i]));
+
+  /* grid topology: no wrap */
+  const NB4 = new Int32Array(N * 4).fill(-1), NB8 = new Int32Array(N * 8).fill(-1);
+  const D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    for (let k = 0; k < 8; k++) {
+      const nx = x + D8[k][0], ny = y + D8[k][1];
+      if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+      NB8[i * 8 + k] = ny * W + nx;
+      if (k < 4) NB4[i * 4 + k] = ny * W + nx;
+    }
+  }
+
+  /* samplers over the planet's layers: Catmull-Rom for smooth fields, and one over land cells
+     only for the fields the sea does not share (rain is 0 at sea) */
+  const at = (arr, x, y) => arr[clamp(y, 0, PH - 1) * PW + pwx(x)];
+  const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+  const cubic = function (arr, fx, fy) {
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, row = [];
+    for (let k = -1; k <= 2; k++) row.push(cr(at(arr, x0 - 1, y0 + k), at(arr, x0, y0 + k), at(arr, x0 + 1, y0 + k), at(arr, x0 + 2, y0 + k), tx));
+    return cr(row[0], row[1], row[2], row[3], ty);
+  };
+  const landP = (x, y) => at(g.E, x, y) > 0.5;
+  /* a field over the window (plus a pad) where every sea cell holds the mean of the land within
+     3 cells, and NaN where there is none; sampled bilinearly, skipping the NaNs */
+  const PAD = 3, cx0 = px0 - PAD, cy0 = py0 - PAD, cw = px1 - px0 + 2 * PAD, chh = py1 - py0 + 2 * PAD;
+  const overLandField = function (arr) {
+    const out = new Float32Array(cw * chh);
+    for (let cy = 0; cy < chh; cy++) for (let cx = 0; cx < cw; cx++) {
+      const X = cx0 + cx, Y = cy0 + cy;
+      if (landP(X, Y)) { out[cy * cw + cx] = at(arr, X, Y); continue; }
+      let s = 0, ws = 0;
+      for (let y = Y - 3; y <= Y + 3; y++) for (let x = X - 3; x <= X + 3; x++) {
+        if (y < 0 || y >= PH || !landP(x, y)) continue;
+        const w = (1 - Math.abs(x - X) / 4) * (1 - Math.abs(y - Y) / 4);
+        s += w * at(arr, x, y); ws += w;
+      }
+      out[cy * cw + cx] = ws > 0 ? s / ws : NaN;
+    }
+    return out;
+  };
+  const overLand = function (F, fx, fy) {
+    const gx = fx - cx0, gy = clamp(fy - cy0, 0, chh - 1.001), x0 = Math.floor(gx), y0 = Math.floor(gy), tx = gx - x0, ty = gy - y0;
+    let s = 0, ws = 0;
+    for (const [x, y, w] of [[x0, y0, (1 - tx) * (1 - ty)], [x0 + 1, y0, tx * (1 - ty)], [x0, y0 + 1, (1 - tx) * ty], [x0 + 1, y0 + 1, tx * ty]]) {
+      const v = F[clamp(y, 0, chh - 1) * cw + clamp(x, 0, cw - 1)];
+      if (v === v && w > 0) { s += w * v; ws += w; }
+    }
+    return ws > 0 ? s / ws : null;
+  };
+
+  /* noise on the planet's cylinder, so it lines up with the planet's coordinates */
+  const nzA = makeNoise(rng), nzB = makeNoise(rng), nzC = makeNoise(rng);
+  const CR = PW / (2 * Math.PI), CX = new Float32Array(N), CZ = new Float32Array(N);
+  for (let i = 0; i < N; i++) { const th = (FX[i] / PW) * 2 * Math.PI; CX[i] = Math.cos(th) * CR; CZ[i] = Math.sin(th) * CR; }
+  const nfr = (nz, i, f, o, gn) => nz.fbm(CX[i] * f, FY[i] * f, CZ[i] * f, o, gn);
+
+  /* ----- elevation ----- */
+  const Ec = new Float32Array(N), E = new Float32Array(N), MT = new Float32Array(N), RG = new Float32Array(N);
+  const landInd = new Float32Array(PW * PH);
+  const mtnInd = new Float32Array(PW * PH);
+  for (let i = 0; i < PW * PH; i++) { landInd[i] = g.E[i] > 0.5 ? 1 : 0; mtnInd[i] = g.E[i] >= g.mtnLine ? 1 : 0; }
+  let rs = 0, rw = 0;
+  for (let i = 0; i < N; i++) {
+    const ec = cubic(g.E, FX[i], FY[i]), up = cubic(g.uplift, FX[i], FY[i]);
+    MT[i] = Math.max(clamp((ec - 0.6) / 0.12, 0, 1), clamp(up / 0.22, 0, 1));
+    RG[i] = nzC.ridged(CX[i] * 0.35, FY[i] * 0.35, CZ[i] * 0.35, 4);
+    rs += RG[i] * MT[i]; rw += MT[i];
+    Ec[i] = ec;
+  }
+  /* ridges centred on their mean, so the belts get peaks and valleys but no more mountain land
+     than the planet gives them */
+  const rMean = rw > 0 ? rs / rw : 0.55;
+  for (let i = 0; i < N; i++) {
+    /* the planet's land and sea hold away from their shores: a shallow sea does not break up
+       into puddles, nor a low plain into ponds; at the shore the noise draws the coast */
+    const side = (cubic(landInd, FX[i], FY[i]) - 0.5) * Math.max(0, 1 - Math.abs(Ec[i] - 0.5) / 0.06);
+    E[i] = clamp(Ec[i] + side * 0.05 + nfr(nzA, i, 0.45, 4, 0.5) * 0.06 + nfr(nzB, i, 1.3, 3, 0.5) * 0.018
+                 + (RG[i] - rMean) * 0.16 * MT[i]
+                 /* the planet's mountains stand a little above the plateaus around them */
+                 + (Ec[i] > 0.55 ? (cubic(mtnInd, FX[i], FY[i]) - 0.3) * 0.05 : 0), 0, 1);
+  }
+  /* the rivers cut their valleys, the bigger the deeper */
+  for (let pass = 0; pass < 2; pass++) {
+    const f = floodFill(N, NB8, E, 0.5, null);
+    for (let k = 0; k < f.count; k++) {
+      const c = f.order[k], p = f.parent[c];
+      if (E[c] <= 0.5 || p < 0) continue;
+      const drop = E[c] - E[p];
+      if (drop <= 0) continue;
+      E[c] = Math.max(E[p] + 2e-4, E[c] - 0.03 * Math.sqrt(f.acc[c] / (K * K)) * drop);
+    }
+  }
+
+  /* ----- climate from the planet ----- */
+  const T = new Float32Array(N), precip = new Float32Array(N), latRad = new Float32Array(N);
+  const lift = (e) => Math.pow(Math.max(0, (e - 0.5) / 0.5), 1.3);
+  const LT = overLandField(g.T), LE = overLandField(g.E), LP = overLandField(g.precip);
+  for (let i = 0; i < N; i++) {
+    latRad[i] = (0.5 - (FY[i] + 0.5) / PH) * Math.PI * (75 / 90);
+    if (E[i] <= 0.5) { T[i] = clamp(cubic(g.T, FX[i], FY[i]), 0, 1); continue; }
+    const tl = overLand(LT, FX[i], FY[i]), el = overLand(LE, FX[i], FY[i]), pl = overLand(LP, FX[i], FY[i]);
+    T[i] = clamp((tl != null ? tl : cubic(g.T, FX[i], FY[i])) - 0.34 * (lift(E[i]) - lift(el != null ? el : 0.5)), 0, 1);
+    precip[i] = pl != null ? pl : 0.03;
+    /* local weather the planet cannot hold: ragged edges to its climate belts */
+    T[i] = clamp(T[i] + nfr(nzC, i, 0.9, 2, 0.5) * 0.02, 0, 1);
+    precip[i] *= 1 + nfr(nzA, i, 0.7, 3, 0.5) * 0.3;
+  }
+
+  /* distance from the sea, in planet cells */
+  const coastDist = new Float32Array(N).fill(99);
+  {
+    const q = [], d = new Int32Array(N).fill(1 << 20);
+    for (let i = 0; i < N; i++) if (E[i] <= 0.5) { d[i] = 0; q.push(i); }
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h];
+      if (d[c] >= 30 * K) continue;
+      for (let k = 0; k < 4; k++) { const n = NB4[c * 4 + k]; if (n >= 0 && d[n] > d[c] + 1) { d[n] = d[c] + 1; q.push(n); } }
+    }
+    for (let i = 0; i < N; i++) if (d[i] < (1 << 20)) coastDist[i] = d[i] / K;
+  }
+
+  /* rivers that rise outside the window flow in where the planet's rivers cross its edge */
+  const inflow = new Float32Array(N);
+  const inWin = (x, y) => { const lx = pwx(x - px0); return lx < px1 - px0 && y >= py0 && y < py1; };
+  for (let y = Math.max(0, py0 - 1); y < Math.min(PH, py1 + 1); y++) for (let x = px0 - 1; x <= px1; x++) {
+    if (inWin(x, y)) continue;
+    const c = y * PW + pwx(x), to = world.regions[c].flowTo;
+    if (to < 0 || world.regions[c].barren) continue;
+    const tx = to % PW, ty = (to / PW) | 0;
+    if (!inWin(tx, ty)) continue;
+    const fx = pwx(tx - px0) * K + (K >> 1), fy = (ty - py0) * K + (K >> 1);
+    inflow[fy * W + fx] += g.acc[c];
+  }
+
+  const uplift = new Float32Array(N), stress = new Float32Array(N), srcAmp = new Float32Array(N);
+  const plateOf = new Int16Array(N), cont = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    const c = near(i);
+    uplift[i] = g.uplift[c]; stress[i] = g.stress[c]; srcAmp[i] = g.srcAmp[c]; plateOf[i] = g.plateOf[c]; cont[i] = g.cont[c];
+  }
+
+  /* the mountain line that gives the square as much mountain land as the planet does: the noise
+     makes peaks and valleys, not more mountains (a plateau just under the planet's line would
+     otherwise break out in peaks all over) */
+  const ix0 = (sq.x0 - px0) * K, ix1 = (sq.x1 - px0) * K, iy0 = (sq.y0 - py0) * K, iy1 = (sq.y1 - py0) * K;
+  let mtnLine = g.mtnLine;
+  {
+    let pl = 0, pm = 0;
+    for (let y = sq.y0; y < sq.y1; y++) for (let x = sq.x0; x < sq.x1; x++) { const e = g.E[y * PW + pwx(x)]; if (e > 0.5) { pl++; if (e >= g.mtnLine) pm++; } }
+    const fe = [];
+    for (let y = iy0; y < iy1; y++) for (let x = ix0; x < ix1; x++) if (E[y * W + x] > 0.5) fe.push(E[y * W + x]);
+    if (pl && fe.length) mtnLine = pm ? Math.max(0.55, quantile(fe, 1 - pm / pl)) : Math.max(g.mtnLine, quantile(fe, 1) + 1e-6);
+  }
+
+  const out = { square: sq.id, squareIndex: si, K: K, margin: MARGIN, px0: px0, py0: py0, width: W, height: H, regions: [] };
+  const fin = finish(out, world.pack, {
+    W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, T: T, precip: precip, coastDist: coastDist, latRad: latRad,
+    uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont,
+    nf2: (i, f, o, gn) => nfr(nzA, i, f, o, gn), nf3: (i, f, o, gn) => nfr(nzB, i, f, o, gn),
+    K: K, area: 1 / (K * K), minLen: 2 * K, inflow: inflow, mtnLine: mtnLine, riverT: 0.35, minLake: K * K,
   });
+  /* the square itself; the margin around it is "beyond", the neighbours' land */
+  for (const r of out.regions) {
+    r.beyond = !(r.x >= ix0 && r.x < ix1 && r.y >= iy0 && r.y < iy1);
+    r.planet = near(r.id);
+  }
+  Object.defineProperty(out, "_gen", {
+    enumerable: false, configurable: true,
+    value: { E: E, Ec: Ec, T: T, P: fin.P, M: fin.M, acc: fin.acc, lake: fin.lake, basin: fin.basin, riverT: fin.riverT,
+             mtnLine: fin.mtnLine, precip: precip, inflow: inflow, ms: Date.now() - t0 },
+  });
+  return out;
 }
 
 /* separable box blur that wraps in x */
@@ -758,6 +995,7 @@ function blurWrap(src, W, H, r) {
   return out;
 }
 
-AEON.planetgen = { generate: generate };
+AEON.planetgen = { generate: generate, region: region };
+AEON.regiongen = region;
 
 })();

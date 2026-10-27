@@ -114,18 +114,69 @@ request), and the chronicle comes back in a region.
    - run time
 3. **Open and leave a region in the app.** The world timeline moves to the right sidebar.
 
-The whole-planet history still runs at load until the planet screen replaces it (the step after
-this one). Until then, the world mode and the regions sit beside it.
+The whole-planet history still runs at load until step 3, which drops it (decision 4).
 
-## Questions for Daan
+## Decided (Daan, 2026-10-27)
 
-1. **Straight edges.** Borders stop at the square's edge, with hatched "beyond" land past it.
-   Fine for the prototype? (Recommended: yes. Nicer region shapes come with the grid tuning
-   later.)
-2. ~~Steer or force the sketch's outcome?~~ Decided: the region is nudged until the sketch's
-   outcome holds (see the incoming contacts above).
-3. **Starting realms per square.** Several realms per sketch people, scaled by habitable land,
-   up to today's 14-16. Or only the sketch's 1-4 peoples, with the engine founding more over
-   time? (Recommended: several per people; one realm alone in a region is dull for centuries.)
-4. **The old whole-planet history at load.** It costs about 10 seconds and is replaced later.
-   Keep it until the planet screen? (Recommended: yes, so nothing breaks in between.)
+1. **Straight edges** for the prototype: borders stop at the square's edge, with hatched
+   "beyond" land past it. Nicer region shapes come with the grid tuning later.
+2. **The sketch's outcome always holds**: the region is nudged until it does (see the incoming
+   contacts above).
+3. **Several starting realms per sketch people**, scaled by habitable land, up to today's
+   14-16.
+4. **The old whole-planet history is dropped in step 3**, once regions open in the app. From
+   then on the app loads the planet and the sketch (about a second) and opens on the world view;
+   a history is simulated when a region is opened. (The sketch is the world's fixed outline,
+   regions are chapters written to it when opened, and the old history is a separate book written
+   before the outline existed.)
+
+## Progress
+
+### Step 1, the region map (2026-10-27, planet and histories unchanged)
+
+`AEON.regiongen(world, squareIndex)` (in js/planetgen.js, also `AEON.planetgen.region`) makes a
+region: the square plus 2 planet cells of margin all round ("beyond", `r.beyond`), 5 x 5 cells a
+planet cell. That is 145 x 140 cells (fewer at the poles' edge), 15,000 of them in the square
+itself. It takes about 0.3 s.
+
+- planetgen's hydrology, biomes and regions moved into `finish()`, which runs on any grid; the
+  planet calls it as before. Its maps, sketches and the histories of seeds 7 and 42 in both packs
+  are byte for byte the same.
+- Elevation: the planet's (Catmull-Rom), plus fine noise. Near sea level the planet's land and
+  sea hold, so shallow seas don't break into puddles or plains into ponds. Ridged noise in the
+  mountain belts, centred so it adds peaks and valleys, not mountain land. The mountain line is
+  set so the square has the planet's share of mountain land, and the planet's mountain cells
+  stand a little above the plateaus round them. Two passes of valley cutting by the rivers.
+- Climate: the planet's temperature and rain from its land cells, temperature corrected for the
+  finer relief with the planet's own height term, plus a little local noise so the climate belts
+  get ragged edges.
+- Rivers: `finish()` on the fine grid, in planet-cell units of water. Rivers that rise outside
+  the window flow in where the planet's rivers cross its edge. Hollows smaller than a planet
+  cell are ponds the rivers run on through, not lakes.
+- `r.planet` is the planet cell a region cell lies in.
+
+Harness: `node tools/region-report.js` (18 seeds, the 3 largest lived squares each, PNGs and
+summary.txt in tools/out/regions/). Over 54 regions (min / median / max):
+
+| | |
+|---|---|
+| land share, planet vs region | 0.72 / 0.93 / 1 vs 0.72 / 0.93 / 1 |
+| cells whose land or sea matches the planet | 0.98 / 0.99 / 1 |
+| biome shares differing from the planet square | 1% / 3% / 11% |
+| mountain land, planet vs region | 0 / 5% / 29% vs 0 / 5% / 29% |
+| habitable land, planet vs region | 16% / 47% / 96% vs 13% / 45% / 96% |
+| river cells lower than their neighbours (in valleys) | 86% / 93% / 100% |
+| lake cells | 0 / 441 / 1779 |
+| generation time | 254 / 307 / 536 ms |
+
+Each PNG shows the planet's cells, the region's biomes and rivers, and the region's relief, with
+the "beyond" margin darkened: `docs/worldgen/region-7-3_1.png` (a desert with a river and lakes
+fed from the north), `region-99-1_2.png` (a plateau desert under a mountain belt),
+`region-42-2_0.png` (tundra and taiga).
+
+Known limits:
+
+- Climate belts follow the planet's smoothly, so biome edges are curves with ragged noise, not
+  shaped by the finer relief (no rain shadows of the finer ranges).
+- Plates, faults and rifts are the planet's, cell by cell, so those features are blocky.
+- Regions where the planet has big lakes get big lake districts.

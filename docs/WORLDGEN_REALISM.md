@@ -501,3 +501,70 @@ under it: high plateaus where the continental relief and a hotspot add up.
 ![Hypsometry after fixes 4 and 5](worldgen/chart-hypsometry-fix45.png)
 
 ![Biomes after fixes 4 and 5](worldgen/overview-biomes-fix45.png)
+
+### Fixes 6 and 7, ocean gyres and two seasons (2026-10-28, changes every seed's climate, biomes and history)
+
+`planetgen.js` climate, in order:
+
+- **Gyres.** Along each row, land close to the east of a sea cell makes it an eastern boundary and
+  land close to the west a western boundary. Subtropics (10-42°): eastern boundary -6 °C (cold
+  upwelling, fading over ~6 cells), western boundary +4 °C (Gulf Stream, ~3 cells). Subpolar
+  (38-72°): eastern boundary +10 °C (the warm drift), western boundary -6 °C (Labrador, Oyashio).
+- **Sea air carried inland.** A `marine` tracer (1 at sea) and the water's warmth or cold are
+  advected over land with the wind, losing 6% a cell the wind blows and more up a rising slope.
+  Continentality and the current effects on land both come from it (the old version only
+  touched the first three coast cells).
+- **Two seasons.** Half the year's range is 1 + 6·sin(lat)^1.5 °C for marine land, 2 + 24·sin^1.5
+  for land the sea air no longer reaches, 1 + 4·sin^1.5 at sea. The moisture transport runs twice,
+  for July and January: the wind and rain belts shift 6° toward the summer pole, the summer
+  temperature sets how much the air holds, and between 0 and 30° the hot land draws the sea air
+  in (monsoon) in summer and pushes it out in winter. Annual rain is the mean of the two; each
+  cell keeps the share that falls in its summer half. The upwind lookups are precomputed, so
+  generation takes about as long as before (measured interleaved).
+- **Sea ice** (`_gen.seaIce`, winter extent where the winter air over the sea is below -8 °C).
+  Computed, not drawn: Daan rejected an ice band along the map edges before.
+- **Köppen.** Each land region has `climate` (e.g. "Cfb", "BWh", "Dwc"), `warmC` and `coldC`
+  (warmest and coldest month) and `summerRain` (share of the year's rain in the summer half).
+  Months follow a sine, so the driest and wettest month come from the two halves. Standard
+  rules: E if the warmest month is under 10 °C; B below the aridity line 20·T + 280 / 140 / 0 mm
+  (summer, even, winter rain), BW below half of it; A if the coldest month is 18 °C or more; C or
+  D by a coldest month above or below -3 °C; s / w / f and a / b / c / d as usual.
+- **Biomes from the climates.** EF ice, ET tundra; desert for BW and the driest steppe (under 0.65
+  of the aridity line, xeric shrubland as the biome maps count it), the rest of BSh savanna and of
+  BSk grassland; Af and Am jungle, Aw jungle from 1,300 mm and savanna below; Dc and Dd taiga; the
+  other C and D climates forest, or grassland under 30·T + 200 mm (prairie, steppe). Swamp and
+  mountain rules unchanged.
+- **Rain in mm** refitted to Earth's spread of land rain: mm = 3640 × (rain / 0.097)^0.944
+  (pooled quartiles 248 / 571 / 1,080 mm against Earth's ~250 / 580 / 1,100).
+
+18 seeds, median (range):
+
+| | Fixes 4+5 | Fixes 6+7 | Earth |
+|---|---|---|---|
+| Subpolar west coast minus east coast, 45-65° | 2.2 °C | 8.9 °C (3-14) | ~10 (Bergen vs Labrador 12) |
+| Warmest minus coldest month 45-60°, coast / inland | none | 19 / 35 °C | ~12-25 / 30-45 |
+| Winter sea ice, share of the ocean (75°S-75°N) | none | 8.8% | ~9% at both maxima |
+| Zonal land rain at 27.5° / 47.5°, share of the equator's | 0.14 / 0.39 | 0.29 / 0.38 | 0.28 / 0.38 |
+| Land with P < 0.1 | 44% | 39% | |
+| Windward / leeward ratio | 3.5 | 3.0 | 3-8 |
+| Köppen A / B / C / D / E | | 19 / 32 / 23 / 16 / 14% | 20 / 31 / 16 / 25 / 7% (without Antarctica) |
+| Desert | 12% | 20% (6-31) | 20% |
+| Savanna | 11% | 12% | 15% |
+| Jungle | 10% | 11% | 14% |
+| Forest | 32% | 22% (11-40) | 16% |
+| Grassland | 11% | 12% | 8% |
+| Taiga | 10% | 9% | 12% |
+| Tundra / ice / mountain / swamp | 7 / 2.5 / 4.6 / 1.9% | 7 / 3 / 4.2 / 1% | 7 / 2 / 4 / 1% |
+| River cells in desert | 4% | 11% | Nile, Indus, Tigris |
+
+Regions (3 seeds × 3 squares): coast agreement 0.98, biome difference median 0.05 (max 0.18).
+Region histories (3 seeds × 2 squares) tell every contact.
+
+What is still off: C climates are too common and D too rare (more mid-latitude land at the coast
+than Earth's two large northern continents, so less of it is deep continental); forest is a
+little above Earth's share and savanna a little below. Desert poleward of 40° is 11% of desert
+(Gobi, Patagonia, Great Basin: Earth has some). Rain shadows are milder than Earth's strongest.
+
+![Biomes after fixes 6 and 7](worldgen/overview-biomes-fix67.png)
+
+![Zonal land rain after fixes 6 and 7](worldgen/chart-precipitation-fix67.png)

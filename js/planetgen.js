@@ -464,103 +464,170 @@ function generate(world, pack, rng) {
   }
 
   /* ================================================== 5. climate ======= */
-  const T = new Float32Array(N), SST = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    const c = Math.cos(latRad[i]);
-    T[i] = 0.02 + 0.88 * Math.pow(Math.max(0, c), 1.35);
-  }
-  /* ocean currents: cold water off subtropical west coasts, warm drift off
-     high-latitude west coasts. Detected as "land lies to the east". */
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x;
-    if (!isOcean(i)) continue;
-    const lat = Math.abs(latRad[i]) * 180 / Math.PI;
-    let landEast = 0;
-    for (let d = 1; d <= 8; d++) if (!isOcean(y * W + wx(x + d))) { landEast = 1 - (d - 1) / 8; break; }
-    let a = 0;
-    if (lat > 12 && lat < 40) a = -0.09 * landEast;
-    else if (lat > 42 && lat < 66) a = 0.07 * landEast * (1 - Math.abs(lat - 54) / 14);
-    SST[i] = T[i] + a;
-  }
-  for (let i = 0; i < N; i++) {
-    if (isOcean(i)) { T[i] = SST[i]; continue; }
-    const cdist = Math.min(coastDist[i], 25) / 25;
-    T[i] = T[i] - LAPSE_T * Math.max(0, hm[i]) / 1000 - 0.06 * cdist * Math.abs(Math.sin(latRad[i]));
-  }
-  /* coasts feel their offshore water */
-  for (let i = 0; i < N; i++) {
-    if (isOcean(i) || coastDist[i] > 3) continue;
-    let s = 0, n = 0;
-    for (let k = 0; k < 8; k++) { const j = NB8[i * 8 + k]; if (j >= 0 && isOcean(j)) { s += SST[j] - (0.02 + 0.88 * Math.pow(Math.max(0, Math.cos(latRad[j])), 1.35)); n++; } }
-    if (n) T[i] += (s / n) * 0.7;
-  }
-  /* weather does not follow the parallels: broad warm and cold tongues, plus a little local
-     variety, so the tundra and the deserts get ragged edges instead of straight ones */
-  for (let i = 0; i < N; i++) if (!isOcean(i)) T[i] += nf(noise3, i, 0.022, 3, 0.5) * 0.11 + nf(noise2, i, 0.09, 2, 0.5) * 0.03;
-  for (let i = 0; i < N; i++) T[i] = clamp(T[i], 0, 1);
+  const CT = 1 / 55.6;                       /* one degree C in T units (deg C = -22.4 + 55.6 T) */
+  const T0 = (lat) => 0.02 + 0.88 * Math.pow(Math.max(0, Math.cos(lat)), 1.35);
+  /* 0 below a, rising to 1 at b, 1 to c, falling to 0 at d */
+  const band = (v, a, b, c, d) => (v <= a || v >= d ? 0 : v < b ? (v - a) / (b - a) : v <= c ? 1 : (d - v) / (d - c));
+  const sinLat = new Float32Array(N), DEGL = new Float32Array(N);
+  for (let i = 0; i < N; i++) { sinLat[i] = Math.abs(Math.sin(latRad[i])); DEGL[i] = latRad[i] * 180 / Math.PI; }
 
   /* winds: three-cell circulation, as a table over |latitude| (degrees) */
   const U_TAB = [[0, -0.75], [15, -0.95], [30, 0], [45, 1], [60, 0], [75, -0.6], [90, -0.3]];
   const V_TAB = [[0, 0], [15, -0.45], [30, 0], [45, 0.35], [60, 0], [75, -0.35], [90, 0]]; /* + = poleward */
   const RAIN_TAB = [[0, 2.3], [8, 2.0], [15, 1.0], [25, 0.32], [35, 0.45], [45, 1.15], [58, 1.35], [70, 0.7], [90, 0.4]];
   const tab = (t, d) => { for (let k = 1; k < t.length; k++) if (d <= t[k][0]) return lerp(t[k - 1][1], t[k][1], (d - t[k - 1][0]) / (t[k][0] - t[k - 1][0])); return t[t.length - 1][1]; };
+  const nU = new Float32Array(N), nV = new Float32Array(N);
+  for (let i = 0; i < N; i++) { nU[i] = nf(noise2, i, 0.05, 2, 0.5) * 0.3; nV[i] = nf(noise3, i, 0.05, 2, 0.5) * 0.2; }
+  /* the belts at a season: the whole pattern follows the sun, `shift` degrees north in July and
+     south in January; in the summer hemisphere the hot land draws the air in from the sea (the
+     monsoon), in winter the cold land pushes it out */
+  const landF = blurWrap(Float32Array.from(E, (e) => (e > 0.5 ? 1 : 0)), W, H, 5);
+  const winds = function (shift, U, V, rainF) {
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x, lat = DEGL[i] - shift, deg = Math.abs(lat), sgn = lat >= 0 ? -1 : 1; /* poleward = -y in north */
+      U[i] = tab(U_TAB, deg) + nU[i];
+      V[i] = tab(V_TAB, deg) * sgn + nV[i];
+      rainF[i] = tab(RAIN_TAB, deg);
+      const mon = shift * Math.sign(DEGL[i]) / 6 * band(Math.abs(DEGL[i]), 0, 6, 18, 30);
+      if (mon) {
+        U[i] += mon * 6 * (landF[y * W + wx(x + 1)] - landF[y * W + wx(x - 1)]) / 2;
+        V[i] += mon * 6 * (landF[Math.min(H - 1, y + 1) * W + x] - landF[Math.max(0, y - 1) * W + x]) / 2;
+      }
+    }
+  };
   const U = new Float32Array(N), Vv = new Float32Array(N), rainF = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    const deg = Math.abs(latRad[i]) * 180 / Math.PI, sgn = latRad[i] >= 0 ? -1 : 1; /* poleward = -y in north */
-    U[i] = tab(U_TAB, deg) + nf(noise2, i, 0.05, 2, 0.5) * 0.3;
-    Vv[i] = tab(V_TAB, deg) * sgn + nf(noise3, i, 0.05, 2, 0.5) * 0.2;
-    rainF[i] = tab(RAIN_TAB, deg);
+  winds(0, U, Vv, rainF);
+
+  /* ocean gyres. Along each row: land close to the east is an eastern boundary (cold upwelling
+     in the subtropics, Canary and California; the warm drift in the subpolar gyre, Norway and
+     Alaska); land close to the west a western boundary (the warm Gulf Stream and Kuroshio in
+     the subtropics; the cold Labrador and Oyashio currents further poleward) */
+  const T = new Float32Array(N), SST = new Float32Array(N), sstA = new Float32Array(N);
+  for (let i = 0; i < N; i++) T[i] = T0(latRad[i]);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (!isOcean(i)) continue;
+    let dE = 0, dW = 0;
+    for (let d = 1; d <= 16 && !dE; d++) if (!isOcean(y * W + wx(x + d))) dE = d;
+    for (let d = 1; d <= 10 && !dW; d++) if (!isOcean(y * W + wx(x - d))) dW = d;
+    const e = dE ? Math.exp(-(dE - 1) / 6) : 0, w = dW ? Math.exp(-(dW - 1) / 3) : 0;
+    const deg = Math.abs(DEGL[i]), sub = band(deg, 10, 20, 34, 42), pol = band(deg, 38, 48, 62, 72);
+    sstA[i] = CT * (sub * (-6 * e + 4 * w) + pol * (10 * e - 6 * w));
+    SST[i] = T[i] + sstA[i];
   }
 
-  /* moisture transport: semi-Lagrangian advection to a steady state.
-     Lift is read from smoothed ground with the sea at sea level, so only sustained ascent rains
-     out (not every noise bump, nor the step up from the sea floor); land hands part of its rain
-     back to the air (evapotranspiration, less in the cold); and in the storm belts moisture also
-     mixes sideways, since passing cyclones bring it from every direction, east coasts included. */
+  /* sea air carried inland on the wind: `marine` is how much of it a cell still feels (1 at sea,
+     fading over ~10 cells (6% a cell the wind blows) and faster up a rising slope), `anom` the warmth or cold of the water it
+     came from. Continentality and the current effects on land both come from it. */
   const Eg = new Float32Array(N);
   for (let i = 0; i < N; i++) Eg[i] = Math.max(0.5, E[i]);
   const Es = blurWrap(Eg, W, H, 1);
   const MIX_TAB = [[0, 0.06], [25, 0.06], [35, 0.45], [60, 0.45], [70, 0.15], [90, 0.1]];
-  const mix = new Float32Array(N), recycle = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    mix[i] = tab(MIX_TAB, Math.abs(latRad[i]) * 180 / Math.PI);
-    recycle[i] = 0.65 * clamp(T[i] * 1.5, 0.2, 1);
-  }
+  const mix = new Float32Array(N);
+  for (let i = 0; i < N; i++) mix[i] = tab(MIX_TAB, Math.abs(DEGL[i]));
   const sampleWrap = function (arr, fx, fy) {
     fy = clamp(fy, 0, H - 1);
     const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
     const xa = wx(x0), xb = wx(x0 + 1), y1 = Math.min(y0 + 1, H - 1);
     return lerp(lerp(arr[y0 * W + xa], arr[y0 * W + xb], tx), lerp(arr[y1 * W + xa], arr[y1 * W + xb], tx), ty);
   };
-  let q1 = new Float32Array(N), q2 = new Float32Array(N);
-  const precip = new Float32Array(N);
-  for (let it = 0; it < 90; it++) {
+  const nbMean = (arr, i) => { let s = 0, n = 0; for (let k = 0; k < 4; k++) { const j = NB4[i * 4 + k]; if (j >= 0) { s += arr[j]; n++; } } return s / n; };
+  const marine = new Float32Array(N), anom = new Float32Array(N);
+  {
+    let m1 = new Float32Array(N), a1 = new Float32Array(N), m2 = new Float32Array(N), a2 = new Float32Array(N);
+    for (let it = 0; it < 40; it++) {
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (isOcean(i)) { m2[i] = 1; a2[i] = sstA[i]; continue; }
+        const ux = x - U[i], uy = y - Vv[i], mx = Math.max(0.3, mix[i]);
+        const keep = Math.exp(-0.01 - 0.06 * Math.hypot(U[i], Vv[i]) - Math.max(0, Es[i] - sampleWrap(Es, ux, uy)) * 2);
+        m2[i] = lerp(sampleWrap(m1, ux, uy), nbMean(m1, i), mx) * keep;
+        a2[i] = lerp(sampleWrap(a1, ux, uy), nbMean(a1, i), mx) * keep;
+      }
+      let s = m1; m1 = m2; m2 = s; s = a1; a1 = a2; a2 = s;
+    }
+    marine.set(m1); anom.set(a1);
+  }
+
+  for (let i = 0; i < N; i++) {
+    if (isOcean(i)) { T[i] = SST[i]; continue; }
+    T[i] = T[i] - LAPSE_T * Math.max(0, hm[i]) / 1000 - 0.06 * (1 - marine[i]) * sinLat[i] + anom[i];
+  }
+  /* weather does not follow the parallels: broad warm and cold tongues, plus a little local
+     variety, so the tundra and the deserts get ragged edges instead of straight ones */
+  for (let i = 0; i < N; i++) if (!isOcean(i)) T[i] += nf(noise3, i, 0.022, 3, 0.5) * 0.11 + nf(noise2, i, 0.09, 2, 0.5) * 0.03;
+  for (let i = 0; i < N; i++) T[i] = clamp(T[i], 0, 1);
+
+  /* seasons: half the year's range (warmest minus coldest month), small at sea and by it, large
+     deep inside a continent at high latitude (Yakutsk: 58 C between January and July) */
+  const Tamp = new Float32Array(N), seaIce = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    const s = Math.pow(sinLat[i], 1.5);
+    if (isOcean(i)) {
+      Tamp[i] = CT * (1 + 4 * s);
+      /* pack ice in winter: the water stays warmer than the air above it, so the ice edge lies
+         where the winter air is about -8 C */
+      if ((T[i] - Tamp[i]) / CT - 22.4 < -8) seaIce[i] = 1;
+      continue;
+    }
+    Tamp[i] = CT * lerp(2 + 24 * s, 1 + 6 * s, marine[i]);
+  }
+
+  /* moisture transport: semi-Lagrangian advection to a steady state, once for July and once
+     for January. Lift is read from smoothed ground with the sea at sea level, so only sustained
+     ascent rains out (not every noise bump, nor the step up from the sea floor); land hands part
+     of its rain back to the air (evapotranspiration, less in the cold); and in the storm belts
+     moisture also mixes sideways, since passing cyclones bring it from every direction, east
+     coasts included. */
+  const recycle = new Float32Array(N), Ts = new Float32Array(N);
+  const Us = new Float32Array(N), Vs = new Float32Array(N), rFs = new Float32Array(N);
+  /* the upwind point of every cell is fixed for a season, so its four corners and weights, the
+     share that rains out and the cap are worked out once, before the 90 steps */
+  const UPI = new Int32Array(N * 4), UPW = new Float32Array(N * 4), FRAC = new Float32Array(N), CAP = new Float32Array(N);
+  const season = function (sgn, out) {
+    winds(6 * sgn, Us, Vs, rFs);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = y * W + x;
-      if (isOcean(i)) { q2[i] = clamp(0.85 * (0.12 + 0.88 * SST[i]), 0, 1); precip[i] = 0; continue; }
-      const ux = x - U[i], uy = y - Vv[i];
-      let q = sampleWrap(q1, ux, uy);
-      if (mix[i] > 0) {
-        let s = 0, n = 0;
-        for (let k = 0; k < 4; k++) { const j = NB4[i * 4 + k]; if (j >= 0) { s += q1[j]; n++; } }
-        q = lerp(q, s / n, mix[i]);
-      }
-      const eUp = sampleWrap(Es, ux, uy);
-      const cap = 0.12 + 0.88 * T[i];
-      let p = 0;
-      if (q > cap) { p += q - cap; q = cap; }
-      const rise = Math.max(0, Es[i] - eUp);
-      const frac = clamp(0.045 * rainF[i] + rise * 3.5, 0, 0.8);
-      p += q * frac;
-      q = q - q * frac + recycle[i] * p;   /* plants and wet ground hand part of it back */
-      q2[i] = clamp(q, 0, 1);
-      precip[i] = p;
+      Ts[i] = clamp(T[i] + sgn * Math.sign(DEGL[i]) * Tamp[i], 0, 1);
+      recycle[i] = 0.65 * clamp(Ts[i] * 1.5, 0.2, 1);
+      CAP[i] = 0.12 + 0.88 * Ts[i];
+      const ux = x - Us[i], uy = clamp(y - Vs[i], 0, H - 1);
+      const x0 = Math.floor(ux), y0 = Math.floor(uy), tx = ux - x0, ty = uy - y0, y1 = Math.min(y0 + 1, H - 1);
+      UPI[i * 4] = y0 * W + wx(x0); UPI[i * 4 + 1] = y0 * W + wx(x0 + 1); UPI[i * 4 + 2] = y1 * W + wx(x0); UPI[i * 4 + 3] = y1 * W + wx(x0 + 1);
+      UPW[i * 4] = (1 - tx) * (1 - ty); UPW[i * 4 + 1] = tx * (1 - ty); UPW[i * 4 + 2] = (1 - tx) * ty; UPW[i * 4 + 3] = tx * ty;
+      const rise = Math.max(0, Es[i] - sampleWrap(Es, ux, uy));
+      FRAC[i] = clamp(0.045 * rFs[i] + rise * 3.5, 0, 0.8);
     }
-    const s = q1; q1 = q2; q2 = s;
+    let q1 = new Float32Array(N), q2 = new Float32Array(N);
+    for (let it = 0; it < 90; it++) {
+      for (let i = 0; i < N; i++) {
+        if (isOcean(i)) { q2[i] = clamp(0.85 * CAP[i], 0, 1); out[i] = 0; continue; }
+        const k = i * 4;
+        let q = q1[UPI[k]] * UPW[k] + q1[UPI[k + 1]] * UPW[k + 1] + q1[UPI[k + 2]] * UPW[k + 2] + q1[UPI[k + 3]] * UPW[k + 3];
+        if (mix[i] > 0) q = lerp(q, nbMean(q1, i), mix[i]);
+        let p = 0;
+        if (q > CAP[i]) { p += q - CAP[i]; q = CAP[i]; }
+        p += q * FRAC[i];
+        q = q - q * FRAC[i] + recycle[i] * p;   /* plants and wet ground hand part of it back */
+        q2[i] = clamp(q, 0, 1);
+        out[i] = p;
+      }
+      const s = q1; q1 = q2; q2 = s;
+    }
+  };
+  const pJul = new Float32Array(N), pJan = new Float32Array(N);
+  season(1, pJul);
+  season(-1, pJan);
+  /* the year's rain, and the share of it that falls in the local summer half */
+  const precip = new Float32Array(N), pSum = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    precip[i] = (pJul[i] + pJan[i]) / 2;
+    const s = DEGL[i] >= 0 ? pJul[i] : pJan[i];
+    pSum[i] = precip[i] > 0 ? s / (pJul[i] + pJan[i]) : 0.5;
   }
 
   const fin = finish(world, pack, {
-    W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, Hm: hm, T: T, precip: precip, coastDist: coastDist, latRad: latRad,
+    W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, Hm: hm, T: T, Tamp: Tamp, precip: precip, pSum: pSum, coastDist: coastDist, latRad: latRad,
     uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont,
     nf2: (i, f, o, g) => nf(noise2, i, f, o, g), nf3: (i, f, o, g) => nf(noise3, i, f, o, g),
     K: 1, area: 1, minLen: 4, inflow: null, mtnOffset: 0,
@@ -569,7 +636,7 @@ function generate(world, pack, rng) {
   /* debug layers for the inspector page; not enumerable so nothing copies them */
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, E, Hm: hm, T, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, hotspots,
+    value: { plateOf, plates, cont, uplift, E, Hm: hm, T, Tamp, SST, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, hotspots,
              riverT: fin.riverT, mtnOffset: fin.mtnOffset, precip, stress, srcAmp, ms: Date.now() - t0 },
   });
 }
@@ -727,31 +794,51 @@ function finish(world, pack, L) {
   const tempC = new Float32Array(N), rainMm = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     tempC[i] = -22.4 + 55.6 * T[i];
-    rainMm[i] = isOcean(i) ? 0 : 2680 * Math.pow(precip[i] / pRef, 0.635);
+    rainMm[i] = isOcean(i) ? 0 : 3640 * Math.pow(precip[i] / pRef, 0.944);
   }
 
-  /* Whittaker's biomes by temperature and rain, with Koppen's aridity line (desert below
-     5 x (2T + 14) mm). Rivers do not turn a desert green at this scale (the Nile valley is a
-     desert with a river in it); they only make wet lowland into swamp. */
-  function classify(i) {
+  /* Koppen's climates from the two seasons: warmest and coldest month (the annual mean plus and
+     minus half the range) and how the rain splits between the summer and winter halves. The
+     aridity line is 20 x T + 280 mm with summer rain, + 140 when it is even, + 0 with winter
+     rain; desert below half of it. The months follow a sine through the year, so the driest and wettest month come
+     from the two halves: the mean month, minus or plus pi / 24 of the difference. */
+  const ampC = (i) => (L.Tamp ? L.Tamp[i] * 55.6 : 0);
+  const aridLine = (i) => { const ps = L.pSum ? L.pSum[i] : 0.5; return 20 * tempC[i] + (ps >= 0.7 ? 280 : ps <= 0.3 ? 0 : 140); };
+  function koppen(i) {
+    const c = tempC[i], mm = rainMm[i], amp = ampC(i), warm = c + amp, cold = c - amp;
+    const ps = L.pSum ? L.pSum[i] : 0.5, sumMm = mm * ps, winMm = mm - sumMm;
+    if (warm < 10) return warm < 0 ? "EF" : "ET";
+    const pth = aridLine(i);
+    if (mm < pth) return (mm < pth / 2 ? "BW" : "BS") + (c >= 18 ? "h" : "k");
+    const swing = Math.abs(sumMm - winMm) * Math.PI / 24, dryMonth = Math.max(0, mm / 12 - swing), wetMonth = mm / 12 + swing;
+    if (cold >= 18) return dryMonth >= 60 ? "Af" : dryMonth >= 100 - mm / 25 ? "Am" : ps >= 0.5 ? "Aw" : "As";
+    const second = ps < 0.5 && dryMonth < 40 && dryMonth < wetMonth / 3 ? "s" : ps > 0.5 && dryMonth < wetMonth / 10 ? "w" : "f";
+    const third = warm >= 22 ? "a" : c + amp / 2 >= 10 ? "b" : cold < -38 ? "d" : "c";
+    return (cold > -3 ? "C" : "D") + second + third;
+  }
+
+  /* the biomes from the climates (Whittaker's by temperature and rain, with seasons): a wet
+     tropic is jungle, one with a dry season savanna unless it still gets 1,300 mm; desert takes
+     the driest steppe too (xeric shrubland, as the biome maps count it), the rest of the hot
+     steppe is savanna and of the cool steppe grassland; Mediterranean and humid temperate climates are forest,
+     or grassland (prairie, steppe) under 30 x C + 200 mm; continental ones the same with a long
+     summer and taiga with a short one. Rivers do not turn a desert green at this
+     scale (the Nile valley is a desert with a river in it); they only make wet lowland swamp. */
+  function classify(i, k) {
     const c = tempC[i], mm = rainMm[i], e = E[i];
     if (aboveTree(i) >= 0) return c < -14.5 ? "ice" : "mountain";
-    if (c < -17) return "ice";
-    if (c < -8) return "tundra";
+    if (k === "EF") return "ice";
+    if (k === "ET") return "tundra";
+    if (k[0] === "B") return mm < 0.65 * aridLine(i) ? "desert" : k[2] === "h" ? "savanna" : "grassland";
     const soggy = slope[i] < 0.008 && e < lowland &&
                   (hyd.acc[i] >= riverT || coastDist[i] <= 2 || basin[i]);
-    if (c < 3) {                                     /* boreal */
-      if (mm < 300) return c >= -2 ? "grassland" : "tundra";   /* cold steppe, polar desert */
-      return soggy && mm > 500 ? "swamp" : "taiga";
+    if (k[0] === "A") {
+      if (k === "Af" || k === "Am") return soggy ? "swamp" : "jungle";
+      return mm >= 1300 ? "jungle" : "savanna";
     }
-    if (mm < 10 * c + 70) return "desert";
-    if (c < 20) {                                    /* temperate */
-      if (mm < 25 * c + 150) return "grassland";
-      return soggy && mm > 1000 ? "swamp" : "forest";
-    }
-    if (mm < 1300) return "savanna";                 /* tropical */
-    if (soggy) return "swamp";
-    return mm >= 1500 ? "jungle" : "forest";
+    if (k[0] === "D" && (k[2] === "c" || k[2] === "d")) return soggy && mm > 500 ? "swamp" : "taiga";
+    if (mm < 30 * c + 200) return "grassland";       /* prairie and steppe short of desert */
+    return soggy && mm > 1000 ? "swamp" : "forest";
   }
 
   const hab = (key) => {
@@ -770,6 +857,8 @@ function finish(world, pack, L) {
       temperature: r3(T[i]), moisture: r3(M[i]),
       precipitation: r3(P[i]),
       tempC: Math.round(tempC[i] * 10) / 10, rainMm: Math.round(rainMm[i]),
+      warmC: Math.round((tempC[i] + ampC(i)) * 10) / 10, coldC: Math.round((tempC[i] - ampC(i)) * 10) / 10,
+      summerRain: r3(L.pSum ? L.pSum[i] : 0.5), climate: null,
       biome: "barren", habitability: 0,
       resources: { food: 0, metal: 0, exotic: 0 },
       barren: true, lake: false, owner: null, population: 0, settlement: null,
@@ -792,7 +881,8 @@ function finish(world, pack, L) {
     }
 
     reg.barren = false;
-    const biome = classify(i);
+    reg.climate = koppen(i);
+    const biome = classify(i, reg.climate);
     reg.biome = biome;
     let h = hab(biome);
     if (isRiver[i]) {
@@ -956,10 +1046,15 @@ function region(world, si) {
 
   /* ----- climate from the planet ----- */
   const T = new Float32Array(N), precip = new Float32Array(N), latRad = new Float32Array(N);
+  const Tamp = new Float32Array(N), pSum = new Float32Array(N).fill(0.5);
   const LT = overLandField(g.T), LE = overLandField(g.E), LP = overLandField(g.precip);
+  const LA = overLandField(g.Tamp), LS = overLandField(g.pSum);
   for (let i = 0; i < N; i++) {
     latRad[i] = (0.5 - (FY[i] + 0.5) / PH) * Math.PI * (75 / 90);
-    if (E[i] <= 0.5) { T[i] = clamp(cubic(g.T, FX[i], FY[i]), 0, 1); continue; }
+    if (E[i] <= 0.5) { T[i] = clamp(cubic(g.T, FX[i], FY[i]), 0, 1); Tamp[i] = Math.max(0, cubic(g.Tamp, FX[i], FY[i])); continue; }
+    const al = overLand(LA, FX[i], FY[i]), sl = overLand(LS, FX[i], FY[i]);
+    Tamp[i] = al != null ? al : cubic(g.Tamp, FX[i], FY[i]);
+    if (sl != null) pSum[i] = sl;
     const tl = overLand(LT, FX[i], FY[i]), el = overLand(LE, FX[i], FY[i]), pl = overLand(LP, FX[i], FY[i]);
     T[i] = clamp((tl != null ? tl : cubic(g.T, FX[i], FY[i])) - LAPSE_T * (mOfE(E[i]) - mOfE(Math.max(0.5015, el != null ? el : 0.5015))) / 1000, 0, 1);
     precip[i] = pl != null ? pl : 0.03;
@@ -1019,7 +1114,7 @@ function region(world, si) {
 
   const out = { square: sq.id, squareIndex: si, K: K, margin: MARGIN, px0: px0, py0: py0, width: W, height: H, regions: [] };
   const fin = finish(out, world.pack, {
-    W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, T: T, precip: precip, coastDist: coastDist, latRad: latRad,
+    W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, T: T, Tamp: Tamp, precip: precip, pSum: pSum, coastDist: coastDist, latRad: latRad,
     uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont,
     nf2: (i, f, o, gn) => nfr(nzA, i, f, o, gn), nf3: (i, f, o, gn) => nfr(nzB, i, f, o, gn),
     K: K, area: 1 / (K * K), minLen: 2 * K, inflow: inflow, mtnOffset: mtnOffset, riverT: 0.35, minLake: K * K,

@@ -297,6 +297,19 @@ function measure(world) {
   m.coasts = { T15to35C: coastCmp(15, 35, (i) => degC(T[i])), T45to65C: coastCmp(45, 65, (i) => degC(T[i])),
     P10to35: coastCmp(10, 35, (i) => P[i]), P40to60: coastCmp(40, 60, (i) => P[i]) };
 
+  /* seasons: warmest minus coldest month at 45-60, on the coast and inland; Koppen groups;
+     winter sea ice, share of the ocean */
+  if (R[0].warmC != null) {
+    const rng = (i) => R[i].warmC - R[i].coldC;
+    m.seasons = { range45to60CoastC: r1(zonal((i) => dry(i) && CD[i] <= 1, rng, 45, 60)),
+      range45to60InlandC: r1(zonal((i) => dry(i) && CD[i] >= 8, rng, 45, 60)),
+      westMinusEastCoast45to65C: r1(m.coasts.T45to65C.west - m.coasts.T45to65C.east) };
+    const kA = {};
+    for (let i = 0; i < N; i++) if (dry(i) && R[i].climate) kA[R[i].climate[0]] = (kA[R[i].climate[0]] || 0) + AREA[i];
+    m.koppen = {}; for (const k of "ABCDE") m.koppen[k] = r1(pct(kA[k] || 0, dryA));
+    if (g.seaIce) { let si = 0, oa = 0; for (let i = 0; i < N; i++) if (ocean(i)) { oa += AREA[i]; if (g.seaIce[i]) si += AREA[i]; } m.seasons.seaIcePctOfOcean = r1(pct(si, oa)); }
+  }
+
   /* -- precipitation -- */
   const pZ = [];
   for (let b = 0; b < 75; b += 5) pZ.push([b + 2.5, r3(zonal(dry, (i) => P[i], b, b + 5))]);

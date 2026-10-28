@@ -445,6 +445,13 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   lapse 6 C/km. Land 39.5% -> 32%, land median 1,211 -> 683 m, shelf 1.3% -> 10% of ocean,
   mountains 10% -> 4.6%. Forest up (31%), desert down (12%): for the climate fixes. Numbers:
   docs/WORLDGEN_REALISM.md, Progress.
+- **Realism fixes 6+7, ocean gyres and two seasons (2026-10-28, changes every seed's climate, biomes
+  and history):** gyre currents by eastern / western boundary; sea air (`_gen.marine`) and its
+  warmth carried inland on the wind; seasonal range; moisture run for July and January (belts
+  shift 6 degrees, monsoon at 0-30 degrees); `_gen.seaIce` computed but not drawn. Regions carry `climate`
+  (Koppen code), `warmC`, `coldC`, `summerRain`; biomes come from the Koppen class. Desert 12% -> 20%,
+  forest 32% -> 22%, west-east coast gap 2 -> 9 C. Numbers: docs/WORLDGEN_REALISM.md, Progress.
+  Next in the plan: 8 (lakes and basins), 9, 10.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;
@@ -574,7 +581,7 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
   where civilisation ended. Historical realms now hold ~75% of the tundra by 1500 AD (was ~8%).
   Both changes alter every seed.
 - Generation takes about 0.5 s. A typical world (since realism fixes 4+5): ~32% land, 1–11% mountains
-  (above the treeline), 12% desert, 1–9% ice. Heights are in metres in `_gen.Hm`.
+  (above the treeline), ~20% desert, 1–9% ice (since fixes 6+7). Heights are in metres in `_gen.Hm`.
 
 ## Visual direction (decided)
 

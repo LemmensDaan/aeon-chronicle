@@ -452,6 +452,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   (Koppen code), `warmC`, `coldC`, `summerRain`; biomes come from the Koppen class. Desert 12% -> 20%,
   forest 32% -> 22%, west-east coast gap 2 -> 9 C. Numbers: docs/WORLDGEN_REALISM.md, Progress.
   Next in the plan: 8 (lakes and basins), 9, 10.
+- **Realism fix 8, lakes and basins (2026-10-28, changes every seed's rivers, biomes and history):**
+  closed seas under 40 cells become land below sea level (Hm keeps the depth); depressions fill
+  from the bottom until lake evaporation matches inflow: open lakes spill, terminal lakes end the
+  water with dry basin around them (`_gen.terminal`); open lakes need a ~100 m deep hollow.
+  Lakes 0.7% -> 1.8% of land (Earth 1.8%), landlocked seas 4 -> 0. Numbers:
+  docs/WORLDGEN_REALISM.md, Progress. Next in the plan: 9 (continental geology), 10 (metric grid).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

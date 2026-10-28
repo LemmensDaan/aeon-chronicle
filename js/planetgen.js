@@ -416,6 +416,24 @@ function generate(world, pack, rng) {
      -7,000 m at 0; the same scale for every world */
   const E = new Float32Array(N);
   for (let i = 0; i < N; i++) E[i] = eOfM(hm[i]);
+  /* water below sea level that does not reach the ocean is no sea: a closed basin under 40 cells
+     (a rift valley, a sunken plain) becomes land below sea level, and the hydrology fills it
+     with a lake or leaves it dry by its water balance (Caspian, Dead Sea, Tanganyika, Turpan).
+     E stays just above the sea with a slight bowl, the metres keep the true depth. */
+  {
+    const seen = new Int32Array(N).fill(-1), comps = [];
+    for (let i = 0; i < N; i++) {
+      if (E[i] > 0.5 || seen[i] >= 0) continue;
+      const cells = [i]; seen[i] = comps.length;
+      for (let h = 0; h < cells.length; h++) for (let k = 0; k < 4; k++) {
+        const n = NB4[cells[h] * 4 + k];
+        if (n >= 0 && E[n] <= 0.5 && seen[n] < 0) { seen[n] = comps.length; cells.push(n); }
+      }
+      comps.push(cells);
+    }
+    const ocean = comps.reduce((a, c) => (c.length > a.length ? c : a), []);
+    for (const c of comps) if (c !== ocean && c.length < 40) for (const i of c) E[i] = 0.5016 + 0.002 * clamp(1 + hm[i] / 3000, 0, 1);
+  }
   const isOcean = (i) => E[i] <= 0.5;
 
   /* ----- seam: the map wraps east-west, so turn the planet until the left/right edge runs
@@ -636,7 +654,7 @@ function generate(world, pack, rng) {
   /* debug layers for the inspector page; not enumerable so nothing copies them */
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, E, Hm: hm, T, Tamp, SST, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, hotspots,
+    value: { plateOf, plates, cont, uplift, E, Hm: hm, T, Tamp, SST, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
              riverT: fin.riverT, mtnOffset: fin.mtnOffset, precip, stress, srcAmp, ms: Date.now() - t0 },
   });
 }
@@ -663,7 +681,7 @@ function finish(world, pack, L) {
   const Eh = Float32Array.from(E);
   for (let i = 0; i < N; i++) {
     if (isOcean(i)) continue;
-    if (T[i] < 0.34 && E[i] < eOfM(1100)) Eh[i] += (L.nf3(i, 0.5, 2, 0.5) + 0.5) * 0.012;
+    if (T[i] < 0.4 && E[i] < eOfM(1100)) Eh[i] += (L.nf3(i, 0.5, 2, 0.5) + 0.5) * 0.012 * clamp((0.4 - T[i]) / 0.06, 0, 1);
     Eh[i] += (L.nf2(i, 0.3, 3, 0.5) + 0.5) * 0.012;
   }
   /* rain on one fixed scale for every world (the median wettest-3% level over many seeds),
@@ -672,18 +690,22 @@ function finish(world, pack, L) {
   const P = new Float32Array(N);
   for (let i = 0; i < N; i++) P[i] = isOcean(i) ? 1 : clamp(precip[i] / pRef, 0, 1);
   const runoff = new Float32Array(N);
-  for (let i = 0; i < N; i++) runoff[i] = isOcean(i) ? 0 : Math.max(0.01, P[i] * (1.05 - 0.75 * T[i]));
+  for (let i = 0; i < N; i++) runoff[i] = isOcean(i) ? 0 : Math.max(0.002, P[i] * (1.05 - 0.75 * T[i]));
   if (L.area !== 1) for (let i = 0; i < N; i++) runoff[i] *= L.area;
   if (L.inflow) for (let i = 0; i < N; i++) if (!isOcean(i)) runoff[i] += L.inflow[i];
   const hyd = floodFill(N, NB8, Eh, 0.5, runoff);
 
-  /* depressions -> lakes when the water balance is positive, dry basins otherwise */
-  const lake = new Uint8Array(N), basin = new Uint8Array(N);
+  /* depressions hold water up to the level where what evaporates from the lake matches what flows
+     in: the lowest cells fill first. A depression that more than fills spills over its rim and
+     its rivers run on; one that holds a smaller lake is a terminal lake (Caspian, Aral, Chad), the
+     water ends there and the rest of the hollow is dry basin around it; one too dry for a single
+     cell of lake is a dry basin (salt flat when the rain is low) */
+  const lake = new Uint8Array(N), basin = new Uint8Array(N), terminal = new Uint8Array(N);
   const lakeLevel = new Float32Array(N);
   {
     const dep = new Uint8Array(N);
     for (let i = 0; i < N; i++) if (!isOcean(i) && hyd.Ef[i] - Eh[i] > 0.0025) dep[i] = 1;
-    const comp = new Int32Array(N).fill(-1);
+    const comp = new Int32Array(N).fill(-1), DEEP = 0.01;
     let nc = 0;
     for (let i = 0; i < N; i++) {
       if (!dep[i] || comp[i] >= 0) continue;
@@ -695,30 +717,44 @@ function finish(world, pack, L) {
           if (n >= 0 && dep[n] && comp[n] < 0) { comp[n] = nc; cells.push(n); }
         }
       }
-      let inflow = 0, tsum = 0, level = 0;
-      for (const c of cells) {
-        tsum += T[c]; level = Math.max(level, hyd.Ef[c]);
-        const p = hyd.parent[c];
-        if (p < 0 || comp[p] !== nc) inflow = Math.max(inflow, hyd.acc[c]);
-      }
-      const evap = cells.length * L.area * (0.12 + 0.75 * tsum / cells.length);
-      const wet = inflow > evap * 0.85;
-      /* a hollow smaller than minLake cells is a pond the rivers fill and run on through */
-      if (cells.length >= (L.minLake || 1)) for (const c of cells) { if (wet) { lake[c] = 1; lakeLevel[c] = level; } else basin[c] = 1; }
       nc++;
+      /* a hollow smaller than minLake cells is a pond the rivers fill and run on through */
+      if (cells.length < (L.minLake || 1)) continue;
+      let inflow = 0, level = 0;
+      for (const c of cells) {
+        level = Math.max(level, hyd.Ef[c]);
+        const p = hyd.parent[c];
+        if (p < 0 || comp[p] !== comp[i]) inflow = Math.max(inflow, hyd.acc[c]);
+      }
+      cells.sort((a, b) => Eh[a] - Eh[b]);
+      let evap = 0, n = 0;
+      while (n < cells.length && evap < inflow) { evap += L.area * Math.max(0.03, 1.3 * T[cells[n]] - 0.4); n++; }
+      if (evap < inflow) {                                   /* spills: an open lake */
+        /* unless it is shallow: at this scale a cell of lake is the size of Lake Victoria, so a
+           hollow under DEEP the rivers just fill and run on through */
+        if (level - Eh[cells[0]] >= DEEP) for (const c of cells) { lake[c] = 1; lakeLevel[c] = level; }
+        continue;
+      }
+      if (n < (L.minLake || 1)) n = 0;
+      const top = n ? Eh[cells[n - 1]] + 1e-4 : 0;
+      for (let k = 0; k < cells.length; k++) {
+        const c = cells[k];
+        if (k < n) { lake[c] = 1; lakeLevel[c] = top; } else basin[c] = 1;
+        terminal[c] = 1;
+      }
     }
   }
 
-  /* Dry basins are dead ends: what flows in evaporates. Re-accumulate with basins
-     absorbing their inflow, otherwise the router draws parallel fake rivers across
-     the flat filled floor and out to the sea. */
+  /* Basins and terminal lakes are dead ends: what flows in evaporates. Re-accumulate with them
+     absorbing their inflow, otherwise the router draws parallel fake rivers across the flat
+     filled floor and out to the sea. */
   {
     const acc2 = new Float32Array(N);
     for (let k = hyd.count - 1; k >= 0; k--) {
       const c = hyd.order[k];
       if (isOcean(c)) continue;
       acc2[c] += runoff[c];
-      if (!basin[c] && hyd.parent[c] >= 0) acc2[hyd.parent[c]] += acc2[c];
+      if (!terminal[c] && hyd.parent[c] >= 0) acc2[hyd.parent[c]] += acc2[c];
     }
     hyd.acc = acc2;
   }
@@ -917,7 +953,7 @@ function finish(world, pack, L) {
   /* rivers only flow into land/lake/sea cells that exist; drop flowTo for non-rivers
      that drain into the sea directly — the renderer only draws river cells anyway */
 
-  return { acc: hyd.acc, lake: lake, basin: basin, riverT: riverT, mtnOffset: mtnOffset, P: P, M: M, isRiver: isRiver };
+  return { acc: hyd.acc, lake: lake, basin: basin, terminal: terminal, riverT: riverT, mtnOffset: mtnOffset, P: P, M: M, isRiver: isRiver };
 }
 
 /* ============================================================== region === */
@@ -1126,7 +1162,7 @@ function region(world, si) {
   }
   Object.defineProperty(out, "_gen", {
     enumerable: false, configurable: true,
-    value: { E: E, Ec: Ec, T: T, P: fin.P, M: fin.M, acc: fin.acc, lake: fin.lake, basin: fin.basin, riverT: fin.riverT,
+    value: { E: E, Ec: Ec, T: T, P: fin.P, M: fin.M, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, riverT: fin.riverT,
              mtnOffset: fin.mtnOffset, precip: precip, inflow: inflow, ms: Date.now() - t0 },
   });
   return out;

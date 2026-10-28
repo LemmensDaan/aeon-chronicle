@@ -353,7 +353,7 @@ function measure(world) {
       if (term[i] !== -2) { t = term[i]; break; }
       if (ocean(i)) { t = -1; break; }
       path.push(i);
-      if (g.basin[i]) { t = i; break; }
+      if (g.basin[i] || (g.terminal && g.terminal[i])) { t = i; break; }
       let nx = g.lake[i] ? lakeOut[lc[i]] : R[i].flowTo;
       if (nx < 0) { t = -3; break; }
       if (ocean(nx)) { t = -100 - i; break; }   /* mouth */
@@ -382,6 +382,10 @@ function measure(world) {
   let mouths = 0, rD = 0;
   for (let i = 0; i < N; i++) { if (R[i].river > 0 && R[i].flowTo >= 0 && ocean(R[i].flowTo)) mouths++; if (R[i].river > 0 && R[i].biome === "desert") rD++; }
   m.hydro.riverMouths = mouths; m.hydro.riverInDesertPct = r1(pct(rD, riverCells));
+  /* terminal lakes (closed, sized by evaporation) and land below sea level */
+  let tl = 0, bsl = 0;
+  for (let i = 0; i < N; i++) { if (g.lake[i] && g.terminal && g.terminal[i]) tl += AREA[i]; if (land(i) && g.Hm && g.Hm[i] < 0) bsl += AREA[i]; }
+  m.hydro.terminalLakesPctOfLand = r1(pct(tl, landA)); m.hydro.belowSeaLevelPctOfLand = r1(pct(bsl, landA));
 
   /* -- biomes -- */
   const bA = {}, bT = {}, bTw = {};

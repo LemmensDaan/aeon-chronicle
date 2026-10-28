@@ -568,3 +568,47 @@ little above Earth's share and savanna a little below. Desert poleward of 40° i
 ![Biomes after fixes 6 and 7](worldgen/overview-biomes-fix67.png)
 
 ![Zonal land rain after fixes 6 and 7](worldgen/chart-precipitation-fix67.png)
+
+### Fix 8, lakes and basins (2026-10-28, changes every seed's terrain edge cases, rivers, biomes and history)
+
+- **Closed seas become land below sea level.** Water below sea level that does not reach the
+  ocean and is under 40 cells (a sunken rift, a closed plain) is land: E just above the sea with
+  a slight bowl, the metres keep the true depth. The hydrology then fills it with a lake or
+  leaves it dry by its water balance (Caspian, Dead Sea, Tanganyika, Turpan). Larger closed seas
+  stay seas.
+- **Terminal lakes sized by water balance.** A depression fills from its lowest cell up until
+  the lake's evaporation matches what flows in. Evaporation is in the runoff's units, about the
+  open water's mm a year: max(0.03, 1.3·T - 0.4) a cell (~400 mm at 0 °C, ~2,000 mm at 25 °C).
+  A depression that more than fills spills and its rivers run on (an open lake); one that holds
+  a smaller lake is a terminal lake, the water ends there, and the rest of the hollow is dry
+  basin around it (salt flats where the rain is low); one too dry for a single cell is a dry
+  basin. `_gen.terminal` marks the closed ones (lake and basin cells).
+- **Shallow hollows are no lakes.** At this scale a lake cell is the size of Lake Victoria, so an
+  open lake needs a hollow at least ~100 m deep; shallower ones the rivers fill and run through.
+- **Glacial scour** fades in from -0.2 °C to -3.5 °C annual mean instead of switching on at
+  -3.5 °C.
+- Dry cells add 0.002 runoff (was 0.01), so desert hollows no longer gather lakes from nothing.
+- Rivers through deserts: already since fix 3.
+
+18 seeds, median (range):
+
+| | Fixes 6+7 | Fix 8 | Earth |
+|---|---|---|---|
+| Lakes, share of land | 0.7% (0.1-2.7) | 1.8% (0.3-4.3) | 1.8% |
+| of which terminal | none | 1.0% | ~0.5% (Caspian alone 0.25%) |
+| Land below sea level | 0 | 0.4% | ~0.5% (Caspian depression, Dead Sea, Qattara) |
+| Landlocked seas | 4 (0-9) | 0 (0-1) | Caspian, counted here as a lake |
+| Dry basins | 1.3% | 0.9% | |
+| Endorheic land | 9.6% | 9.4% | ~18% |
+| River cells, share of land | 4.8% | 5.5% | |
+
+Regions (3 seeds × 3 squares): coast agreement 0.98, biome difference median 0.05 (max 0.15).
+Region histories tell every contact; planet histories run.
+
+Still off: terminal lakes take a larger share of the lake area than on Earth, and dry interiors
+show scattered one-cell lakes (each a closed lake with a small catchment). Endorheic land is
+half of Earth's: the continents drain to the sea too readily.
+
+![Seed 99 after fix 8: a terminal lake with a salt-flat ring in the south](worldgen/seed-99-fix8.png)
+
+![Biomes and lakes after fix 8](worldgen/overview-biomes-fix8.png)

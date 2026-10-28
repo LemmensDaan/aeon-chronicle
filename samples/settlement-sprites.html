@@ -124,8 +124,8 @@ function keep(w, h) {
 const BEHIND5 = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwwwk"]);
 /* lower ones for the chosen set: a flatter roof and one row of plaster, so the houses stay small
    behind the wall */
-const LOW5 = sprite([".kfk.", "kffFk", "kwwwk"]);
-const LOW7 = sprite(["..kfk..", ".kffFk.", "kfffFFk", "kwwwwwk"]);
+const LOW5 = sprite([".kkk.", "kffFk", "kwwwk"]);
+const LOW7 = sprite(["..kkk..", ".kffFk.", "kfffFFk", "kwwwwwk"]);
 const BEHIND7 = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwwwwwk", "kwwwwwk"]);
 /* a low wall, w wide: merlons, coping, a stone face with a brown dot for its gate, a foot */
 function lowWall(w) {
@@ -158,7 +158,7 @@ const CITIES = [
 
 /* ------------------------------------------------------------ towns */
 /* a stockade of stakes in two woods (h light, b dark) with a gate */
-const STOCKADE = sprite([alt(11, "k", "."), "hbhbkkkbhbh", "hbhbkBkbhbh", rep("k", 11)]);
+const STOCKADE = sprite([alt(11, "k", "."), "khbhkkkhbhk", "khbhkBkhbhk", rep("k", 11)]);
 /* watchtowers: a roofed lookout on a wooden frame, standing behind the stockade; a gate tower
    over the stockade's gate */
 const WATCH = sprite(["..k..", ".kfk.", "kffFk", "k.k.k", "khhhk", "kkkkk", ".b.b.", ".bkb.", ".b.b.", "b...b", "b...b"]);
@@ -172,7 +172,10 @@ const TOWNS = [
 /* ------------------------------------------------------------ extras, shelved for later */
 const CATHEDRAL = sprite([".k.....k.", "kfk...kfk", "kFk...kFk", "kgk.k.kgk", "kgkkgkkgk", "kgkgwgkgk", "kgkgggkgk", "kgkkbkkgk", "kgkkbkkgk", "kkkkkkkkk"]);
 const GABLED = compose([[HOUSE5, 0, 3], [HOUSE5, 6, 3], [TALL5, 3, 0]]);
-const WINDMILL = sprite(["kc.....ck", ".kc...ck.", "..kkfkk..", "...kfk...", "..ckgkc..", ".ckkgkkc.", "kc.kgk.ck", "..kgggk..", "..kgbgk..", "..kkkkk.."]);
+const WINDMILLS = [sprite(["kc.....ck", ".kc...ck.", "..kkfkk..", "...kfk...", "..ckgkc..", ".ckkgkkc.", "kc.kgk.ck", "..kgggk..", "..kgbgk..", "..kkkkk.."]),
+                   sprite(["....k....", "...kck...", "...kck...", "kcckfkcck", "kkkkfkkkk", "...kck...", "..kkckk..", "..kgggk..", "..kgbgk..", "..kkkkk.."])];
+const WINDMILL = WINDMILLS[0];
+function turnAt(t, ms) { return Math.floor(t / ms) % 2; }
 const EXTRAS = [
   { name: "Keep, flag on a pole (extra)", note: "Kept as an extra design: the narrow keep with the realm's flag on a pole over its middle merlon.", sp: KEEP_POLE },
   { name: "Hill city (extra)", note: "Kept as an extra design: houses climb to a tower, a low wall at the foot of the hill with a brown dot for its gate.", sp: HILL },
@@ -181,7 +184,7 @@ const EXTRAS = [
     sp: compose([[HOUSE5, 0, 4], [HOUSE5, 8, 4], [CATHEDRAL, 2, 0]]) },
   { name: "Gabled row (extra)", note: "Shelved as an extra design: a street front of three narrow houses, the middle one tallest.", sp: GABLED },
   { name: "Windmill (extra)", note: "Shelved as an extra design. For later: with the economy, a windmill could be added to a place that grows grain or prospers, rather than being a town design of its own.",
-    sp: compose([[WINDMILL, 2, 0], [HOUSE5, 0, 4]]) },
+    sp: compose([[WINDMILL, 2, 0], [HOUSE5, 0, 4]]), at: function (t) { return compose([[WINDMILLS[turnAt(t, 400)], 2, 0], [HOUSE5, 0, 4]]); } },
 ];
 const TOWN_W = TOWNS[0].sp, CITY_W = CITIES[0].sp;    /* the picks so far, used by the water panels */
 
@@ -203,7 +206,7 @@ const LIGHT_L = sprite(["..k..", ".kok.", "kkkkk", ".kwk.", ".kek.", ".kwk.", ".
 const BRIDGE_S = sprite(["kkkkkkk", "bbbbbbb", "b.....b"]);
 const BRIDGE_M = sprite(["kkkkkkkkk", "ggggggggg", "ggkkkkkgg", "gk.....kg", "kk.....kk"]);
 const BRIDGE_L = sprite(["kkkkkkkkkkk", "ggggggggggg", "gkkkgggkkkg", "k...kgk...k", "k...kgk...k"]);
-const WHEEL = sprite([".khk.", "khkhk", "hhkhh", "khkhk", ".khk."]);
+const WHEELS = [sprite([".khk.", "khkhk", "hhkhh", "khkhk", ".khk."]), sprite([".hkh.", "hhkhh", "kkkkk", "hhkhh", ".hkh."])];
 const MILL = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwkwk", "kkkkk"]);
 const BIGMILL = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwwkwwk", "kwwkbwk", "kkkkkkk"]);
 const STILT = sprite(["..k..", ".kfk.", "kffFk", "kwkwk", "kkkkk", "b...b", "b...b"]);
@@ -232,9 +235,9 @@ function agesAt(t) { return AGE_KINDS.map(function (k, i) { return harbour(TOWN_
 const T = TOWN_W, C = CITY_W;
 const RIVER = [
   { name: "Watermill (no road crosses)", note: "Where no road crosses the river at the place: a mill on the bank with its wheel in the stream; a bigger mill at the city.", roads: "near",
-    s: [compose([[VILLAGE, 0, 0], [MILL, 7, 0], [WHEEL, 10, 1]], 12),
+    at: function (t) { const WHEEL = WHEELS[turnAt(t, 250)]; return [compose([[VILLAGE, 0, 0], [MILL, 7, 0], [WHEEL, 10, 1]], 12),
         compose([[T, 0, 0], [MILL, T.w, T.h - 6], [WHEEL, T.w + 3, T.h - 5]], T.w + 5),
-        compose([[C, 0, 0], [BIGMILL, C.w, C.h - 7], [WHEEL, C.w + 5, C.h - 5]], C.w + 7)] },
+        compose([[C, 0, 0], [BIGMILL, C.w, C.h - 7], [WHEEL, C.w + 5, C.h - 5]], C.w + 7)]; } },
   { name: "Bridge (a road crosses)", note: "Where a road crosses: the village only gets a plank bridge; the town and the city stand on both banks, joined by a stone bridge.", roads: "across",
     s: [compose([[VILLAGE, 0, 0], [BRIDGE_S, 6, 3]], 9),
         compose([[T, 0, 0], [BRIDGE_M, T.w - 1, T.h - 5], [HOUSE5, T.w + 7, T.h - 6]], T.w + 3),
@@ -278,7 +281,13 @@ function paint(g, kind, bands) {
         col = coast ? (t < 0.5 ? MAP.foam : MAP.shallow) : d < 3 + t * 2 ? MAP.shallow : d < 14 + t * 5 ? MAP.mid : MAP.deep;
         land = false;
       } else if (d > -2 || (d > -3 && bayer(x, y) < 0.5)) col = MAP.sand[Math.min(2, Math.floor(bayer(x + 1, y) * 3))];
-    } else if (kind === "lake" && x >= lakeX(y)) { col = (x + y) % 5 ? MAP.shallow : MAP.mid; land = false; }
+    } else if (kind === "lake" && x >= lakeX(y)) {
+      /* proposed lake look (Daan disliked the map's striped lakes): shallow along the shore, dithered
+         into mid-blue further out; only this sample has it so far */
+      const d = x - lakeX(y), t = bayer(x, y);
+      col = d < 2 ? MAP.shallow : d < 7 ? (t < (d - 2) / 5 ? MAP.mid : MAP.shallow) : MAP.mid;
+      land = false;
+    }
     if (land && bands) for (const b of bands) if (y >= b[0] && y < b[1] && b[2]) {
       /* the realm's border: two dark pixels along the band's edge, as the map draws it */
       col = (y < b[0] + 1 && b[0] > 0) || (y >= b[1] - 1 && b[1] < MH) ? (function () { const r = rgb(b[2]); return "rgb(" + r.map(function (v) { return Math.round(v * 0.5); }).join(",") + ")"; })() : wash(col, b[2], x, y);
@@ -310,21 +319,22 @@ function trees(g, spots) { for (const p of spots) blit(g, TREE, p[0] * MP, p[1] 
 const panels = [];
 const BANDS = [[0, 19, null], [19, 38, BLUE], [38, 56, RED]];
 /* three bands: a blue realm on the biome map, the same under its political wash, a red realm */
-function settlementPanel(group, title, note, row, close) {
-  panels.push({ group: group, title: title, note: note, close: function () { return close; }, draw: function (g) {
+function settlementPanel(group, title, note, row, close, anim) {
+  const now = function (list, t) { return list.map(function (sp) { return typeof sp === "function" ? sp(t) : sp; }); };
+  panels.push({ group: group, title: title, note: note, anim: !!anim, close: function (t) { return now(close, t); }, draw: function (g, t) {
     paint(g, "grass", BANDS);
     trees(g, [[3, 3], [82, 4]]);
     const xs = [10, 28, 50, 74];
     BANDS.forEach(function (b) {
       const over = realm(b[2] || BLUE);
-      row.forEach(function (sp, i) { blit(g, sp, xs[i] * MP - Math.round(sp.w * U / 2), (b[1] - 3) * MP - sp.h * U, over); });
+      now(row, t).forEach(function (sp, i) { blit(g, sp, xs[i] * MP - Math.round(sp.w * U / 2), (b[1] - 3) * MP - sp.h * U, over); });
     });
   } });
 }
 CAPITALS.forEach(function (c) { settlementPanel("The capital", c.name, c.note, [VILLAGE, TOWN_W, CITY_W, c.sp], [c.sp]); });
 CITIES.forEach(function (c) { settlementPanel("The city", c.name, c.note, [VILLAGE, TOWN_W, c.sp, CAPITAL], [TOWN_W, c.sp, CAPITAL]); });
 TOWNS.forEach(function (c) { settlementPanel("The town", c.name, c.note, [VILLAGE, c.sp, CITY_W, CAPITAL], [VILLAGE, c.sp, CITY_W]); });
-EXTRAS.forEach(function (c) { settlementPanel("Extra designs, for later", c.name, c.note, [VILLAGE, TOWN_W, c.sp, CAPITAL], [c.sp]); });
+EXTRAS.forEach(function (c) { const sp = c.at || c.sp; settlementPanel("Extra designs, for later", c.name, c.note, [VILLAGE, TOWN_W, sp, CAPITAL], [sp], !!c.at); });
 
 function place(g, sp, kind, edge, yb, over) {
   const x = Math.round((edge(yb - (kind === "river" ? 1 : 2)) + (kind === "river" ? 0 : 1)) * MP) - sp.ax * U;

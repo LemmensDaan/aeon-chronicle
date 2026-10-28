@@ -27,14 +27,15 @@
 </head>
 <body>
 <main>
-<h1>Settlement sprites, round 5</h1>
-<p class="lede">After Daan's notes on round 4: houses behind a wall now show their plastered fronts between the
-merlons (no ground showing through), the capital's keep is wider with the banner hung down its stone face, the
-hill city gets a brown gate in its wall, the belfry city a smaller wall, the stockade town its plaster and a new
-watchtower. The cathedral, the gabled row and the windmill are shelved as extra designs at the end. The settlement
-panels show three bands: a blue realm on plain ground, the same realm under its political wash, a red realm under
-its wash. One map pixel is 3 screen pixels and one sprite pixel 2, as at the usual zoom. <code>?only=N</code> shows
-panel N large, <code>?t=ms</code> freezes the bobbing.</p>
+<h1>Settlement sprites: the chosen set</h1>
+<p class="lede">Daan's picks after round 5: the wide keep with its banner is the capital (now centred on its wall
+and gate), the belfry over a low wall is the city, the stockade is the town, and every roof is in its realm's
+colour. By the water: the quay with a light at its tip and the realm's own ship bobbing beside it, a watermill or a
+bridge on a river depending on whether a road crosses, stilt houses and boats on a lake. The other keep, the hill
+city, the stockade with a lookout, the cathedral, the gabled row and the windmill are kept at the end as extra
+designs. The settlement panels show three bands: a blue realm on plain ground, the same realm under its political
+wash, a red realm under its wash. One map pixel is 3 screen pixels and one sprite pixel 2, as at the usual zoom.
+<code>?only=N</code> shows panel N large, <code>?t=ms</code> freezes the bobbing.</p>
 <div id="host"></div>
 </main>
 <script>
@@ -136,20 +137,18 @@ function keep7(banner) {
   return sprite(rows);
 }
 const FLAG = sprite(["kff", "kfF", "k.."]);
+const KEEP_POLE = compose([[BEHIND5, 0, 3], [BEHIND5, 10, 3], [keep(5, 10), 5, 1], [FLAG, 7, -1], [wall(15, 5, true), 0, 7]]);
 const CAPITALS = [
-  { name: "Keep, flag on a pole", note: "Houses behind the wall show roof and plaster. The flag flies over the keep's middle merlon.",
-    sp: compose([[BEHIND5, 0, 3], [BEHIND5, 10, 3], [keep(5, 10), 5, 1], [FLAG, 7, -1], [wall(15, 5, true), 0, 7]]) },
-  { name: "Wide keep, banner on its face", note: "The keep is 7 wide, stone either side of the realm's banner hung from a bar under the merlons; the merlons stay clear.",
-    sp: compose([[BEHIND5, 0, 3], [BEHIND5, 11, 3], [keep7(true), 4, 1], [wall(16, 5, true), 0, 7]]) },
+  { name: "Wide keep, banner on its face (chosen)", note: "The keep is 7 wide, stone either side of the realm's banner hung from a bar under the merlons; it now stands centred over the wall's gate.",
+    sp: compose([[BEHIND5, 0, 3], [BEHIND5, 10, 3], [keep7(true), 4, 1], [wall(15, 5, true), 0, 7]]) },
 ];
-const CAPITAL = CAPITALS[1].sp;
+const CAPITAL = CAPITALS[0].sp;
 
 /* ------------------------------------------------------------ cities */
 const BELFRY = sprite([".k.", "kfk", "kFk", "kkk", "kyk", "kkk", "kgk", "kgk", "kgk", "kkk"]);
+const HILL = compose([[SPIRE, 5, 0], [HOUSE5, 2, 1], [HOUSE5, 6, 1], [HOUSE5, 0, 3], [HOUSE5, 4, 3], [HOUSE5, 8, 3], [lowWall(13), 0, 6]]);
 const CITIES = [
-  { name: "Hill city", note: "Houses climb to a tower, a low wall at the foot of the hill with a brown dot for its gate.",
-    sp: compose([[SPIRE, 5, 0], [HOUSE5, 2, 1], [HOUSE5, 6, 1], [HOUSE5, 0, 3], [HOUSE5, 4, 3], [HOUSE5, 8, 3], [lowWall(13), 0, 6]]) },
-  { name: "Belfry over a low wall", note: "The belfry with its golden bell over houses behind a low wall, smaller than the capital's, so a city never looks like a capital.",
+  { name: "Belfry over a low wall (chosen)", note: "The belfry with its golden bell over houses behind a low wall, smaller than the capital's, so a city never looks like a capital.",
     sp: compose([[BEHIND7, 0, 2], [BEHIND5, 6, 3], [BELFRY, 5, 0], [lowWall(11), 0, 6]]) },
 ];
 
@@ -160,13 +159,10 @@ const STOCKADE = sprite([alt(11, "k", "."), "hbhbkkkbhbh", "hbhbkBkbhbh", rep("k
    over the stockade's gate */
 const WATCH = sprite(["..k..", ".kfk.", "kffFk", "k.k.k", "khhhk", "kkkkk", ".b.b.", ".bkb.", ".b.b.", "b...b", "b...b"]);
 const GATETOWER = sprite(["..k..", ".kfk.", "kffFk", "kkkkk", "khkhk", "khhhk", "kkkkk", "kkBkk", "kkkkk"]);
+const STOCKADE_LOOKOUT = compose([[BEHIND7, 0, 1], [WATCH, 6, -2], [STOCKADE, 0, 5]]);
 const TOWNS = [
-  { name: "Stockade, houses behind it", note: "Pointed stakes in two woods with a gate; the houses behind show roof and plaster over the stakes.",
+  { name: "Stockade (chosen)", note: "Pointed stakes in two woods with a gate; the houses behind show roof and plaster over the stakes.",
     sp: compose([[BEHIND5, 0, 1], [BEHIND7, 4, 0], [STOCKADE, 0, 5]]) },
-  { name: "Stockade and lookout", note: "An open lookout under a roof in the realm's colour, on wooden legs with a cross brace, rising behind the stockade at one end.",
-    sp: compose([[BEHIND7, 0, 1], [WATCH, 6, -2], [STOCKADE, 0, 5]]) },
-  { name: "Stockade and gate tower", note: "A wooden gate tower roofed in the realm's colour stands over the stockade's gate, houses either side.",
-    sp: compose([[BEHIND5, 0, 2], [BEHIND5, 6, 2], [STOCKADE, 0, 5], [GATETOWER, 3, 0]]) },
 ];
 
 /* ------------------------------------------------------------ extras, shelved for later */
@@ -174,6 +170,9 @@ const CATHEDRAL = sprite([".k.....k.", "kfk...kfk", "kFk...kFk", "kgk.k.kgk", "k
 const GABLED = compose([[HOUSE5, 0, 3], [HOUSE5, 6, 3], [TALL5, 3, 0]]);
 const WINDMILL = sprite(["kc.....ck", ".kc...ck.", "..kkfkk..", "...kfk...", "..ckgkc..", ".ckkgkkc.", "kc.kgk.ck", "..kgggk..", "..kgbgk..", "..kkkkk.."]);
 const EXTRAS = [
+  { name: "Keep, flag on a pole (extra)", note: "Kept as an extra design: the narrow keep with the realm's flag on a pole over its middle merlon.", sp: KEEP_POLE },
+  { name: "Hill city (extra)", note: "Kept as an extra design: houses climb to a tower, a low wall at the foot of the hill with a brown dot for its gate.", sp: HILL },
+  { name: "Stockade and lookout (extra)", note: "Kept for later use: an open lookout under a roof in the realm's colour, on wooden legs, behind the stockade.", sp: STOCKADE_LOOKOUT },
   { name: "Cathedral city (extra)", note: "Shelved as an extra design: a church front with two spired towers, a round window and a tall door, a house either side.",
     sp: compose([[HOUSE5, 0, 4], [HOUSE5, 8, 4], [CATHEDRAL, 2, 0]]) },
   { name: "Gabled row (extra)", note: "Shelved as an extra design: a street front of three narrow houses, the middle one tallest.", sp: GABLED },

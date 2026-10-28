@@ -659,3 +659,52 @@ Region histories tell every contact; planet histories run. Generation ~0.47 s.
 ![Seed 42 geology: height bands, old ranges (orange), plateaus (purple), floodplains (cyan), deltas (red)](worldgen/geology-42-fix9.png)
 
 ![Elevation after fix 9](worldgen/overview-elevation-fix9.png)
+
+### Fix 10, a metric grid (2026-10-28, changes every seed's terrain, climate, biomes and history)
+
+East-west distances now shrink with latitude. Convention: a column is as wide as a row at the
+equator and cos(latitude) of that further out (`KX` per row, floor 0.2), so the equator, where
+everything was tuned, stays as it was. (The grid's true cells are 2.4° × 1.58°, ~267 × 176 km at
+the equator; that 1.5 aspect is left as a design choice of the map.) What uses it:
+
+- **Noise** is sampled on a stack of circles of circumference W·cos(latitude), so noise features
+  have one size on the ground: wider in columns toward the poles.
+- **Plate and continent growth**: an east-west step costs KX.
+- **Reach of uplift** (ranges, plateaus, foreland basins): a Dijkstra with KX east-west steps.
+- **Distances** from the continent edge, the slope foot, mid-ocean ridges and the coast: 8-way
+  Dijkstra with KX, 1 and √(KX² + 1).
+- **Hotspot chains** step 2.3 / KX columns east-west; their blobs are round on the ground.
+- **Blurs** reach r / KX columns east-west.
+- **Winds** advect U / KX columns a step (the same km/step at every latitude), for moisture and
+  for the sea air.
+- **Currents**: the gyres' reach from the coast is measured in KX-scaled cells.
+- Winter sea ice now hardly moderates the coast (sea air from frozen water counts 0.3), so arctic
+  coasts are near continental; rain in mm refitted (3480 × (rain / 0.097)^1.025, quartiles 250 /
+  580 / 1,100); the 45-58° rain factor lowered (0.95 / 1.1, was 1.15 / 1.35).
+- Not changed: erosion (it cuts by the drop to the next cell, not the slope) and the regions'
+  own fine grids.
+
+18 seeds, median (range):
+
+| | Fix 9 | Fix 10 | Earth |
+|---|---|---|---|
+| Land | 31% | 30% (22-35) | 29% |
+| Largest plate | 24% | 22% | Pacific ~20% |
+| Land median height / under 200 m | 503 m / 26% | 472 m / 28% | ~450 m / ~28% |
+| Mountains / without uplift | 4.8 / 5.7% | 5.7 / 1.3% | ~4% / few |
+| Coast / inland seasonal range 45-60° | 19 / 34 °C | 20 / 35 °C | |
+| Köppen A / B / C / D / E | 17 / 31 / 21 / 15 / 14 | 16 / 35 / 19 / 12 / 18 | 20 / 31 / 16 / 25 / 7 |
+| Zonal rain 27.5° / 52.5°, share of the equator's | 0.29 / 0.40 | 0.30 / 0.44 | 0.28 / 0.36 |
+| Desert / forest / grassland / savanna / jungle | 20 / 18 / 11 / 13 / 12% | 21 / 18 / 11 / 12 / 10% | 20 / 16 / 8 / 15 / 14% |
+| Taiga / tundra / ice | 10 / 6 / 2.7% | 10 / 8 / 3.1% | 12 / 7 / 2% |
+
+Regions (3 seeds × 3 squares): coast agreement 0.98, biome difference median 0.05 (max 0.18).
+Region histories tell every contact; planet histories run.
+
+Still off: the mid-latitude rain peak is a little strong now that the westerlies carry their
+moisture as far in km as the trades; E climates are too common and D too rare (the map ends at
+75°, and our worlds have no Eurasia-sized northern continent).
+
+![Elevation after fix 10](worldgen/overview-elevation-fix10.png)
+
+![Biomes after fix 10](worldgen/overview-biomes-fix10.png)

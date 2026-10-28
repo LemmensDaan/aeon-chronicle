@@ -160,7 +160,6 @@ function generate(world, pack, rng) {
   const NB4 = new Int32Array(N * 4).fill(-1);
   const NB8 = new Int32Array(N * 8).fill(-1);
   const D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  const DIST8 = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
     for (let k = 0; k < 8; k++) {
@@ -174,12 +173,18 @@ function generate(world, pack, rng) {
   /* shortest signed x-offset from a to b on the cylinder */
   const dxw = (ax, bx) => { let d = bx - ax; if (d > W / 2) d -= W; if (d < -W / 2) d += W; return d; };
 
-  /* cylinder coordinates for noise: circumference W cells -> radius W/2pi */
+  /* The grid's metric. A column is as wide as a row at the equator and cos(latitude) of that
+     further out, so every east-west distance (plate growth, the reach of uplift, blurs, distance
+     from the coast and the sea floor's age, winds, currents) is scaled by KX of its row. */
+  const KX = new Float32Array(H);
+  for (let y = 0; y < H; y++) KX[y] = Math.max(0.2, Math.cos((0.5 - (y + 0.5) / H) * Math.PI * (75 / 90)));
+  /* noise coordinates: each row a circle of circumference W cos(latitude) cells, so noise
+     features have one size on the ground everywhere */
   const R = W / (2 * Math.PI);
   const CX = new Float32Array(N), CZ = new Float32Array(N), CY = new Float32Array(N);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x, th = (x / W) * 2 * Math.PI;
-    CX[i] = Math.cos(th) * R; CZ[i] = Math.sin(th) * R; CY[i] = y;
+    CX[i] = Math.cos(th) * R * KX[y]; CZ[i] = Math.sin(th) * R * KX[y]; CY[i] = y;
   }
   const noise = makeNoise(rng), noise2 = makeNoise(rng), noise3 = makeNoise(rng);
   const nf = (nz, i, freq, oct, gain) => nz.fbm(CX[i] * freq, CY[i] * freq, CZ[i] * freq, oct, gain);
@@ -218,7 +223,7 @@ function generate(world, pack, rng) {
       for (let k = 0; k < 4; k++) {
         const n = NB4[cell * 4 + k];
         if (n < 0 || plateOf[n] !== -1) continue;
-        const nc = c + (0.4 + 1.6 * jitter[n]) / plates[p].rate;
+        const nc = c + (0.4 + 1.6 * jitter[n]) / plates[p].rate * (k < 2 ? KX[(cell / W) | 0] : 1);
         if (nc < cost[n]) { cost[n] = nc; heap.push(nc, n * 16 + p); }
       }
     }
@@ -251,7 +256,7 @@ function generate(world, pack, rng) {
           const n = NB4[cell * 4 + k];
           if (n < 0 || seen[n] || plateOf[n] !== pl.id) continue;
           seen[n] = 1;
-          heap.push(c + 0.3 + jitter[n] * 2.2 + rng.next() * 0.4, n);
+          heap.push(c + (0.3 + jitter[n] * 2.2 + rng.next() * 0.4) * (k < 2 ? KX[(cell / W) | 0] : 1), n);
         }
       }
       covered += grown;
@@ -297,15 +302,17 @@ function generate(world, pack, rng) {
   /* spread each effect inland within its own plate (multi-source BFS) */
   const srcOf = new Int32Array(N).fill(-1), dist = new Float32Array(N).fill(Infinity);
   {
-    const q = [];
-    for (let i = 0; i < N; i++) if (isSource[i]) { srcOf[i] = i; dist[i] = 0; q.push(i); }
-    for (let h = 0; h < q.length; h++) {
-      const c = q[h];
-      if (dist[c] > 12) continue;
+    const heap = Heap(N * 5 + 8);
+    for (let i = 0; i < N; i++) if (isSource[i]) { srcOf[i] = i; dist[i] = 0; heap.push(0, i); }
+    while (heap.size()) {
+      const d0 = heap.topKey(), c = heap.pop();
+      if (d0 > dist[c] || d0 > 12) continue;
+      const kx = KX[(c / W) | 0];
       for (let k = 0; k < 4; k++) {
         const n = NB4[c * 4 + k];
-        if (n < 0 || plateOf[n] !== plateOf[c] || srcOf[n] !== -1) continue;
-        srcOf[n] = srcOf[c]; dist[n] = dist[c] + 1; q.push(n);
+        if (n < 0 || plateOf[n] !== plateOf[c]) continue;
+        const nd = d0 + (k < 2 ? kx : 1);
+        if (nd < dist[n]) { dist[n] = nd; srcOf[n] = srcOf[c]; heap.push(nd, n); }
       }
     }
   }
@@ -327,14 +334,14 @@ function generate(world, pack, rng) {
     const len = rng.int(4, 9), sx = s % W, sy = (s / W) | 0;
     hotspots.push({ x: sx, y: sy });
     for (let k = 0; k <= len; k++) {
-      const cx = sx + dx * k * 2.3, cy = sy + dy * k * 2.3;
+      const cy = sy + dy * k * 2.3, kh = KX[clamp(Math.round(cy), 0, H - 1)], cx = sx + dx * k * 2.3 / kh, ex = Math.ceil(2 / kh);
       const amp = 0.27 * Math.exp(-k * 0.33) * (cont[s] ? 0.4 : 1);
       const ampM = 6500 * Math.exp(-k * 0.33) * (cont[s] ? 0.35 : 1);
-      for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) {
+      for (let oy = -2; oy <= 2; oy++) for (let ox = -ex; ox <= ex; ox++) {
         const yy = Math.round(cy) + oy;
         if (yy < 0 || yy >= H) continue;
         const i = yy * W + wx(Math.round(cx) + ox);
-        const r2 = ox * ox + oy * oy;
+        const r2 = ox * kh * ox * kh + oy * oy;
         uplift[i] += amp * Math.exp(-r2 / 1.4);
         upliftM[i] += ampM * Math.exp(-r2 / 1.4);
       }
@@ -343,7 +350,7 @@ function generate(world, pack, rng) {
 
   /* a straight plate boundary can leave a one-cell-wide wall; belts should be broad */
   for (const u of [uplift, upliftM]) {
-    const soft = blurWrap(u, W, H, 1);
+    const soft = blurWrap(u, W, H, 1, KX);
     for (let i = 0; i < N; i++) u[i] = u[i] * 0.45 + soft[i] * 0.55;
   }
 
@@ -366,7 +373,7 @@ function generate(world, pack, rng) {
       const k0 = heap.topKey(), c = heap.pop();
       if (k0 > d[c]) continue;
       for (let k = 0; k < 8; k++) {
-        const n = NB8[c * 8 + k], nd = d[c] + DIST8[k];
+        const kx = KX[(c / W) | 0], n = NB8[c * 8 + k], nd = d[c] + (k < 2 ? kx : k < 4 ? 1 : Math.hypot(kx, 1));
         if (n >= 0 && through(n) && nd < d[n]) { d[n] = nd; heap.push(nd, n); }
       }
     }
@@ -376,7 +383,7 @@ function generate(world, pack, rng) {
   const dFoot = bfs((i) => cont[i], (i) => !cont[i], 30);         /* 1 at the foot of its slope */
   const dRidge = bfs((i) => ridge[i], (i) => !cont[i], 40);       /* cells of sea floor from a ridge */
   /* behind the ranges the crust stands higher: uplands and plateaus */
-  const halo = blurWrap(upliftM.map(function (v) { return Math.max(0, v); }), W, H, 3);
+  const halo = blurWrap(upliftM.map(function (v) { return Math.max(0, v); }), W, H, 3, KX);
   /* ----- continental geology -----
      A continent is a patchwork of provinces welded together over its history: old shields (a
      few hundred metres, worn flat), sedimentary platforms (the great lowland plains) and a few
@@ -407,7 +414,7 @@ function generate(world, pack, rng) {
       }
     }
     for (let i = 0; i < N; i++) geoBase[i] = prov[i] >= 0 ? base[prov[i]] : cont[i] ? 300 : 150;
-    geoBase.set(blurWrap(geoBase, W, H, 2));
+    geoBase.set(blurWrap(geoBase, W, H, 2, KX));
     /* about half the provinces' seams are old ranges, each worn to its own height */
     const seam = new Map();
     for (let i = 0; i < N; i++) {
@@ -420,7 +427,7 @@ function generate(world, pack, rng) {
         suture[i] = Math.max(suture[i], seam.get(key));
       }
     }
-    suture.set(blurWrap(suture, W, H, 1));
+    suture.set(blurWrap(suture, W, H, 1, KX));
     /* plateaus and foreland basins from the young ranges, by distance from their plate boundary */
     for (let i = 0; i < N; i++) {
       const s = srcOf[i];
@@ -566,7 +573,8 @@ function generate(world, pack, rng) {
       if (coastDist[c] >= 30) continue;
       for (let k = 0; k < 4; k++) {
         const n = NB4[c * 4 + k];
-        if (n >= 0 && coastDist[n] > coastDist[c] + 1) { coastDist[n] = coastDist[c] + 1; q.push(n); }
+        const st = k < 2 ? KX[(c / W) | 0] : 1;
+        if (n >= 0 && coastDist[n] > coastDist[c] + st + 1e-6) { coastDist[n] = coastDist[c] + st; q.push(n); }
       }
     }
   }
@@ -582,14 +590,14 @@ function generate(world, pack, rng) {
   /* winds: three-cell circulation, as a table over |latitude| (degrees) */
   const U_TAB = [[0, -0.75], [15, -0.95], [30, 0], [45, 1], [60, 0], [75, -0.6], [90, -0.3]];
   const V_TAB = [[0, 0], [15, -0.45], [30, 0], [45, 0.35], [60, 0], [75, -0.35], [90, 0]]; /* + = poleward */
-  const RAIN_TAB = [[0, 2.3], [8, 2.0], [15, 1.0], [25, 0.32], [35, 0.45], [45, 1.15], [58, 1.35], [70, 0.7], [90, 0.4]];
+  const RAIN_TAB = [[0, 2.3], [8, 2.0], [15, 1.0], [25, 0.32], [35, 0.45], [45, 0.95], [58, 1.1], [70, 0.7], [90, 0.4]];
   const tab = (t, d) => { for (let k = 1; k < t.length; k++) if (d <= t[k][0]) return lerp(t[k - 1][1], t[k][1], (d - t[k - 1][0]) / (t[k][0] - t[k - 1][0])); return t[t.length - 1][1]; };
   const nU = new Float32Array(N), nV = new Float32Array(N);
   for (let i = 0; i < N; i++) { nU[i] = nf(noise2, i, 0.05, 2, 0.5) * 0.3; nV[i] = nf(noise3, i, 0.05, 2, 0.5) * 0.2; }
   /* the belts at a season: the whole pattern follows the sun, `shift` degrees north in July and
      south in January; in the summer hemisphere the hot land draws the air in from the sea (the
      monsoon), in winter the cold land pushes it out */
-  const landF = blurWrap(Float32Array.from(E, (e) => (e > 0.5 ? 1 : 0)), W, H, 5);
+  const landF = blurWrap(Float32Array.from(E, (e) => (e > 0.5 ? 1 : 0)), W, H, 5, KX);
   const winds = function (shift, U, V, rainF) {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = y * W + x, lat = DEGL[i] - shift, deg = Math.abs(lat), sgn = lat >= 0 ? -1 : 1; /* poleward = -y in north */
@@ -616,9 +624,10 @@ function generate(world, pack, rng) {
     const i = y * W + x;
     if (!isOcean(i)) continue;
     let dE = 0, dW = 0;
-    for (let d = 1; d <= 16 && !dE; d++) if (!isOcean(y * W + wx(x + d))) dE = d;
-    for (let d = 1; d <= 10 && !dW; d++) if (!isOcean(y * W + wx(x - d))) dW = d;
-    const e = dE ? Math.exp(-(dE - 1) / 6) : 0, w = dW ? Math.exp(-(dW - 1) / 3) : 0;
+    const kx = KX[y];
+    for (let d = 1; d <= Math.min(60, Math.ceil(16 / kx)) && !dE; d++) if (!isOcean(y * W + wx(x + d))) dE = d;
+    for (let d = 1; d <= Math.min(40, Math.ceil(10 / kx)) && !dW; d++) if (!isOcean(y * W + wx(x - d))) dW = d;
+    const e = dE ? Math.exp(-(dE - 1) * kx / 6) : 0, w = dW ? Math.exp(-(dW - 1) * kx / 3) : 0;
     const deg = Math.abs(DEGL[i]), sub = band(deg, 10, 20, 34, 42), pol = band(deg, 38, 48, 62, 72);
     sstA[i] = CT * (sub * (-6 * e + 4 * w) + pol * (10 * e - 6 * w));
     SST[i] = T[i] + sstA[i];
@@ -629,7 +638,7 @@ function generate(world, pack, rng) {
      came from. Continentality and the current effects on land both come from it. */
   const Eg = new Float32Array(N);
   for (let i = 0; i < N; i++) Eg[i] = Math.max(0.5, E[i]);
-  const Es = blurWrap(Eg, W, H, 1);
+  const Es = blurWrap(Eg, W, H, 1, KX);
   const MIX_TAB = [[0, 0.06], [25, 0.06], [35, 0.45], [60, 0.45], [70, 0.15], [90, 0.1]];
   const mix = new Float32Array(N);
   for (let i = 0; i < N; i++) mix[i] = tab(MIX_TAB, Math.abs(DEGL[i]));
@@ -641,13 +650,15 @@ function generate(world, pack, rng) {
   };
   const nbMean = (arr, i) => { let s = 0, n = 0; for (let k = 0; k < 4; k++) { const j = NB4[i * 4 + k]; if (j >= 0) { s += arr[j]; n++; } } return s / n; };
   const marine = new Float32Array(N), anom = new Float32Array(N);
+  /* sea that freezes in winter moderates little: arctic coasts are nearly continental */
+  const frozen = (i) => (SST[i] - CT * (1 + 4 * Math.pow(sinLat[i], 1.5))) / CT - 22.4 < -8;
   {
     let m1 = new Float32Array(N), a1 = new Float32Array(N), m2 = new Float32Array(N), a2 = new Float32Array(N);
     for (let it = 0; it < 40; it++) {
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const i = y * W + x;
-        if (isOcean(i)) { m2[i] = 1; a2[i] = sstA[i]; continue; }
-        const ux = x - U[i], uy = y - Vv[i], mx = Math.max(0.3, mix[i]);
+        if (isOcean(i)) { m2[i] = frozen(i) ? 0.3 : 1; a2[i] = sstA[i]; continue; }
+        const ux = x - U[i] / KX[y], uy = y - Vv[i], mx = Math.max(0.3, mix[i]);
         const keep = Math.exp(-0.01 - 0.06 * Math.hypot(U[i], Vv[i]) - Math.max(0, Es[i] - sampleWrap(Es, ux, uy)) * 2);
         m2[i] = lerp(sampleWrap(m1, ux, uy), nbMean(m1, i), mx) * keep;
         a2[i] = lerp(sampleWrap(a1, ux, uy), nbMean(a1, i), mx) * keep;
@@ -699,7 +710,7 @@ function generate(world, pack, rng) {
       Ts[i] = clamp(T[i] + sgn * Math.sign(DEGL[i]) * Tamp[i], 0, 1);
       recycle[i] = 0.65 * clamp(Ts[i] * 1.5, 0.2, 1);
       CAP[i] = 0.12 + 0.88 * Ts[i];
-      const ux = x - Us[i], uy = clamp(y - Vs[i], 0, H - 1);
+      const ux = x - Us[i] / KX[y], uy = clamp(y - Vs[i], 0, H - 1);
       const x0 = Math.floor(ux), y0 = Math.floor(uy), tx = ux - x0, ty = uy - y0, y1 = Math.min(y0 + 1, H - 1);
       UPI[i * 4] = y0 * W + wx(x0); UPI[i * 4 + 1] = y0 * W + wx(x0 + 1); UPI[i * 4 + 2] = y1 * W + wx(x0); UPI[i * 4 + 3] = y1 * W + wx(x0 + 1);
       UPW[i * 4] = (1 - tx) * (1 - ty); UPW[i * 4 + 1] = tx * (1 - ty); UPW[i * 4 + 2] = (1 - tx) * ty; UPW[i * 4 + 3] = tx * ty;
@@ -920,7 +931,7 @@ function finish(world, pack, L) {
   const tempC = new Float32Array(N), rainMm = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     tempC[i] = -22.4 + 55.6 * T[i];
-    rainMm[i] = isOcean(i) ? 0 : 3640 * Math.pow(precip[i] / pRef, 0.944);
+    rainMm[i] = isOcean(i) ? 0 : 3480 * Math.pow(precip[i] / pRef, 1.025);
   }
 
   /* Koppen's climates from the two seasons: warmest and coldest month (the annual mean plus and
@@ -1136,7 +1147,10 @@ function region(world, si) {
   /* noise on the planet's cylinder, so it lines up with the planet's coordinates */
   const nzA = makeNoise(rng), nzB = makeNoise(rng), nzC = makeNoise(rng);
   const CR = PW / (2 * Math.PI), CX = new Float32Array(N), CZ = new Float32Array(N);
-  for (let i = 0; i < N; i++) { const th = (FX[i] / PW) * 2 * Math.PI; CX[i] = Math.cos(th) * CR; CZ[i] = Math.sin(th) * CR; }
+  for (let i = 0; i < N; i++) {
+    const th = (FX[i] / PW) * 2 * Math.PI, cl = Math.max(0.2, Math.cos((0.5 - (FY[i] + 0.5) / PH) * Math.PI * (75 / 90)));
+    CX[i] = Math.cos(th) * CR * cl; CZ[i] = Math.sin(th) * CR * cl;
+  }
   const nfr = (nz, i, f, o, gn) => nz.fbm(CX[i] * f, FY[i] * f, CZ[i] * f, o, gn);
 
   /* ----- elevation ----- */
@@ -1265,13 +1279,17 @@ function region(world, si) {
   return out;
 }
 
-/* separable box blur that wraps in x */
-function blurWrap(src, W, H, r) {
+/* separable box blur that wraps in x; with kx (a row's column width) it reaches r / kx columns
+   east and west, the same distance on the ground in every row */
+function blurWrap(src, W, H, r, kx) {
   const tmp = new Float32Array(W * H), out = new Float32Array(W * H), n = 2 * r + 1;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    let s = 0;
-    for (let k = -r; k <= r; k++) s += src[y * W + (((x + k) % W) + W) % W];
-    tmp[y * W + x] = s / n;
+  for (let y = 0; y < H; y++) {
+    const rx = kx ? Math.min((W >> 1) - 1, Math.round(r / kx[y])) : r, nx = 2 * rx + 1;
+    for (let x = 0; x < W; x++) {
+      let s = 0;
+      for (let k = -rx; k <= rx; k++) s += src[y * W + (((x + k) % W) + W) % W];
+      tmp[y * W + x] = s / nx;
+    }
   }
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     let s = 0;

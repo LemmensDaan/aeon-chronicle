@@ -90,6 +90,11 @@ function compare(world, reg) {
     lakes: inner.filter((r) => r.lake).length,
     /* lakes where the planet has them: area shares, and overlap (both lake / either lake) */
     lakePlanet: r2(share(pc, (r) => r.lake)), lakeRegion: r2(share(inner, (r) => r.lake)),
+    /* each planet river cell in the square: does the region run a river (or lake) through it? */
+    planetRiverKept: (function () {
+      const has = new Set(); for (const r of inner) if (r.river > 0 || r.lake) has.add(r.planet);
+      const pr = pc.filter((p) => p.river > 0 && !p.lake); return pr.length ? r2(pr.filter((p) => has.has(p.id)).length / pr.length) : null;
+    })(),
     planetLakeKept: (function () { const p = inner.filter((r) => R[r.planet].lake); return p.length ? r2(p.filter((r) => r.lake).length / p.length) : null; })(),
     lakeOverlap: (function () { const e = inner.filter((r) => r.lake || R[r.planet].lake); return e.length ? r2(e.filter((r) => r.lake && R[r.planet].lake).length / e.length) : null; })(),
     desertPlanet: r2(share(pc.filter((r) => !r.barren), (r) => r.biome === "desert")),
@@ -139,7 +144,7 @@ for (const seed of SEEDS) {
 }
 process.stdout.write(" " + (Date.now() - t0) + " ms\n");
 
-const keys = ["cells", "inner", "ms", "landPlanet", "landRegion", "coastAgree", "biomeDiff", "riverShare", "riversInValleys", "lakes", "lakePlanet", "lakeRegion", "planetLakeKept", "lakeOverlap", "desertPlanet", "desert", "mountainPlanet", "mountain", "habitablePlanet", "habitable"];
+const keys = ["cells", "inner", "ms", "landPlanet", "landRegion", "coastAgree", "biomeDiff", "riverShare", "riversInValleys", "lakes", "lakePlanet", "lakeRegion", "planetRiverKept", "planetLakeKept", "lakeOverlap", "desertPlanet", "desert", "mountainPlanet", "mountain", "habitablePlanet", "habitable"];
 const q = (vals, f) => { const s = vals.filter((v) => v != null).sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(f * s.length))] : null; };
 const lines = ["Aeon region harness - " + SEEDS.length + " seeds x " + PER + " squares (the largest lived ones), historical pack", "", "min / median / max over " + rows.length + " regions:"];
 for (const k of keys) { const v = rows.map((r) => r[k]); lines.push("  " + k.padEnd(18) + q(v, 0) + " / " + q(v, 0.5) + " / " + q(v, 0.999)); }

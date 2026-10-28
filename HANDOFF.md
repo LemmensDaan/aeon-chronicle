@@ -479,6 +479,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   their own water balance (Daan liked the region's own lakes; a blocky flat-floor version was
   rejected). Regions keep ~55% of the planet's lake cells (region-report `planetLakeKept`; single-
   cell planet lakes often vanish) and add their own small lakes (region lakes ~4x the planet's).
+  Then (Daan: regions may add their own small lakes and rivers, but the planet's must be there):
+  each planet river's course is carved into the region as a meandering valley falling from cell
+  to cell (`bed`, where finish() skips the drainage swell), the heart of a planet lake (noisy
+  hint > 0.55) is always lake, and the region's broad relief is gentle on the plains (±100 m) and
+  strong only in hills and at the shore. region-report: `planetRiverKept` 0.59 -> 0.91,
+  `planetLakeKept` 0.55 -> 0.93 (medians over 54 regions).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

@@ -707,9 +707,19 @@ Inspired by Age of Empires II's end-of-game statistics, but in Aeon's own parchm
   Drawn into the map at map resolution, so they zoom like rivers and follow the year. Style by the
   smaller end: dotted where a village is involved, solid between towns and cities, paved between
   cities and capitals. Always shown (2026-10-23: Daan dropped the roads toggle; roads are on).
-- **Sprites:** the Rooftops set from `samples/settlements.html` (Daan's pick), with the city made
-  smaller than the capital. Keep the sample page: Daan also likes the Walls and towers set, and it
-  holds eight road styles.
+- **Sprites (2026-10-28):** the chosen set from `samples/settlement-sprites.html`: capital = wide
+  keep with the realm's banner on its face over a 15-wide wall (houses behind), city = belfry over a
+  low wall, town = stockade with houses behind, village = cottage. Every roof is in the owner's
+  colour (burn fx use the last owner's). By the water (`waterOf`, `waterSprite` in pixelmap.js,
+  view only): sea = quay with a light and the realm's own ship for its age bobbing beside it
+  (village: rowboat); river = watermill (wheel turns in four frames) or, when a road crosses the
+  river at the cell, a bridge (town and city on both banks, village a plank bridge only); lake =
+  stilt houses and punts. Capitals keep the plain keep. A water variant is used only when 60% of
+  its water piece lies over water (`wetShare`), on the side the water is, else the plain sprite.
+  Lakes are shaded shallow along the shore, dithered into mid-blue. Extras kept on the sample page
+  for later: narrow keep with a flag, hill city, stockade with lookout, cathedral, gabled row,
+  windmill (idea: add a windmill to a prospering place once there is an economy). The older
+  `samples/settlements.html` still holds the Walls and towers set and eight road styles.
 - **Scenery** (peaks, trees) is drawn in screen space at the settlements' scale (`drawScenery`),
   cached as one layer at low zoom. It used to be painted into the terrain and grew with the land.
 - **One wonder per city or capital** (`ctx.wonderSite`); this changed historical histories too.

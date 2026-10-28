@@ -189,7 +189,12 @@ function changes(w, y0, y1) {
     if (before <= 0) continue;
     const who = [];
     for (let j = after(SK, y0, Y0); j < SK.length && SK[j][0] <= y1; j++) if (SK[j][1] === sl[k][1]) who.push(SK[j][2], SK[j][3]);
-    out.push({ prio: before >= 3 ? 5 : 2 + before * 0.5, who: who, fx: { kind: "burn", at: sl[k][1], tier: Math.min(3, before) } });
+    /* the roofs burn in the colour of the realm that held the place */
+    const OL = w.ownerLog || [];
+    let held = null;
+    for (let j = 0; j < OL.length && OL[j][0] < sl[k][0]; j++) if (OL[j][1] === sl[k][1]) held = OL[j][2];
+    const hp = held != null ? w.polities[held] : null;
+    out.push({ prio: before >= 3 ? 5 : 2 + before * 0.5, who: who, fx: { kind: "burn", at: sl[k][1], tier: Math.min(3, before), color: hp && hp.color } });
   }
   for (const c of out) if (!c.who) c.who = [c.fx.from, c.fx.to, c.fx.pid];
   return out;
@@ -799,7 +804,7 @@ function drawOver(g, env, f, a) {
     const x = Math.round(c[0] - sp.w * env.u / 2), y = Math.round(c[1] - sp.h * env.u / 2);
     frameAt(g, env, x, y, function () {
       if (a < 0.45) {
-        blit(g, sp, 0, 0, 1);
+        blit(g, sp, 0, 0, 1, f.color ? { f: f.color, F: shade(f.color) } : null);
         flames(g, 1, 3 + (a < 0.15 ? 1 : 0), a < 0.15 ? Math.ceil(sp.w / 3) : sp.w - 2, t + f.at);
         if (a > 0.35) dust(g, -1, sp.h - 1, sp.w + 2, t);
       } else {
@@ -892,6 +897,6 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, laurels: function (age) { return LAURELS[Math.max(0, Math.min(4, age))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
+AEON.mapfx = { looks: looksOf, shipSprite: function (kind) { return (SHIPS[kind] || SHIPS.oared)[0]; }, collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, laurels: function (age) { return LAURELS[Math.max(0, Math.min(4, age))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
 
 })();

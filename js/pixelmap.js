@@ -104,17 +104,119 @@ const PEAK = sprite(["....k....", "...kwk...", "..kwwlk..", "..kwlldk.", ".klldd
 const PINE = sprite(["..k..", ".kgk.", ".kgk.", "kgggk", ".kbk."], { k: "#14301f", g: "#2f6e45", b: "#5a3d22" });
 const TREE = sprite([".kkk.", "kgglk", "kgggk", ".kbk."], { k: "#13361b", g: "#3a8f42", l: "#6cc160", b: "#5a3d22" });
 const PALM = sprite(["kg.gk", ".ggg.", "..b..", "..b.."], { k: "#14451f", g: "#2fa055", b: "#7a5a2e" });
-/* the four settlement types, exactly the "Rooftops" set chosen from samples/settlements.html: a
-   cottage, two cottages and a spire, a walled city (the sample's, one column trimmed off each side
-   and one row lower, so it stays smaller than the capital), and the capital: the domed palace of
-   samples/animations.html (Daan's pick), its dome and side roofs in its realm's colours (f, F
-   are replaced when drawn) */
-const ROOF = { k: INK, w: "#efe6d6", r: "#b5452e", g: "#b7b1a4", b: "#7a4a22", f: "#3a6ea5", F: "#244a73", y: "#e0b84f" };
-const VILLAGE = sprite(["...k...", "..krk..", ".krrrk.", "krrrrrk", ".kwkwk.", ".kkkkk."], ROOF);
-const TOWN = sprite(["......k....", ".....kgk...", "..k..kgk...", ".krk.kwk.k.", "krrrkkwkkrk", "kwwwkkwkkwk", "kwkwkkwkkwk", "kkkkkkkkkkk"], ROOF);
-const CITY = sprite(["k.k.....k.k", "kgk.k.k.kgk", "kgkkgkgkkgk", "kgggggggggk", "kgrrkgkrrgk", "kgwwkgkwwgk", "kgggkkkgggk", "kggkbbbkggk", "kkkkkkkkkkk"], ROOF);
-const PALACE = sprite([".......k.......", "......kyk......", ".....kfffk.....", "....kfffFFk....", "..k.kkkkkkk.k..", ".kfkkgwgwgkkfk.",
-                       ".kgkkgggggkkgk.", ".kgkkgwgwgkkgk.", "kkgkkgggggkkgkk", "kgggggkbkgggggk", "kkkkkkkkkkkkkkk"], ROOF);
+/* the settlements, Daan's picks from samples/settlement-sprites.html (2026-10-28): every roof in
+   its realm's colour (f, F are replaced when drawn), a cottage for the village, houses behind a
+   stockade for the town, a belfry over a low wall for the city, and for the capital a wide keep with
+   the realm's banner hung down its face, houses behind its wall. Wood h light, b dark; c sailcloth,
+   e a lighthouse's red stripe, o its fire; d and i are the ships' (mapfx.js SHIPS) */
+const ROOF = { k: INK, w: "#efe6d6", g: "#b7b1a4", b: "#7a4a22", B: "#4e2f16", h: "#a8743c", f: "#3a6ea5", F: "#244a73", y: "#e0b84f",
+               c: "#efe6d6", d: "#c9bc9a", i: "#8f969e", e: "#b5452e", o: "#e8742a" };
+const rep = function (ch, n) { return new Array(n + 1).join(ch); };
+const alt = function (n, a, b) { let s = ""; for (let i = 0; i < n; i++) s += i % 2 ? b : a; return s; };
+/* several sprites laid into one, later parts over earlier ones; the first part is the settlement
+   itself: bx, by, bw, bh say where it lies in the whole; ax is the column (in the first part's frame)
+   that stands on the water's edge or on the river */
+function composed(parts, ax) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of parts) { x0 = Math.min(x0, p[1]); y0 = Math.min(y0, p[2]); x1 = Math.max(x1, p[1] + p[0].w); y1 = Math.max(y1, p[2] + p[0].h); }
+  const grid = [];
+  for (let j = y0; j < y1; j++) grid.push(new Array(x1 - x0).fill("."));
+  for (const p of parts) for (let j = 0; j < p[0].h; j++) for (let i = 0; i < p[0].w; i++) {
+    const ch = p[0].rows[j][i];
+    if (ch !== ".") grid[p[2] + j - y0][p[1] + i - x0] = ch;
+  }
+  const sp = sprite(grid.map(function (r) { return r.join(""); }), ROOF);
+  sp.ax = (ax || 0) - x0; sp.bx = -x0; sp.by = -y0; sp.bw = parts[0][0].w; sp.bh = parts[0][0].h;
+  return sp;
+}
+/* the same, mirrored, for water on the left */
+function mirrored(sp) {
+  const m = sprite(sp.rows.map(function (r) { return r.split("").reverse().join(""); }), sp.pal);
+  m.ax = sp.w - 1 - sp.ax; m.bx = sp.w - sp.bx - sp.bw; m.by = sp.by; m.bw = sp.bw; m.bh = sp.bh;
+  return m;
+}
+/* a house behind a wall shows only its roof and a row of plaster over it */
+const LOW5 = sprite([".kkk.", "kffFk", "kwwwk"], ROOF);
+const LOW7 = sprite(["..kkk..", ".kffFk.", "kfffFFk", "kwwwwwk"], ROOF);
+const HOUSE5 = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwkwk", "kkkkk"], ROOF);
+const HOUSE7 = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwkwkwk", "kwwwwwk", "kkkkkkk"], ROOF);
+function wall(n, h) {
+  const rows = [alt(n, "k", "."), rep("k", n)], c = n >> 1;
+  while (rows.length < h - 1) rows.push("k" + rep("g", n - 2) + "k");
+  rows.push(rep("k", n));
+  rows[h - 3] = rows[h - 3].slice(0, c - 1) + "kkk" + rows[h - 3].slice(c + 2);
+  rows[h - 2] = rows[h - 2].slice(0, c - 2) + "kbbbk" + rows[h - 2].slice(c + 3);
+  return sprite(rows, ROOF);
+}
+/* a low wall: merlons, coping, a stone face with a brown dot for its gate, a foot */
+function lowWall(n) {
+  const face = "k" + rep("g", n - 2) + "k", c = n >> 1;
+  return sprite([alt(n, "k", "."), rep("k", n), face.slice(0, c) + "b" + face.slice(c + 1), rep("k", n)], ROOF);
+}
+const KEEP = sprite([alt(7, "k", "."), rep("k", 7), "kgkkkgk", "kgfffgk", "kgfffgk", "kgfFfgk", "kgfgfgk", "kgggggk", "kgggggk", "kkkkkkk"], ROOF);
+const BELFRY = sprite([".k.", "kfk", "kFk", "kkk", "kyk", "kkk", "kgk", "kgk", "kgk", "kkk"], ROOF);
+const STOCKADE = sprite([alt(11, "k", "."), "khbhkkkhbhk", "khbhkBkhbhk", rep("k", 11)], ROOF);
+const VILLAGE = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", ".kwkwk.", ".kkkkk."], ROOF);
+const TOWN = composed([[LOW5, 0, 3], [LOW7, 4, 2], [STOCKADE, 0, 5]]);
+const CITY = composed([[LOW7, 0, 3], [LOW5, 6, 4], [BELFRY, 5, 0], [lowWall(11), 0, 6]]);
+const PALACE = composed([[LOW5, 0, 5], [LOW5, 10, 5], [KEEP, 4, 1], [wall(15, 5), 0, 7]]);
+
+/* by the water: on the open sea a quay with a light at its tip and the realm's own ship (the one its
+   fleets sail, mapfx.js) bobbing beside it; on a river a watermill, or a bridge where a road crosses
+   the river there (both banks built for a town or city); on a lake houses on stilts and punts */
+const DOT = sprite(["."], ROOF);
+const ROWBOAT = sprite(["k...k", "kbbbk", ".kkk."], ROOF);
+const PUNT = sprite(["..k...", ".kwk..", "..k...", "kbbbbk", ".kkkk."], ROOF);
+const LIGHT_S = sprite([".k.", "kok", "kkk", "kwk", "kek", "kwk", "kek", "kgk", "kkk"], ROOF);
+const LIGHT_L = sprite(["..k..", ".kok.", "kkkkk", ".kwk.", ".kek.", ".kwk.", ".kek.", ".kwk.", "kgggk", "kkkkk"], ROOF);
+const BRIDGE_S = sprite(["kkkkkkk", "bbbbbbb", "b.....b"], ROOF);
+const BRIDGE_M = sprite(["kkkkkkkkk", "ggggggggg", "ggkkkkkgg", "gk.....kg", "kk.....kk"], ROOF);
+const BRIDGE_L = sprite(["kkkkkkkkkkk", "ggggggggggg", "gkkkgggkkkg", "k...kgk...k", "k...kgk...k"], ROOF);
+const MILL = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwkwk", "kkkkk"], ROOF);
+const BIGMILL = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwwkwwk", "kwwkbwk", "kkkkkkk"], ROOF);
+/* the wheel turns clockwise in four frames 22.5 degrees apart */
+const WHEELS = [[".hkh.", "hhkhh", "kkkkk", "hhkhh", ".hkh."], [".hhk.", "khkhh", "hkkkh", "hhkhk", ".khh."],
+                [".hhh.", "hkhkh", "hhkhh", "hkhkh", ".hhh."], [".khh.", "hhkhk", "hkkkh", "khkhh", ".hhk."]].map(function (r) { return sprite(r, ROOF); });
+const STILT = sprite(["..k..", ".kfk.", "kffFk", "kwkwk", "kkkkk", "b...b", "b...b"], ROOF);
+const STILT_W = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwkwkwk", "kkkkkkk", "b.b.b.b", "b.b.b.b"], ROOF);
+const WALK = sprite(["kkkkk", "bbbbb", "b...b"], ROOF);
+function quay(n, stone) { return sprite(stone ? [rep("k", n), rep("g", n), alt(n, "k", "g")] : [rep("k", n), rep("b", n), Array.from({ length: n }, function (_, i) { return i % 3 ? "." : "k"; }).join("")], ROOF); }
+/* the ship lies behind the quay, alongside it, the light on the quay's tip past its bow; bob lowers
+   the ship a pixel (an empty pixel holds the frame, so the settlement never moves) */
+function harbour(base, ship, light, stone, bob) {
+  const q = quay(ship.w + 1 + light.w, stone), qx = base.w, qy = base.h - q.h + 1;
+  return composed([[base, 0, 0], [DOT, qx + 1, qy + 2 - ship.h], [ship, qx + 1, qy + 2 - ship.h + bob], [base, 0, 0], [q, qx, qy], [light, qx + q.w - light.w, qy + 1 - light.h]], qx);
+}
+function waterSprite(kind, tier, shipKind, bob, wheel) {
+  const B = [null, VILLAGE, TOWN, CITY][tier];
+  if (kind === "sea") {
+    if (tier === 1) return composed([[B, 0, 0], [DOT, 8, 2], [ROWBOAT, 8, 2 + bob]], 7);
+    const ship = AEON.mapfx && AEON.mapfx.shipSprite ? AEON.mapfx.shipSprite(shipKind) : ROWBOAT;
+    return tier === 2 ? harbour(B, ship, LIGHT_S, false, bob) : harbour(B, ship, LIGHT_L, true, bob);
+  }
+  if (kind === "mill") {
+    const W = WHEELS[wheel];
+    if (tier === 1) return composed([[B, 0, 0], [MILL, 7, 0], [W, 10, 1]], 12);
+    if (tier === 2) return composed([[B, 0, 0], [MILL, B.w, B.h - 6], [W, B.w + 3, B.h - 5]], B.w + 5);
+    return composed([[B, 0, 0], [BIGMILL, B.w, B.h - 7], [W, B.w + 5, B.h - 5]], B.w + 7);
+  }
+  if (kind === "bridge") {
+    if (tier === 1) return composed([[B, 0, 0], [BRIDGE_S, 6, 3]], 9);
+    if (tier === 2) return composed([[B, 0, 0], [BRIDGE_M, B.w - 1, B.h - 5], [HOUSE5, B.w + 7, B.h - 6]], B.w + 3);
+    return composed([[B, 0, 0], [BRIDGE_L, B.w - 1, B.h - 5], [HOUSE5, B.w + 9, B.h - 6], [HOUSE7, B.w + 13, B.h - 7]], B.w + 4);
+  }
+  /* lake */
+  if (tier === 1) return composed([[B, 0, 0], [STILT, 8, -1], [PUNT, 14, 1]], 7);
+  if (tier === 2) return composed([[B, 0, 0], [WALK, B.w - 1, B.h - 3], [STILT, B.w + 3, B.h - 8], [STILT, B.w + 8, B.h - 7], [PUNT, B.w + 14, B.h - 5]], B.w);
+  return composed([[B, 0, 0], [WALK, B.w - 1, B.h - 3], [STILT_W, B.w + 3, B.h - 9], [STILT, B.w + 10, B.h - 8], [PUNT, B.w + 16, B.h - 6], [ROWBOAT, B.w + 9, B.h]], B.w);
+}
+const WATER_SPRITES = new Map();
+function waterSpriteCached(kind, tier, shipKind, bob, wheel, left) {
+  const key = kind + tier + shipKind + bob + wheel + (left ? "L" : "R");
+  let sp = WATER_SPRITES.get(key);
+  if (!sp) { sp = waterSprite(kind, tier, shipKind, bob, wheel); if (left) sp = mirrored(sp); WATER_SPRITES.set(key, sp); }
+  return sp;
+}
 /* a realm colour, darkened for the shaded side of its banner */
 function darker(hex) { const c = rgb(hex || "#888888"); return "rgb(" + Math.round(c[0] * 0.62) + "," + Math.round(c[1] * 0.62) + "," + Math.round(c[2] * 0.62) + ")"; }
 /* wonders: the designs of samples/animations.html (round 2 and the Greek / Roman set), in sand
@@ -194,7 +296,17 @@ function buildTerrain(world) {
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
     const i = y * VW + x, e = E[i], t = bayer(x, y);
     if (!land[i]) {
-      if (R[cellOf[i]].lake) { put(i, (x + y) % 5 ? P.shallow : P.mid); continue; }
+      if (R[cellOf[i]].lake) {
+        /* lakes (Daan, 2026-10-28, from samples/settlement-sprites.html): shallow along the shore,
+           dithered into mid-blue further out, no stripes and no surf */
+        let d = 8;
+        for (let dy = -7; dy <= 7 && d > 1; dy++) for (let dx = -7; dx <= 7; dx++) {
+          const ny = y + dy, dd = Math.max(Math.abs(dx), Math.abs(dy));
+          if (dd < d && ny >= 0 && ny < VH && land[ny * VW + (x + dx + VW) % VW]) d = dd;
+        }
+        put(i, d <= 2 ? P.shallow : d <= 7 && t >= (d - 2) / 5 ? P.shallow : P.mid);
+        continue;
+      }
       let coast = false;
       for (let dy = -1; dy <= 1 && !coast; dy++) for (let dx = -1; dx <= 1; dx++) {
         const ny = y + dy;
@@ -426,8 +538,14 @@ function compose(c, w, mode, roads, contest, focus, provOf) {
 /* Every road is the same solid brown track (Daan, 2026-10-24: the cobbled roads between cities and
    capitals showed up only now and then, so one style for all). */
 const ROAD = [96, 68, 38], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
-function drawRoads(c, w, d) {
-  const R = w.regions, W = w.width, VW = c.VW, VH = c.VH, land = c.land, by = {};
+/* the roads of a year's view, as pairs of regions [a, b]; worked out once per view (the overlay
+   reads them too: a river settlement a road crosses gets a bridge) */
+const ROAD_LINKS = new WeakMap();
+function roadLinks(w) {
+  let out = ROAD_LINKS.get(w);
+  if (out) return out;
+  out = [];
+  const R = w.regions, W = w.width, by = {};
   for (let k = 0; k < R.length; k++) {
     const r = R[k];
     if (r.settlement && r.owner != null && !r.barren) (by[r.owner] || (by[r.owner] = [])).push(k);
@@ -442,6 +560,31 @@ function drawRoads(c, w, d) {
     }
     return true;
   };
+  for (const id in by) {
+    const nodes = by[id];
+    if (nodes.length < 2) continue;
+    const p = w.polities[id], cap = p && nodes.indexOf(p.capital) >= 0 ? p.capital : nodes[0];
+    const linked = {}, key = function (a, b) { return a < b ? a + "-" + b : b + "-" + a; };
+    const tree = [cap], rest = nodes.filter(function (n) { return n !== cap; });
+    while (rest.length) {
+      let bd = Infinity, bi = -1, from = -1;
+      for (let i = 0; i < rest.length; i++) for (const t of tree) { const dd = dist2(t, rest[i]); if (dd < bd) { bd = dd; bi = i; from = t; } }
+      const to = rest.splice(bi, 1)[0];
+      tree.push(to);
+      if (bd <= ROAD_MAX * ROAD_MAX && overland(from, to)) { linked[key(from, to)] = true; out.push([from, to]); }
+    }
+    nodes.filter(function (n) { return n !== cap; })
+      .sort(function (a, b) { return dist2(cap, a) - dist2(cap, b); }).slice(0, CAPITAL_SPOKES)
+      .forEach(function (n) {
+        if (!linked[key(cap, n)] && dist2(cap, n) <= ROAD_MAX * ROAD_MAX && overland(cap, n)) { linked[key(cap, n)] = true; out.push([cap, n]); }
+      });
+  }
+  ROAD_LINKS.set(w, out);
+  return out;
+}
+function drawRoads(c, w, d) {
+  const R = w.regions, W = w.width, VW = c.VW, VH = c.VH, land = c.land;
+  const dxw = function (a, b) { let dd = b - a; if (dd > W / 2) dd -= W; if (dd < -W / 2) dd += W; return dd; };
   const dot = function (x, y, col) {
     x = ((Math.round(x) % VW) + VW) % VW; y = Math.round(y);
     if (y < 0 || y >= VH) return;
@@ -461,25 +604,7 @@ function drawRoads(c, w, d) {
     const mx = (ax + bx) / 2 - (by2 - ay) / len * bend, my = (ay + by2) / 2 + (bx - ax) / len * bend;
     line(mx, my, bx, by2, line(ax, ay, mx, my, 0));
   };
-  for (const id in by) {
-    const nodes = by[id];
-    if (nodes.length < 2) continue;
-    const p = w.polities[id], cap = p && nodes.indexOf(p.capital) >= 0 ? p.capital : nodes[0];
-    const linked = {}, key = function (a, b) { return a < b ? a + "-" + b : b + "-" + a; };
-    const tree = [cap], rest = nodes.filter(function (n) { return n !== cap; });
-    while (rest.length) {
-      let bd = Infinity, bi = -1, from = -1;
-      for (let i = 0; i < rest.length; i++) for (const t of tree) { const dd = dist2(t, rest[i]); if (dd < bd) { bd = dd; bi = i; from = t; } }
-      const to = rest.splice(bi, 1)[0];
-      tree.push(to);
-      if (bd <= ROAD_MAX * ROAD_MAX && overland(from, to)) { linked[key(from, to)] = true; road(from, to); }
-    }
-    nodes.filter(function (n) { return n !== cap; })
-      .sort(function (a, b) { return dist2(cap, a) - dist2(cap, b); }).slice(0, CAPITAL_SPOKES)
-      .forEach(function (n) {
-        if (!linked[key(cap, n)] && dist2(cap, n) <= ROAD_MAX * ROAD_MAX && overland(cap, n)) { linked[key(cap, n)] = true; road(cap, n); }
-      });
-  }
+  for (const l of roadLinks(w)) road(l[0], l[1]);
 }
 
 /* ------------------------------------------------------------ ambient animation */
@@ -563,6 +688,48 @@ function makeView(canvas, world, opts) {
 /* No names are drawn on the map: places and realms are named in the tooltip on hover. */
 /* device pixels per sprite pixel: sprites grow with zoom, but only with its square root, so a
    zoomed-in map fills up without the markers swelling as fast as the land */
+/* which water a settlement stands by, and on which side: the open sea first, then a river through
+   its cell (a bridge if a road crosses the river there: roads leave the cell on both sides of the
+   river's line; else a watermill), then a lake shore. null when it stands by none. */
+function waterOf(w, r) {
+  const R = w.regions, W = w.width;
+  const dxw = function (a, b) { let dd = b - a; if (dd > W / 2) dd -= W; if (dd < -W / 2) dd += W; return dd; };
+  let sea = 0, seaX = 0, lake = 0, lakeX = 0;
+  for (const n of r.neighbors || []) {
+    const q = R[n];
+    if (!q || !q.barren) continue;
+    if (q.lake) { lake++; lakeX += dxw(r.x, q.x); } else { sea++; seaX += dxw(r.x, q.x); }
+  }
+  if (sea) return { kind: "sea", left: seaX < 0 };
+  if (r.river && r.flowTo != null && r.flowTo >= 0 && R[r.flowTo]) {
+    const f = R[r.flowTo], rx = dxw(r.x, f.x), ry = f.y - r.y;
+    let pos = false, neg = false;
+    for (const l of roadLinks(w)) {
+      const o = l[0] === r.id ? l[1] : l[1] === r.id ? l[0] : -1;
+      if (o < 0) continue;
+      const cr = rx * (R[o].y - r.y) - ry * dxw(r.x, R[o].x);
+      if (cr > 0) pos = true; else if (cr < 0) neg = true;
+    }
+    return { kind: pos && neg ? "bridge" : "mill", left: cellRand(r.id, 5) < 0.5 };
+  }
+  if (lake) return { kind: "lake", left: lakeX < 0 };
+  return null;
+}
+/* how much of a water sprite's piece (the columns beyond its water column, along the settlement's
+   ground line) lies over water on the map */
+function wetShare(c, v, X0, sp, x, y, u) {
+  const left = sp.ax > sp.bx + sp.bw / 2 ? false : sp.ax < sp.bx;    /* mirrored: the piece is left of the settlement */
+  const i0 = left ? 0 : sp.ax, i1 = left ? sp.ax : sp.w - 1, yb = y + (sp.by + sp.bh - 1) * u + (u >> 1);
+  const my = Math.floor((yb - v.Y0) / v.P);
+  if (my < 0 || my >= c.VH) return 0;
+  let wet = 0, n = 0;
+  for (let i = i0; i <= i1; i++) {
+    const mx = ((Math.floor((x + i * u + (u >> 1) - X0) / v.P) % c.VW) + c.VW) % c.VW;
+    n++;
+    if (!c.land[my * c.VW + mx]) wet++;
+  }
+  return n ? wet / n : 0;
+}
 function spriteUnit(v) { return Math.max(1, Math.round(Math.min(6, Math.max(1, Math.sqrt(v.P / v.dpr) * 1.15)) * v.dpr)); }
 function drawOverlay(ctx, w, c, v, opts, tiles) {
   const dpr = v.dpr, pc = v.P / dpr;                         // CSS pixels per map pixel
@@ -612,17 +779,51 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
     }
   };
   let wondersPlaced = false;
+  const time = opts.time != null ? opts.time : 0, looks = {};
   for (const st of sites) {
     if (!wondersPlaced && st.rank < 1000) { placeWonders(); wondersPlaced = true; }
     /* a breakaway's new seat stays the town it was until mapfx.js has crowned it */
     const town = st.cap && AEON.mapfx && AEON.mapfx.asTown(st.r.id), tier = town ? (st.r.settlement ? st.r.settlement.tier : 2) : st.tier;
-    const sp = st.cap && !town ? PALACE : tier >= 3 ? CITY : tier === 2 ? TOWN : VILLAGE;
-    const x = Math.round(sx(st.r.x + 0.5) - sp.w * u / 2), y = Math.round(sy(st.r.y + 0.5) - sp.h * u / 2);
-    const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
-    if (!free(b)) continue;
-    boxes.push(b);
-    const banner = st.cap && !town ? { f: st.cap.color, F: darker(st.cap.color) } : null;
-    drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, banner); });
+    const capital = st.cap && !town, plain = capital ? PALACE : tier >= 3 ? CITY : tier === 2 ? TOWN : VILLAGE;
+    const owner = capital ? st.cap : w.polities[st.r.owner];
+    const roofs = owner && owner.color ? { f: owner.color, F: darker(owner.color) } : null;
+    const cx = sx(st.r.x + 0.5), cy = sy(st.r.y + 0.5);
+    /* by the water, if it fits; else the plain sprite (a wonder may stand where the quay would) */
+    const tries = [];
+    const wt = capital ? null : waterOf(w, st.r);
+    if (wt) {
+      const t3 = Math.min(3, tier);
+      let shipKind = "sail";
+      if (wt.kind === "sea" && t3 > 1 && owner) {
+        if (!looks[owner.id]) looks[owner.id] = AEON.mapfx && AEON.mapfx.looks ? AEON.mapfx.looks(baseOf(w), owner, w.year).ship : "sail";
+        shipKind = looks[owner.id];
+      }
+      const bob = Math.sin(time / 300 + st.r.id * 1.7) > 0.4 ? 1 : 0, wheel = Math.floor(time / 160) % 4;
+      const at = function (left) {
+        const sp = waterSpriteCached(wt.kind, t3, shipKind, wt.kind === "sea" ? bob : 0, wt.kind === "mill" ? wheel : 0, left);
+        /* a quay or stilts reach out from the settlement on its cell; a wheel or a bridge stands
+           on the river, which runs through the cell's middle */
+        const x = wt.kind === "mill" || wt.kind === "bridge" ? Math.round(cx - (sp.ax + 0.5) * u) : Math.round(cx - sp.bw * u / 2) - sp.bx * u;
+        return [sp, x, Math.round(cy - sp.bh * u / 2) - sp.by * u];
+      };
+      if (wt.kind === "sea" || wt.kind === "lake") {
+        /* the quay and its ship, or the stilts, must stand on water: try the side the water lies
+           on, then the other; if neither is mostly water (the shore runs east-west here), none */
+        for (const left of [wt.left, !wt.left]) {
+          const tr = at(left);
+          if (wetShare(c, v, tiles[0], tr[0], tr[1], tr[2], u) >= 0.6) { tries.push(tr); break; }
+        }
+      } else tries.push(at(wt.left));
+    }
+    tries.push([plain, Math.round(cx - plain.w * u / 2), Math.round(cy - plain.h * u / 2)]);
+    for (const tr of tries) {
+      const sp = tr[0], x = tr[1], y = tr[2];
+      const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
+      if (!free(b)) continue;
+      boxes.push(b);
+      drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, roofs); });
+      break;
+    }
   }
 
   /* ruins: where a settlement was destroyed and nothing has been built since, its ruin stays on

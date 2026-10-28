@@ -57,6 +57,16 @@ AEON.createRegion = function (planet, si) {
   world.expandTries = Math.max(1, Math.round(landOf(R) / Math.max(1, landOf(planet.regions))));
   /* no realm rules much more than a third of the land for long (core.js overreach) */
   world.reach = 0.3;
+  /* a land the size of a continent ends its history with more realms than the pack's planet did:
+     the late centuries fold fewer of them together */
+  world.realmsAtEnd = Math.round(pack.realmsAtEnd * 2);
+  /* client kingdoms last generations before they are folded in (core.js vassalTick) */
+  world.vassalYears = 60;
+  world.absorbRate = 0.4;
+  /* a region has nearly three times the planet's land: the per-cell bookkeeping is lightened
+     (core.js) so it plays about as fast */
+  world.popEvery = 4;
+  world.fastNeighbors = true;
 
   C.makeProvinces(world);
   seedFromSketch(world, planet, si);
@@ -247,36 +257,49 @@ function contact(world, c) {
   /* a share of the land people hold (and a little of the empty land round it): an early conquest
      of a thinly settled land is a small one */
   const settled = land.filter(function (r) { return r.owner; }).length;
-  const order = spread(world, entry, Math.round(share * Math.max(settled, 0.1 * land.length)));
-  world._sketch.campaigns.push({ c: c, people: people, p: p, entry: entry, cells: order, turns: TURNS[c.outcome] || 4,
+  const groups = spread(world, entry, Math.round(share * Math.max(settled, 0.1 * land.length)));
+  world._sketch.campaigns.push({ c: c, people: people, p: p, entry: entry, groups: groups, cells: [].concat.apply([], groups), turns: TURNS[c.outcome] || 4,
     left: TURNS[c.outcome] || 4, waves: 1, losers: {}, from: index(c.from), holder: holder ? holder.id : null, prev: {} });
 }
 
-/* the land the newcomers mean to take: inner land outward from where they came in */
+/* the land the newcomers mean to take, by whole provinces (core.js makeProvinces): from the one
+   they came in by, each next the nearest to it of those bordering what they have, until there
+   are n cells; when their landmass is all taken, on across the water to the nearest province.
+   Returns the provinces' cells, a list each, in the order they are taken. */
 function spread(world, entry, n) {
-  const R = world.regions, seen = {}, q = [entry.id];
-  seen[entry.id] = true;
-  let h = 0;
-  while (q.length < n) {
-    for (; h < q.length && q.length < n; h++) {
-      for (const nb of R[q[h]].neighbors) {
-        const r = R[nb];
-        if (seen[nb] || r.barren || r.beyond) continue;
-        seen[nb] = true; q.push(nb);
-      }
-    }
-    if (q.length >= n) break;
-    /* their landmass is all taken: on across the water to the nearest land not yet theirs */
-    let next = null, bd = Infinity;
-    for (const r of R) {
-      if (r.barren || r.beyond || seen[r.id]) continue;
-      const d = Math.hypot(r.x - entry.x, r.y - entry.y);
-      if (d < bd) { bd = d; next = r; }
-    }
-    if (!next) break;
-    seen[next.id] = true; q.push(next.id);
+  const R = world.regions, cells = {}, cen = {};
+  for (const r of R) {
+    if (r.barren || r.beyond) continue;
+    const k = r.province != null ? r.province : "c" + r.id;
+    (cells[k] || (cells[k] = [])).push(r.id);
   }
-  return q.slice(0, Math.max(1, n));
+  for (const k in cells) {
+    let x = 0, y = 0;
+    for (const id of cells[k]) { x += R[id].x; y += R[id].y; }
+    cen[k] = [x / cells[k].length, y / cells[k].length];
+  }
+  const keyOf = (r) => (r.province != null ? r.province : "c" + r.id);
+  const dist = (k) => Math.hypot(cen[k][0] - entry.x, cen[k][1] - entry.y);
+  const taken = {}, groups = [], border = {};
+  let count = 0;
+  const take = function (k) {
+    taken[k] = true; delete border[k]; groups.push(cells[k]); count += cells[k].length;
+    for (const id of cells[k]) for (const nb of R[id].neighbors) {
+      const r = R[nb];
+      if (r.barren || r.beyond) continue;
+      const q = keyOf(r);
+      if (!taken[q]) border[q] = true;
+    }
+  };
+  take(keyOf(entry));
+  while (count < n) {
+    let best = null, bd = Infinity;
+    const pool = Object.keys(border).length ? Object.keys(border) : Object.keys(cells).filter((k) => !taken[k]);
+    for (const k of pool) { const d = dist(k); if (d < bd) { bd = d; best = k; } }
+    if (best == null) break;
+    take(best);
+  }
+  return groups;
 }
 
 function nearestRealm(world, r) {
@@ -339,17 +362,21 @@ function campaignTick(world, cp) {
     return;
   }
   /* this turn's stretch */
+  /* whole provinces at a time, about as many cells a turn as the campaign has turns left */
   const per = Math.ceil(cp.cells.length / cp.turns);
   let taken = 0, cities = [];
-  for (const id of cp.cells) {
-    if (taken >= per) break;
-    const r = R[id];
-    if (r.owner === cp.p.id) continue;
-    const from = r.owner && world.polities[r.owner];
-    if (from) cp.losers[from.id] = true;
-    if (r.settlement && from && from.capital === r.id) cities.push(placeName(r, world) + " (" + from.name + ")");
-    C.transferRegion(world, r, cp.p);
-    taken++;
+  for (const g of cp.groups) {
+    if (taken >= per && cp.left > 0) break;
+    if (g.every(function (id) { return R[id].owner === cp.p.id; })) continue;
+    for (const id of g) {
+      const r = R[id];
+      if (r.owner === cp.p.id) continue;
+      const from = r.owner && world.polities[r.owner];
+      if (from) cp.losers[from.id] = true;
+      if (r.settlement && from && from.capital === r.id) cities.push(placeName(r, world) + " (" + from.name + ")");
+      C.transferRegion(world, r, cp.p);
+      taken++;
+    }
   }
   if (cities.length) record(world, "sketch-campaign", 3, cp.p.name + " took " + cities.slice(0, 3).join(", ") + ".", [{ kind: "polity", id: cp.p.id }], null, null);
   if (cp.left > 0) return;

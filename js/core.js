@@ -275,6 +275,15 @@ function regionsOf(world, polity) {
 }
 
 function neighborPolities(world, polity) {
+  /* a region looks each realm's neighbours up once a turn (world.fastNeighbors) */
+  if (world.fastNeighbors) {
+    const c = world._nb && world._nb.year === world.year ? world._nb : (world._nb = { year: world.year, by: {} });
+    if (c.by[polity.id]) return c.by[polity.id].filter(function (p) { return !p.ended; });
+    return (c.by[polity.id] = neighborScan(world, polity)).slice();
+  }
+  return neighborScan(world, polity);
+}
+function neighborScan(world, polity) {
   const seen = {};
   for (const rid of polity.regions) {
     const r = world.regions[rid];
@@ -530,7 +539,9 @@ AEON.maxTier = function (r, world) {
    annex small realms while the world is above it, so many small states consolidate into a few. */
 AEON.realmCap = function (world) {
   const p = world.pack, t = clamp((world.year - p.startYear) / Math.max(1, p.endYear - p.startYear), 0, 1);
-  return Math.round(p.realmsAtStart - (p.realmsAtStart - p.realmsAtEnd) * t);
+  /* a world may hold more realms at the end than its pack says (the regions, js/region.js) */
+  const end = world.realmsAtEnd != null ? world.realmsAtEnd : p.realmsAtEnd;
+  return Math.round(p.realmsAtStart - (p.realmsAtStart - end) * t);
 };
 /* where a polity's capital stood in a year: capitals move (to a conquered greater city, or in a
    struggle at court), and polity.capitalLog records each move */
@@ -1395,7 +1406,7 @@ function allianceTick(world, alive) {
     if (!AEON.treatyBetween(world, members[i], members[j], "alliance")) AEON.treaty(world, "alliance", members[i], members[j], { coalition: H.id, until: world.year + 30 });
   recordEvent(world, "coalition", { importance: 4, tags: ["war", "alliance", "coalition", "diplomacy"],
     actors: [{ kind: "polity", id: H.id }].concat(members.map(function (q) { return { kind: "polity", id: q.id }; })), regionId: lead.capital,
-    text: "Alarmed at the size of " + nameOf(H) + ", which now held " + H.regions.length + " provinces, " + members.map(nameOf).join(", ").replace(/, ([^,]*)$/, " and $1") +
+    text: "Alarmed at the size of " + nameOf(H) + ", which now held " + provincesIn(world, H) + " provinces, " + members.map(nameOf).join(", ").replace(/, ([^,]*)$/, " and $1") +
       " made common cause against it, and " + nameOf(lead) + " led them to war." });
   joinWar(world, lead, H, { joined: false, coalition: true, cause: "the coalition against " + nameOf(H) });
   const lt = AEON.treatyBetween(world, lead, H, "war");
@@ -1428,13 +1439,17 @@ AEON.makeVassal = function (world, v, lord, extra) {
    world.reach of the land has outgrown what it can rule. 0 below half of that, 1 at it, up to 2.
    Its wars of conquest mostly stall, its vassals are no longer folded in and break away more
    easily, and it spreads into empty land more slowly. The planet has no reach, so its history is
-   untouched. */
+   untouched. Regions also keep vassals longer before folding them in (world.vassalYears, 30 on
+   the planet) and fold them in less eagerly (world.absorbRate, 1 on the planet). */
 function overreach(world, p) {
   if (!world.reach || !p || !p.regions) return 0;
   if (!world._landCells) { let n = 0; for (const r of world.regions) if (!r.barren) n++; world._landCells = n || 1; }
   return clamp((p.regions.length / world._landCells / world.reach - 0.5) * 2, 0, 2);
 }
 AEON.overreach = overreach;
+/* how many provinces a realm holds, for the chronicle: in a region its cells are counted by the
+   provinces they lie in; the planet keeps its old count (one a cell) */
+function provincesIn(world, p) { return world.square ? Math.max(1, AEON.provinceCount(world, p)) : p.regions.length; }
 
 function vassalTick(world) {
   const rng = world.rng, over = living(world).length > AEON.realmCap(world);
@@ -1458,8 +1473,8 @@ function vassalTick(world) {
       if (war) joinWar(world, l, v, { joined: false, cause: "the defection of " + nameOf(v) });
       continue;
     }
-    if (world.year - t.start >= 30 && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && lordOver < 1 && rng.chance((over ? 0.25 : 0.06) * (1 - lordOver))) {
-      const n = v.regions.length, cap = world.regions[v.capital], seat = cap && (cap.settlement ? cap.settlement.name : cap.name);
+    if (world.year - t.start >= (world.vassalYears || 30) && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && lordOver < 1 && rng.chance((over ? 0.25 : 0.06) * (1 - lordOver) * (world.absorbRate || 1))) {
+      const n = provincesIn(world, v), cap = world.regions[v.capital], seat = cap && (cap.settlement ? cap.settlement.name : cap.name);
       recordEvent(world, "vassal-absorbed", { importance: 4, tags: ["vassal", "annexation", "territory", "fall", "diplomacy"],
         actors: [{ kind: "polity", id: l.id }, { kind: "polity", id: v.id }], regionId: v.capital,
         text: "After " + (world.year - t.start) + " years as its vassal, " + nameOf(v) + " was folded into " + nameOf(l) + ": its " + (n === 1 ? "province was" : n + " provinces were") +
@@ -2029,12 +2044,15 @@ function baselineTick(world) {
     p.military = clamp(0.1 + p.traits.aggression * 0.5 + p.tech * 0.3 + p.regions.length * 0.01, 0, 1);
     p.prestige = clamp(p.prestige * 0.995 + p.regions.length * 0.004 + p.tech * 0.004, 0, 1);
 
-    /* distribute population across regions for the map */
+    /* distribute population across regions for the map (a region does it every world.popEvery
+       turns: only the map reads it) */
     const rs = regionsOf(world, p);
-    let totalW = 0;
-    for (const r of rs) totalW += AEON.popWeight(r, r.id === p.capital);
-    for (const r of rs) {
-      r.population = Math.round(p.population * (AEON.popWeight(r, r.id === p.capital) / (totalW || 1)));
+    if (!world.popEvery || Math.round((world.year - world.startYear) / world.timeStep) % world.popEvery === 0) {
+      let totalW = 0;
+      for (const r of rs) totalW += AEON.popWeight(r, r.id === p.capital);
+      for (const r of rs) {
+        r.population = Math.round(p.population * (AEON.popWeight(r, r.id === p.capital) / (totalW || 1)));
+      }
     }
 
     /* natural expansion into adjacent unclaimed ground */
@@ -2042,15 +2060,19 @@ function baselineTick(world) {
     const expansionChance = (0.07 + p.traits.aggression * 0.10 + p.wealth * 0.05) * (kind && kind.expansion != null ? kind.expansion : 1) * (1 - 0.4 * Math.min(1, overreach(world, p)));
     /* a region has more land than the planet map holds (js/region.js): its realms spread over it
        as many times faster, so it fills as the planet does */
+    let frontier = null;
     for (let t = 0; t < (world.expandTries || 1); t++) {
       if (rng.chance(expansionChance)) {
-        const open = [];
-        for (const r of rs) {
-          for (const nid of (r.neighbors || [])) {
-            const n = world.regions[nid];
-            if (n && !n.barren && !n.owner && n.habitability > 0.03) open.push(n);
+        if (!frontier) {
+          frontier = [];
+          for (const r of rs) {
+            for (const nid of (r.neighbors || [])) {
+              const n = world.regions[nid];
+              if (n && !n.barren && !n.owner && n.habitability > 0.03) frontier.push(n);
+            }
           }
         }
+        const open = t ? frontier.filter(function (n) { return !n.owner; }) : frontier;
         if (open.length) {
           /* harsh land is settled too, only far less eagerly: a soft frontier, not a wall */
           const target = rng.weighted(open, function (r) { return r.habitability * r.habitability + 0.004; });

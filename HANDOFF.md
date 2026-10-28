@@ -424,6 +424,10 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   Daan's request: sketch outcomes take far less land, conquest leaves vassals; core.js overreach
   (`world.reach`, regions only) caps a realm near 30% of the land. Next: the planet screen work, or
   tuning regions.
+- **Region tuning (2026-10-28):** sketch conquests take whole provinces (region.js spread); less late
+  consolidation (`world.realmsAtEnd`, `vassalYears` 60, `absorbRate` 0.4; an overreached lord's vassals revolt);
+  region-only speedups (`popEvery`, `fastNeighbors`). Daan's note: from inside one region it is hard to see
+  where invaders come from or how far an empire reaches across squares.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

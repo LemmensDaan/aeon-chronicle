@@ -290,3 +290,23 @@ start, 47 at the peak, 11 at the end; 73% of the land held at the end; largest r
 the end; every sketch contact told; every campaign held its share; ages 60 years into the
 sketch's century (median). Making a region takes 0.3-0.9 s and its history 6-13 s here (in the
 app a little longer, as the map is drawn while it plays).
+
+**Tuning after Daan tried regions in the app (2026-10-28).**
+
+- **Conquests take whole provinces.** A sketch campaign used to take the cells nearest its entry,
+  which drew triangles and diamonds across the map. It now takes provinces: the entry's first,
+  then each time the bordering province whose centre lies nearest the entry (across the water if
+  the border runs out). Seed 7's conquests in square 2,0 end as 26, 47 and 89 whole provinces.
+- **Less late consolidation.** Regions ended with a few big realms holding nearly everything,
+  folded in over the last quarter of the history through the engine's vassal pipeline. A region
+  now aims for twice the pack's realms at the end (`world.realmsAtEnd`), a vassal is kept at
+  least 60 years before it can be absorbed and absorption is slower (`world.vassalYears`,
+  `world.absorbRate`), and an overreached lord's vassals break away. Realms decline gradually to
+  about 20 at the end.
+- **Speed.** A region plays with lighter bookkeeping (`world.popEvery`: population spread over the
+  map every fourth turn; `world.fastNeighbors`: neighbours looked up once a turn; the expansion
+  frontier reused within a turn). Planet histories unchanged.
+
+Over 12 historical regions (6 seeds x 2): realms 14 at the start, 48 at the peak, 21 at the end;
+82% of the land held; largest realm 16-34% at the end (never above 34%); every contact told and
+every campaign held. A region's history takes 7-18 s (median 11 s).

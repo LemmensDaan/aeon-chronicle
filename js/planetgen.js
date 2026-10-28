@@ -827,6 +827,17 @@ function finish(world, pack, L) {
         const p = hyd.parent[c];
         if (p < 0 || comp[p] !== comp[i]) inflow = Math.max(inflow, hyd.acc[c]);
       }
+      /* a region follows the planet: a lake or dry basin only where the planet has one */
+      if (L.lakeHint) {
+        let lh = 0, bh = 0;
+        for (const c of cells) { lh += L.lakeHint[c]; bh += L.basinHint[c]; }
+        if (lh / cells.length >= 0.25) {
+          for (const c of cells) if (L.lakeHint[c] > 0.2) { lake[c] = 1; lakeLevel[c] = level; if (L.termHint[c]) terminal[c] = 1; }
+        } else if (bh / cells.length >= 0.25) {
+          for (const c of cells) if (L.basinHint[c] > 0.2) { basin[c] = 1; terminal[c] = 1; }
+        }
+        continue;
+      }
       cells.sort((a, b) => Eh[a] - Eh[b]);
       let evap = 0, n = 0;
       while (n < cells.length && evap < inflow) { evap += L.area * Math.max(0.03, 1.3 * T[cells[n]] - 0.4); n++; }
@@ -844,6 +855,13 @@ function finish(world, pack, L) {
         terminal[c] = 1;
       }
     }
+  }
+
+  /* the planet's lake cells the region's terrain left without a hollow are lake all the same */
+  if (L.lakeHint) for (let i = 0; i < N; i++) {
+    if (isOcean(i) || lake[i] || L.lakeHint[i] <= 0.5) continue;
+    lake[i] = 1; lakeLevel[i] = Eh[i]; basin[i] = 0;
+    if (L.termHint[i]) terminal[i] = 1;
   }
 
   /* Basins and terminal lakes are dead ends: what flows in evaporates. Re-accumulate with them
@@ -1190,6 +1208,30 @@ function region(world, si) {
     }
   }
 
+  /* the planet's lakes and dry basins hold in the region: each planet lake becomes a flat floor
+     just under its surface where the planet has it (the outline of its cells, upsampled), and
+     finish() keeps lakes and basins only there; the region's own hollows elsewhere are ponds the
+     rivers fill and run through */
+  const lakeHint = new Float32Array(N), basinHint = new Float32Array(N), termHint = new Uint8Array(N);
+  {
+    const lin = (arr, fx, fy) => {
+      const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+      return (1 - ty) * ((1 - tx) * at(arr, x0, y0) + tx * at(arr, x0 + 1, y0)) + ty * ((1 - tx) * at(arr, x0, y0 + 1) + tx * at(arr, x0 + 1, y0 + 1));
+    };
+    const LK = Float32Array.from(g.lake), BS = Float32Array.from(g.basin);
+    for (let i = 0; i < N; i++) {
+      lakeHint[i] = lin(LK, FX[i], FY[i]); basinHint[i] = lin(BS, FX[i], FY[i]);
+      termHint[i] = g.terminal ? g.terminal[near(i)] : 0;
+      if (lakeHint[i] <= 0.5 || E[i] <= 0.5) continue;
+      let lev = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const y = Math.round(FY[i]) + dy, c = clamp(y, 0, PH - 1) * PW + pwx(Math.round(FX[i]) + dx);
+        if (g.lake[c]) lev = Math.max(lev, world.regions[c].elevation);
+      }
+      if (lev > 0.5) E[i] = Math.max(0.5003, Math.min(E[i], lev - 0.0015));
+    }
+  }
+
   /* ----- climate from the planet ----- */
   const T = new Float32Array(N), precip = new Float32Array(N), latRad = new Float32Array(N);
   const Tamp = new Float32Array(N), pSum = new Float32Array(N).fill(0.5);
@@ -1265,6 +1307,7 @@ function region(world, si) {
     uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont, geo: geo,
     nf2: (i, f, o, gn) => nfr(nzA, i, f, o, gn), nf3: (i, f, o, gn) => nfr(nzB, i, f, o, gn),
     K: K, area: 1 / (K * K), minLen: 2 * K, inflow: inflow, mtnOffset: mtnOffset, riverT: 0.35, minLake: K * K,
+    lakeHint: lakeHint, basinHint: basinHint, termHint: termHint,
   });
   /* the square itself; the margin around it is "beyond", the neighbours' land */
   for (const r of out.regions) {

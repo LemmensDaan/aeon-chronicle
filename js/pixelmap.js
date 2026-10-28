@@ -411,18 +411,15 @@ function buildTerrain(world) {
   };
 }
 
-/* each land region's elevation as its rank among all land (0 lowest, 1 highest): the raw heights
-   bunch up just above sea level, so a straight ramp showed little but the mountain ranges */
-function elevRank(c, R) {
-  if (c.elevRank) return c.elevRank;
-  const land = R.filter(function (r) { return !r.barren; }).map(function (r) { return r.elevation; }).sort(function (a, b) { return a - b; });
-  const rank = new Float32Array(R.length);
-  for (const r of R) {
-    let lo = 0, hi = land.length;
-    while (lo < hi) { const m = (lo + hi) >> 1; if (land[m] < r.elevation) lo = m + 1; else hi = m; }
-    rank[r.id] = land.length > 1 ? lo / (land.length - 1) : 0;
-  }
-  return (c.elevRank = rank);
+/* elevation in metres, in fixed bands, the same for every world and region: under 200 m,
+   200-500, 500-1,000, 1,000-2,000, 2,000-3,000, above 3,000 (one ramp colour each) */
+const ELEV_BANDS = [200, 500, 1000, 2000, 3000];
+AEON.elevBands = ELEV_BANDS;
+function elevBand(r) {
+  const h = r.heightM != null ? r.heightM : Math.max(0, (r.elevation - 0.5015) / 0.4985) * 5000;
+  let k = 0;
+  while (k < ELEV_BANDS.length && h >= ELEV_BANDS[k]) k++;
+  return k;
 }
 
 /* ------------------------------------------------------------ the frame for a year and mode */
@@ -464,8 +461,9 @@ function compose(c, w, mode, roads, contest, focus, provOf) {
       if (!land[i]) continue;
       const r = R[cellOf[i]];
       const t = mode === "population" ? (popOf[r.id] > 0 ? 0.08 + 0.92 * (Math.log(popOf[r.id]) - lo) / (hi - lo) : 0)
-              : mode === "elevation" ? elevRank(c, R)[r.id] : (r.habitability || 0);
-      const k = Math.max(0, Math.min(n - 1, Math.floor(Math.max(0, Math.min(1, t)) * (n - 1) + bayer(x, y))));
+              : mode === "elevation" ? 0 : (r.habitability || 0);
+      const k = mode === "elevation" ? Math.min(n - 1, elevBand(r))
+              : Math.max(0, Math.min(n - 1, Math.floor(Math.max(0, Math.min(1, t)) * (n - 1) + bayer(x, y))));
       /* keep a whisper of the terrain shading underneath */
       const col = ramp[k], a = 0.82;
       d[i * 4] += (col[0] - d[i * 4]) * a; d[i * 4 + 1] += (col[1] - d[i * 4 + 1]) * a; d[i * 4 + 2] += (col[2] - d[i * 4 + 2]) * a;

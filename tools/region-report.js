@@ -88,6 +88,11 @@ function compare(world, reg) {
     biomeDiff: r2(l1 / 2), riverShare: r2(share(inner.filter((r) => !r.barren), (r) => r.river > 0)),
     riversInValleys: rivers.length ? r2(low / rivers.length) : null,
     lakes: inner.filter((r) => r.lake).length,
+    /* lakes where the planet has them: area shares, and overlap (both lake / either lake) */
+    lakePlanet: r2(share(pc, (r) => r.lake)), lakeRegion: r2(share(inner, (r) => r.lake)),
+    lakeOverlap: (function () { const e = inner.filter((r) => r.lake || R[r.planet].lake); return e.length ? r2(e.filter((r) => r.lake && R[r.planet].lake).length / e.length) : null; })(),
+    desertPlanet: r2(share(pc.filter((r) => !r.barren), (r) => r.biome === "desert")),
+    desert: r2(share(inner.filter((r) => !r.barren), (r) => r.biome === "desert")),
     mountain: r2(share(inner.filter((r) => !r.barren), (r) => r.biome === "mountain")),
     mountainPlanet: r2(share(pc.filter((r) => !r.barren), (r) => r.biome === "mountain")),
     habitable: r2(share(inner.filter((r) => !r.barren), (r) => r.habitability > 0.35)),
@@ -133,7 +138,7 @@ for (const seed of SEEDS) {
 }
 process.stdout.write(" " + (Date.now() - t0) + " ms\n");
 
-const keys = ["cells", "inner", "ms", "landPlanet", "landRegion", "coastAgree", "biomeDiff", "riverShare", "riversInValleys", "lakes", "mountainPlanet", "mountain", "habitablePlanet", "habitable"];
+const keys = ["cells", "inner", "ms", "landPlanet", "landRegion", "coastAgree", "biomeDiff", "riverShare", "riversInValleys", "lakes", "lakePlanet", "lakeRegion", "lakeOverlap", "desertPlanet", "desert", "mountainPlanet", "mountain", "habitablePlanet", "habitable"];
 const q = (vals, f) => { const s = vals.filter((v) => v != null).sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(f * s.length))] : null; };
 const lines = ["Aeon region harness - " + SEEDS.length + " seeds x " + PER + " squares (the largest lived ones), historical pack", "", "min / median / max over " + rows.length + " regions:"];
 for (const k of keys) { const v = rows.map((r) => r[k]); lines.push("  " + k.padEnd(18) + q(v, 0) + " / " + q(v, 0.5) + " / " + q(v, 0.999)); }

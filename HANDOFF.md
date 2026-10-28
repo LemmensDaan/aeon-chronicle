@@ -470,6 +470,13 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   hotspots, blurs (`blurWrap(..., KX)`), wind advection and current reach. Rain mm refitted.
   The realism plan (docs/WORLDGEN_REALISM.md) is now done, items 1-10; its Progress section
   lists what is still off.
+- **Elevation colours and region lakes (2026-10-28, region histories change, planet histories not):**
+  the Elevation mode colours fixed metre bands (<200, 200-500, 500-1,000, 1,000-2,000, 2,000-3,000,
+  3,000+ m; pixelmap.js `elevBand`, legend 0 m to 3,000 m +), not each world's height rank. Regions
+  keep the planet's lakes and dry basins (region() passes `lakeHint` / `basinHint` / `termHint` to
+  finish(); planet lakes become a flat floor under their surface) and their own hollows elsewhere
+  are ponds the rivers run through. Region lake overlap with the planet 0.01 -> 0.85 (region-report
+  `lakeOverlap`); Daan saw a square where the region drew lakes the planet did not have.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

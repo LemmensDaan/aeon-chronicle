@@ -438,7 +438,7 @@ function startAmbient() {
 const LEGENDS = {
   population: ["People", "few", "many"],
   habitability: ["Habitability", "harsh", "kind"],
-  elevation: ["Elevation", "coast", "peaks"],
+  elevation: ["Elevation", "0 m", "3,000 m +"],
 };
 function realmAt(rid) { const r = rid != null && shown().regions[rid]; return r && r.owner != null ? r.owner : null; }
 /* the realm the diplomacy map is about: the one under the cursor, else the selected land's, else

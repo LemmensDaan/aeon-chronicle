@@ -1,10 +1,11 @@
-/* Aeon - the World map mode (docs/WORLD_SKETCH.md, step 3).
+/* Aeon - the World and Ages map modes (docs/WORLD_SKETCH.md, step 3).
 
-   Draws the world sketch (sketch.js) over the biome map for the shown year: the grid of squares,
-   each lived square's land washed in the colour of the age it has reached, the peoples' seats,
-   trade routes opened so far, and the arrows of migrations, invasions, raids and colonisations
-   (the last few centuries' strong, older ones faint). The world timeline beside the map lists
-   every contact; hovering one picks it out on the map, clicking one goes to its year.
+   Draws the world sketch (sketch.js) over the biome map for the shown year: the grid of squares
+   and the peoples' seats; in the World mode the trade routes opened so far and the arrows of
+   migrations, invasions, raids and colonisations from seat to seat (the last few centuries'
+   strong, older ones faint); in the Ages mode each lived square's land washed in the colour of
+   the age it has reached. The world timeline beside the map lists every contact; hovering one
+   picks it out on the map, clicking one goes to its year and shows both ends of its arrow.
    View only: nothing here changes the world or its history. */
 (function () {
 "use strict";
@@ -77,6 +78,24 @@ function washOf(world, v, t) {
   return cv;
 }
 
+/* where a contact's arrow starts and ends, in cells: the seat of the people who set out and the
+   seat of the people they came to (for trade, the target square's leading first people); the
+   end is moved a world's width over when the short way round crosses the edge */
+function contactEnds(world, c) {
+  const v = prep(world), R = world.regions, sk = world.sketch;
+  const seatOf = function (pid, sq) {
+    let p = pid && v.byId[pid];
+    if (!p || p.seat == null) {
+      p = sk.peoples.filter(function (q) { return q.square === sq && q.arrived == null && q.seat != null; })
+        .sort(function (a, b) { return b.cells - a.cells; })[0];
+    }
+    return p ? [R[p.seat].x + 0.5, R[p.seat].y + 0.5] : v.anchors[v.index[sq]].slice();
+  };
+  const a = seatOf(c.by, c.from), b = seatOf(c.against, c.to);
+  if (Math.abs(b[0] - a[0]) > world.width / 2) b[0] += b[0] > a[0] ? -world.width : world.width;
+  return [a, b];
+}
+
 /* the peoples living in a square in a year: its first peoples and those who had arrived by then */
 function peoplesIn(world, si, year) {
   const sk = world.sketch, s = sk.squares[si];
@@ -94,8 +113,11 @@ function draw(canvas, world, year, opts) {
   ctx.setTransform(vw.dpr, 0, 0, vw.dpr, 0, 0);
   ctx.beginPath(); ctx.rect(X(0), Y(0), W * s, H * s); ctx.clip();
 
+  /* the Ages mode washes the land in its age's colour and labels the ages; the World mode shows
+     the peoples and their contacts */
+  const agesMode = !!opts.ages;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(washOf(world, v, t), X(0), Y(0), W * s, H * s);
+  if (agesMode) ctx.drawImage(washOf(world, v, t), X(0), Y(0), W * s, H * s);
 
   /* the grid */
   ctx.strokeStyle = "rgba(58, 38, 20, 0.55)"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
@@ -115,10 +137,8 @@ function draw(canvas, world, year, opts) {
   /* the contacts up to the year: trade routes as thin lines, the rest as arrows */
   const pick = opts.highlight || null;
   const line = function (c, alpha, width, head) {
-    const a = v.anchors[v.index[c.from]], b = v.anchors[v.index[c.to]];
-    let bx = b[0];
-    if (Math.abs(bx - a[0]) > W / 2) bx += bx > a[0] ? -W : W;      /* the short way round */
-    const x1 = X(a[0]), y1 = Y(a[1]), x2 = X(bx), y2 = Y(b[1]);
+    const e = contactEnds(world, c);
+    const x1 = X(e[0][0]), y1 = Y(e[0][1]), x2 = X(e[1][0]), y2 = Y(e[1][1]);
     const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
     const bend = Math.min(40, len * 0.18), mx = (x1 + x2) / 2 - dy / len * bend, my = (y1 + y2) / 2 + dx / len * bend;
     ctx.globalAlpha = alpha;
@@ -139,13 +159,13 @@ function draw(canvas, world, year, opts) {
   const dark = {};
   for (const c of sk.contacts) {
     if (c.year > year) break;
-    if (c === pick) continue;
     if (c.kind === "dark-age") { if (year - c.year < 200) dark[c.to] = true; continue; }
+    if (c === pick || agesMode) continue;
     if (c.kind === "trade") { if (opts.trade !== false) line(c, 0.55, 1.2, false); continue; }
     const age = year - c.year, recent = age < RECENT;
     line(c, recent ? 0.95 : 0.28, recent ? 2.5 : 1.3, true);
   }
-  if (pick) {
+  if (pick && !agesMode) {
     if (pick.kind === "dark-age") dark[pick.to] = true;
     else line(pick, 1, 4, pick.kind !== "trade");
   }
@@ -166,7 +186,7 @@ function draw(canvas, world, year, opts) {
     }
   });
 
-  /* a label per lived square: its age and its leading people */
+  /* a label per lived square: its age (Ages mode) or its leading people (World mode) */
   const ages = world.pack.ages || [];
   ctx.font = "13px " + (getComputedStyle(document.documentElement).getPropertyValue("--ae-pixel") || "Georgia, serif");
   ctx.textBaseline = "top";
@@ -176,18 +196,18 @@ function draw(canvas, world, year, opts) {
     const ps = peoplesIn(world, si, year);
     const lead = ps.filter(function (p) { return p.arrived == null; }).sort(function (a, b) { return b.cells - a.cells; })[0] || ps[0];
     const age = ages[k] ? ages[k].short || ages[k].name : "Age " + (k + 1);
-    const l1 = age + (dark[q.id] ? " · dark age" : ""), l2 = lead ? lead.name + (ps.length > 1 ? " +" + (ps.length - 1) : "") : "";
-    /* a small square on screen gets the age alone, a smaller one just its colour chip */
-    const room = (q.x1 - q.x0) * s - 8, two = room >= 150, one = room >= 70;
-    const w = one ? Math.min(room, Math.max(ctx.measureText(l1).width, two ? ctx.measureText(l2).width : 0) + 10) : 9, h = two ? 34 : one ? 19 : 9;
+    const l1 = agesMode ? age + (dark[q.id] ? " · dark age" : "") : lead ? lead.name + (ps.length > 1 ? " +" + (ps.length - 1) : "") : "";
+    if (!l1) return;
+    /* a small square on screen gets just a chip (its age's colour in the Ages mode) */
+    const room = (q.x1 - q.x0) * s - 8, one = room >= 70;
+    const w = one ? Math.min(room, ctx.measureText(l1).width + (agesMode ? 10 : 8)) : 9, h = one ? 19 : 9;
     const x = X(q.x0) + 4, y = Y(q.y0) + 4;
     ctx.fillStyle = "rgba(243, 228, 196, 0.9)"; ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = "#3a2614"; ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), h);
-    ctx.fillStyle = ageColor(k); ctx.fillRect(x + 1, y + 1, one ? 4 : 8, h - 1);
+    if (agesMode) { ctx.fillStyle = ageColor(k); ctx.fillRect(x + 1, y + 1, one ? 4 : 8, h - 1); }
     if (!one) return;
     ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-    ctx.fillStyle = dark[q.id] ? "#8e1d1d" : "#3a2614"; ctx.fillText(l1, x + 8, y + 3);
-    if (two) { ctx.fillStyle = "#6b4a2a"; ctx.fillText(l2, x + 8, y + 18); }
+    ctx.fillStyle = agesMode && dark[q.id] ? "#8e1d1d" : "#3a2614"; ctx.fillText(l1, x + (agesMode ? 8 : 4), y + 3);
     ctx.restore();
   });
   ctx.restore();
@@ -222,14 +242,17 @@ function fillTip(tip, world, rid, year, el) {
 }
 
 /* the legend plaque: the ages and the kinds of contact */
-function fillLegend(L, world, el) {
+function fillLegend(L, world, el, ages) {
   L.textContent = "";
-  L.appendChild(el("b", { text: "Ages" }));
-  (world.pack.ages || []).forEach(function (a, k) {
-    const i = el("i", { class: "ae-legend-chip" }); i.style.background = ageColor(k);
-    L.appendChild(i); L.appendChild(el("span", { text: a.short || a.name }));
-  });
-  L.appendChild(el("b", { text: " Contacts", style: "margin-left:8px" }));
+  if (ages) {
+    L.appendChild(el("b", { text: "Ages" }));
+    (world.pack.ages || []).forEach(function (a, k) {
+      const i = el("i", { class: "ae-legend-chip" }); i.style.background = ageColor(k);
+      L.appendChild(i); L.appendChild(el("span", { text: a.short || a.name }));
+    });
+    return;
+  }
+  L.appendChild(el("b", { text: "Contacts" }));
   ["trade", "migration", "invasion", "raid", "colonisation"].forEach(function (kd) {
     const i = el("i", { class: "ae-legend-chip" }); i.style.background = KIND[kd].color;
     L.appendChild(i); L.appendChild(el("span", { text: KIND[kd].label }));
@@ -258,7 +281,7 @@ function Timeline(host, world, opts, el) {
       if (c.kind === "trade" && !showTrade) continue;
       const sw = el("i", { class: "wv-dot" }); sw.style.background = KIND[c.kind].color;
       const row = el("div", { class: "wv-row" + (c.kind === "trade" || c.kind === "dark-age" ? " minor" : ""),
-        onclick: function () { opts.onSetYear(c.year); },
+        onclick: function () { opts.onSetYear(c.year); if (opts.onFocus) opts.onFocus(c); },
         onmouseenter: function () { opts.onHighlight(c); },
         onmouseleave: function () { opts.onHighlight(null); } },
         sw, el("span", { class: "wv-year", text: pack.yearLabel(c.year) }),
@@ -337,6 +360,6 @@ function beyondLine(world, r) {
 }
 
 AEON.worldView = { draw: draw, squareAt: squareAt, fillTip: fillTip, fillLegend: fillLegend, Timeline: Timeline,
-  squareLine: squareLine, drawBeyond: drawBeyond, beyondLine: beyondLine };
+  squareLine: squareLine, drawBeyond: drawBeyond, beyondLine: beyondLine, contactEnds: contactEnds };
 
 })();

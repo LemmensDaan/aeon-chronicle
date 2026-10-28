@@ -428,6 +428,10 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   consolidation (`world.realmsAtEnd`, `vassalYears` 60, `absorbRate` 0.4; an overreached lord's vassals revolt);
   region-only speedups (`popEvery`, `fastNeighbors`). Daan's note: from inside one region it is hard to see
   where invaders come from or how far an empire reaches across squares.
+- **World map fixes (2026-10-28):** contact arrows run from the setting-out people's seat to the
+  defenders' seat (`worldView.contactEnds`; the square-average anchor could fall in the sea); clicking a timeline
+  entry zooms the map to both ends (ui.js `focusContact`); the age wash and age labels moved to their own
+  Ages mode, World shows peoples and contacts.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

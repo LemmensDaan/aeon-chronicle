@@ -51,7 +51,9 @@ let worldPick = null, worldLine = null;
    Opened regions are kept for the session. */
 let planet = null, regionCache = {};
 function onPlanet() { return !!planet && world === planet; }
-const PLANET_MODES = ["world", "biome", "elevation", "habitability"];
+const PLANET_MODES = ["world", "ages", "biome", "elevation", "habitability"];
+/* the modes drawn from the world sketch */
+function sketchMode() { return mapMode === "world" || mapMode === "ages"; }
 const REGION_MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
 let view = { zoom: 1, panX: 0, panY: 0 };
 let hoverRegion = null, selectedRegion = null;
@@ -184,6 +186,7 @@ function openRegion(si, mode) {
 function stopRegion() {
   playing = false;
   cancelAnimationFrame(rafId);
+  cancelAnimationFrame(fxRaf); fxRaf = 0;
   toggleStats(false);
   hideTip();
 }
@@ -447,8 +450,8 @@ function diploFocus() {
 function updateLegend() {
   const L = dom.legend, spec = LEGENDS[mapMode], ramp = AEON.mapRamps && AEON.mapRamps[mapMode];
   if (!L) return;
-  if (mapMode === "world" && AEON.worldView) {
-    if (L._mode !== "world") { L._mode = "world"; AEON.worldView.fillLegend(L, world, el); }
+  if (sketchMode() && AEON.worldView) {
+    if (L._mode !== mapMode) { L._mode = mapMode; AEON.worldView.fillLegend(L, world, el, mapMode === "ages"); }
     L.classList.remove("hidden");
     return;
   }
@@ -483,7 +486,7 @@ function drawMap() {
   updateLegend();
   clampView();
   try {
-    const worldMode = mapMode === "world";
+    const worldMode = sketchMode();
     AEON.render.draw(dom.canvas, shown(), {
       mode: worldMode ? "biome" : mapMode,
       focus: mapMode === "diplomacy" ? diploFocus() : null,
@@ -497,7 +500,7 @@ function drawMap() {
       time: ambientOn() ? performance.now() : null,
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
-    if (worldMode && AEON.worldView) AEON.worldView.draw(dom.canvas, world, simulating ? world.year : playbackYear, { highlight: worldPick, pick: dom.squarePlaque && dom.squarePlaque._si });
+    if (worldMode && AEON.worldView) AEON.worldView.draw(dom.canvas, world, simulating ? world.year : playbackYear, { highlight: worldPick, pick: dom.squarePlaque && dom.squarePlaque._si, ages: mapMode === "ages" });
     if (!onPlanet() && AEON.worldView) AEON.worldView.drawBeyond(dom.canvas, world);
   } catch (e) {
     console.error("[aeon] render failed", e);
@@ -596,6 +599,7 @@ function buildApp() {
       side: true,
       onSetYear: function (y) { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(y); },
       onHighlight: function (c) { worldPick = c; drawMap(); },
+      onFocus: focusContact,
     }, el);
   }
 
@@ -707,6 +711,33 @@ function centerOn(region) {
   view.panY = h / 2 - (region.y + 0.5) * cell;
 }
 
+/* a contact clicked in the world timeline: the map shows both ends of its arrow, in the World
+   mode */
+function focusContact(c) {
+  if (!dom.canvas || !AEON.worldView) return;
+  if (!sketchMode()) {
+    mapMode = "world";
+    dom.app.querySelectorAll(".ae-mode").forEach(function (b) { b.classList.toggle("on", b.textContent === "world"); });
+  }
+  const e = AEON.worldView.contactEnds(world, c), R = AEON.render;
+  const dx = Math.abs(e[1][0] - e[0][0]) + 16, dy = Math.abs(e[1][1] - e[0][1]) + 16;
+  const cw = openWidth(), ch = dom.canvas.clientHeight;
+  view.zoom = 1;
+  const want = Math.max(1, Math.min(12, Math.min(cw / dx, ch / dy) / cellSize()));
+  if (R.pixelScale) {
+    /* the largest whole-pixel scale at which both ends fit */
+    const fit = R.pixelScale(dom.canvas, world, 1), u = fit.s / fit.P;
+    let P = R.pixelScale(dom.canvas, world, want).P;
+    while (P > fit.P && (P * u * dx > cw || P * u * dy > ch)) P--;
+    view.zoom = fit.zoomFor(P);
+  } else view.zoom = want;
+  const cell = cellSize();
+  view.panX = cw / 2 - (e[0][0] + e[1][0]) / 2 * cell;
+  view.panY = ch / 2 - (e[0][1] + e[1][1]) / 2 * cell;
+  writeHash();
+  drawMap();
+}
+
 function wireMap() {
   const c = dom.canvas;
   let dragging = false, lastX = 0, lastY = 0, moved = 0;
@@ -714,7 +745,10 @@ function wireMap() {
   c.addEventListener("mousedown", function (e) {
     dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY;
   });
-  window.addEventListener("mouseup", function () { dragging = false; });
+  /* the window's listeners are set once per map, not added again each time the app is rebuilt */
+  window.removeEventListener("mouseup", wireMap.up);
+  wireMap.up = function () { dragging = false; };
+  window.addEventListener("mouseup", wireMap.up);
   c.addEventListener("mousemove", function (e) {
     const r = c.getBoundingClientRect();
     if (dragging) {
@@ -771,6 +805,7 @@ function wireMap() {
     drawMap();
   }, { passive: false });
 
+  window.removeEventListener("resize", drawMap);
   window.addEventListener("resize", drawMap);
 }
 
@@ -807,7 +842,7 @@ function showTip(e, id) {
   const key = id + "@" + view.year + mapMode;
   if (tipEl._for !== key) {
     tipEl._for = key;
-    if (mapMode === "world" && AEON.worldView) { tipEl.replaceChildren(); if (!AEON.worldView.fillTip(tipEl, world, id, playbackYear, el)) fillTip(view, r); }
+    if (sketchMode() && AEON.worldView) { tipEl.replaceChildren(); if (!AEON.worldView.fillTip(tipEl, world, id, playbackYear, el)) fillTip(view, r); }
     else fillTip(view, r);
   }
   tipEl.style.display = "block";

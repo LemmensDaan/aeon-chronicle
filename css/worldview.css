@@ -31,3 +31,7 @@
 .wv-pick.hidden { display: none; }
 .wv-pick b { font-family: var(--ae-pixel, Georgia, serif); font-size: 14px; white-space: nowrap; }
 .wv-pick span { color: var(--pp-soft, #6b4a2a); font-style: italic; }
+/* the homeland map on a newcomer realm's chronicle page */
+.wv-homefig { margin: 4px 0 0; }
+.wv-homefig canvas { width: 100%; max-width: 450px; image-rendering: pixelated; border: 2px solid var(--pp-ink, #3a2614); display: block; }
+.wv-homefig figcaption { font-family: var(--ae-serif); font-style: italic; font-size: 13px; color: var(--pp-soft, #6b4a2a); margin-top: 6px; }

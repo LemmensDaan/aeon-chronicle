@@ -198,7 +198,7 @@ function onTick(world) {
 
 function record(world, type, importance, text, actors, regionId, c) {
   const ev = AEON.recordEvent(world, type, { importance: importance, tags: ["sketch", "contact"], actors: actors || [], regionId: regionId, text: text });
-  if (ev && c) { ev.sketch = { kind: c.kind, outcome: c.outcome, from: c.from, to: c.to, year: c.year }; world._sketch.log.push(ev.id); }
+  if (ev && c) { ev.sketch = { kind: c.kind, outcome: c.outcome, from: c.from, to: c.to, year: c.year, by: c.by }; world._sketch.log.push(ev.id); }
   return ev;
 }
 

@@ -386,6 +386,145 @@ function farOf(world) {
   return v;
 }
 
+/* a sketch square's centre in planet cells, its x moved a world's width over when nearer that way */
+function squareCentre(sq, nearX, PW) {
+  let x = (sq.x0 + sq.x1) / 2;
+  if (nearX != null && Math.abs(x - nearX) > PW / 2) x += x > nearX ? -PW : PW;
+  return [x, (sq.y0 + sq.y1) / 2];
+}
+
+/* In a region, the newcomers and raiders of the sketch come in with an arrow over the region's
+   edge from their homeland's side, named, for ARRIVAL_YEARS after they land (the last third
+   fading). Read from the chronicle's arrival and raid events (region.js record). */
+const ARRIVAL_YEARS = 60;
+function arrivalsOf(world) {
+  const n = world.chronicle.length;
+  if (world._arrivals && world._arrivals.n === n) return world._arrivals.list;
+  const list = world.chronicle.filter(function (e) {
+    return e.sketch && (e.type === "sketch-arrival" || e.type === "sketch-raid") && e.regionId != null && e.sketch.from !== world.square.id;
+  });
+  Object.defineProperty(world, "_arrivals", { enumerable: false, configurable: true, writable: true, value: { n: n, list: list } });
+  return list;
+}
+function drawArrivals(canvas, world, year) {
+  const vw = canvas && canvas._aeonView, planet = world.planet, sk = planet && planet.sketch, sqr = world.square;
+  if (!vw || !sk || !sqr || !sqr.K) return;
+  const here = sk.squares[sqr.index], K = sqr.K, PW = planet.width;
+  /* the region's own land, in region cells */
+  const ix0 = (here.x0 - sqr.px0) * K, ix1 = (here.x1 - sqr.px0) * K, iy0 = (here.y0 - sqr.py0) * K, iy1 = (here.y1 - sqr.py0) * K;
+  const hc = squareCentre(here, null, PW), s = vw.s;
+  const ctx = canvas.getContext("2d");
+  ctx.save();
+  ctx.setTransform(vw.dpr, 0, 0, vw.dpr, 0, 0);
+  for (const e of arrivalsOf(world)) {
+    const age = year - e.year;
+    if (age < 0 || age > ARRIVAL_YEARS) continue;
+    const from = sk.squares.find(function (q) { return q.id === e.sketch.from; });
+    if (!from) continue;
+    const oc = squareCentre(from, hc[0], PW);
+    let dx = oc[0] - hc[0], dy = oc[1] - hc[1];
+    const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+    /* from the landing place back toward the homeland until well past the region's edge */
+    const r = world.regions[e.regionId], ex = r.x + 0.5, ey = r.y + 0.5;
+    let t = 0;
+    while (t < 400 && (t < 40 || ex + dx * t > ix0 - 14 && ex + dx * t < ix1 + 14 && ey + dy * t > iy0 - 14 && ey + dy * t < iy1 + 14)) t += 1;
+    const x1 = vw.ox + (ex + dx * t) * s, y1 = vw.oy + (ey + dy * t) * s, x2 = vw.ox + ex * s, y2 = vw.oy + ey * s;
+    const col = (KIND[e.sketch.kind] || KIND.invasion).color;
+    ctx.globalAlpha = age < ARRIVAL_YEARS * 2 / 3 ? 1 : 3 * (1 - age / ARRIVAL_YEARS);
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(243, 228, 196, 0.9)"; ctx.lineWidth = 8;
+    ctx.setLineDash(e.sketch.kind === "raid" ? [12, 8] : []);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.setLineDash([]);
+    const ang = Math.atan2(y2 - y1, x2 - x1), hl = 16;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - hl * Math.cos(ang - 0.42), y2 - hl * Math.sin(ang - 0.42));
+    ctx.lineTo(x2 - hl * Math.cos(ang + 0.42), y2 - hl * Math.sin(ang + 0.42));
+    ctx.closePath(); ctx.fill();
+    /* its name and homeland on a plaque at the arrow's tail */
+    const by = e.sketch.by && prep(planet).byId[e.sketch.by];
+    const l1 = (by ? by.name + " " : "") + (KIND[e.sketch.kind] ? KIND[e.sketch.kind].label : e.sketch.kind), l2 = "from square " + from.id + ", " + (world.pack.yearLabel ? world.pack.yearLabel(e.year) : e.year);
+    ctx.font = "bold 13px Georgia, serif";
+    const w1 = ctx.measureText(l1).width;
+    ctx.font = "12px Georgia, serif";
+    const bw = Math.max(w1, ctx.measureText(l2).width) + 14, bh = 36;
+    const bx = Math.max(4, Math.min(canvas.clientWidth - bw - 4, x1 - bw / 2)), by2 = Math.max(4, Math.min(canvas.clientHeight - bh - 4, y1 + (dy > 0 ? 10 : -bh - 10)));
+    ctx.fillStyle = "rgba(243, 228, 196, 0.95)"; ctx.fillRect(bx, by2, bw, bh);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(bx, by2, bw, bh);
+    ctx.fillStyle = "#3a2614"; ctx.font = "bold 13px Georgia, serif"; ctx.fillText(l1, bx + 7, by2 + 15);
+    ctx.fillStyle = "#6b4a2a"; ctx.font = "12px Georgia, serif"; ctx.fillText(l2, bx + 7, by2 + 30);
+  }
+  ctx.restore();
+}
+
+/* the planet one pixel a cell in its biomes' colours, the sea dark blue; made once */
+function planetImg(planet) {
+  if (planet._img) return planet._img;
+  const W = planet.width, H = planet.height, biomes = planet.pack.biomes || {};
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d"), img = ctx.createImageData(W, H), d = img.data;
+  for (const r of planet.regions) {
+    const b = !r.barren && biomes[r.biome], c = b ? hexRgb(b.color) : [38, 62, 98], i = (r.y * W + r.x) * 4;
+    d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  Object.defineProperty(planet, "_img", { enumerable: false, configurable: true, writable: true, value: cv });
+  return cv;
+}
+
+/* a small world map for a people that came to a region: the square they set out from, the
+   region's square, and the way between (null when they are no newcomers) */
+function homeMap(planet, peopleId) {
+  const sk = planet && planet.sketch, v = sk && prep(planet), np = v && v.byId[peopleId];
+  if (!np || np.arrived == null) return null;
+  const origin = v.byId[np.from], from = origin && sk.squares[v.index[origin.square]], to = sk.squares[v.index[np.square]];
+  if (!from || !to) return null;
+  const k = 3, W = planet.width, H = planet.height, cv = document.createElement("canvas");
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * k * dpr; cv.height = H * k * dpr;
+  cv.className = "wv-home";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(planetImg(planet), 0, 0, W * k, H * k);
+  ctx.strokeStyle = "rgba(243, 228, 196, 0.35)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  for (const q of sk.squares) {
+    if (q.col > 0) { ctx.moveTo(q.x0 * k + 0.5, q.y0 * k); ctx.lineTo(q.x0 * k + 0.5, q.y1 * k); }
+    if (q.row > 0) { ctx.moveTo(q.x0 * k, q.y0 * k + 0.5); ctx.lineTo(q.x1 * k, q.y0 * k + 0.5); }
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  const box = function (q, col) { ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.strokeRect(q.x0 * k + 1.5, q.y0 * k + 1.5, (q.x1 - q.x0) * k - 3, (q.y1 - q.y0) * k - 3); };
+  box(from, "#f3e4c4"); box(to, "#c0392b");
+  const how = (np.how || "").split(":")[0], col = (KIND[how] || KIND.invasion).color;
+  const e = contactEnds(planet, { by: origin.id, from: from.id, to: to.id });
+  /* the short way may cross the world's edge: the arrow is drawn once from each side */
+  for (const off of [0, e[1][0] < 0 ? W : e[1][0] > W ? -W : 0].filter(function (o, i, a) { return a.indexOf(o) === i; })) {
+    const x1 = (e[0][0] + off) * k, y1 = e[0][1] * k, x2 = (e[1][0] + off) * k, y2 = e[1][1] * k;
+    ctx.strokeStyle = "#f3e4c4"; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - 10 * Math.cos(ang - 0.45), y2 - 10 * Math.sin(ang - 0.45));
+    ctx.lineTo(x2 - 10 * Math.cos(ang + 0.45), y2 - 10 * Math.sin(ang + 0.45));
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = col; ctx.strokeStyle = "#f3e4c4"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(e[0][0] * k, e[0][1] * k, 4, 0, 7); ctx.fill(); ctx.stroke();
+  const yl = planet.pack.yearLabel ? planet.pack.yearLabel(np.arrived) : np.arrived;
+  const verb = { migration: "came over land", invasion: "invaded", raid: "came by sea as raiders", colonisation: "crossed the sea as colonists" }[how] || "came";
+  const fig = document.createElement("figure"), cap = document.createElement("figcaption");
+  fig.className = "wv-homefig";
+  cap.textContent = "The " + np.name + " " + verb + " from the lands of square " + from.id + " (white) to square " + to.id + " (red) in " + yl +
+    (e[1][0] < 0 || e[1][0] > W ? ", round the world's edge (the map wraps east to west)." : ".");
+  fig.appendChild(cv); fig.appendChild(cap);
+  return fig;
+}
+
 /* what lies beyond a region at a cell: the neighbouring square's first people */
 function beyondLine(world, r) {
   const planet = world.planet, sk = planet && planet.sketch;
@@ -397,6 +536,7 @@ function beyondLine(world, r) {
 }
 
 AEON.worldView = { draw: draw, squareAt: squareAt, fillTip: fillTip, fillLegend: fillLegend, Timeline: Timeline,
-  squareLine: squareLine, drawBeyond: drawBeyond, beyondLine: beyondLine, contactEnds: contactEnds };
+  squareLine: squareLine, drawBeyond: drawBeyond, beyondLine: beyondLine, contactEnds: contactEnds,
+  drawArrivals: drawArrivals, homeMap: homeMap };
 
 })();

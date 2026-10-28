@@ -432,6 +432,11 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   defenders' seat (`worldView.contactEnds`; the square-average anchor could fall in the sea); clicking a timeline
   entry zooms the map to both ends (ui.js `focusContact`); the age wash and age labels moved to their own
   Ages mode, World shows peoples and contacts.
+- **Cross-region context (2026-10-28, Daan chose ideas 1+2):** the planet's land fills the screen around a
+  region (worldview.js `farOf`). Newcomers and raiders come in with a named arrow over the region's edge from
+  their homeland's side for 60 years after landing (`drawArrivals`, from the chronicle's sketch-arrival /
+  sketch-raid events; `ev.sketch.by` added). A newcomer realm's chronicle page opens with a Homeland world map:
+  the square it came from, this square and the way between (`homeMap`, pages.js).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

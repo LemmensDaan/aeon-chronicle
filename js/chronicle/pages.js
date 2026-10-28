@@ -124,6 +124,9 @@ function pagePolity(id) {
   var ages = (S.world.pack && S.world.pack.ages) || null;
   if (ages && p.ageLog && p.ageLog.length) st.appendChild(stat("Age", ages[p.age] ? ages[p.age].name : "unknown"));
   pg.appendChild(st);
+  /* newcomers to a region: the world map of where they came from (worldview.js) */
+  var home = p.people != null && w.planet && AEON.worldView && AEON.worldView.homeMap(w.planet, p.people);
+  if (home) section(pg, "Homeland").appendChild(home);
   var s = section(pg, "Character");
   s.appendChild(bars(p.traits, ["aggression", "piety", "curiosity", "stability", "cunning"]));
 

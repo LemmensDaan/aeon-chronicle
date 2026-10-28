@@ -501,7 +501,10 @@ function drawMap() {
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
     if (worldMode && AEON.worldView) AEON.worldView.draw(dom.canvas, world, simulating ? world.year : playbackYear, { highlight: worldPick, pick: dom.squarePlaque && dom.squarePlaque._si, ages: mapMode === "ages" });
-    if (!onPlanet() && AEON.worldView) AEON.worldView.drawBeyond(dom.canvas, world);
+    if (!onPlanet() && AEON.worldView) {
+      AEON.worldView.drawBeyond(dom.canvas, world);
+      AEON.worldView.drawArrivals(dom.canvas, world, simulating ? world.year : playbackYear);
+    }
   } catch (e) {
     console.error("[aeon] render failed", e);
   }

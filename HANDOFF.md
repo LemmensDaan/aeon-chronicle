@@ -458,6 +458,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   water with dry basin around them (`_gen.terminal`); open lakes need a ~100 m deep hollow.
   Lakes 0.7% -> 1.8% of land (Earth 1.8%), landlocked seas 4 -> 0. Numbers:
   docs/WORLDGEN_REALISM.md, Progress. Next in the plan: 9 (continental geology), 10 (metric grid).
+- **Realism fix 9, continental geology (2026-10-28, changes every seed's terrain and history):**
+  continents are provinces (platforms, shields, swells), half their seams old worn ranges;
+  plateaus behind collisions, foreland basins before young ranges; graded rivers with floodplains
+  and deltas. `_gen.geo` flags (1 delta, 2 floodplain, 4 plateau, 8 old range) become region
+  features. Land median 683 -> 503 m, lowlands under 200 m ~20% -> 26%. Numbers:
+  docs/WORLDGEN_REALISM.md, Progress. Left in the plan: 10 (metric grid).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

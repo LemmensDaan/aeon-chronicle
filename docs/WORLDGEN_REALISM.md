@@ -612,3 +612,50 @@ half of Earth's: the continents drain to the sea too readily.
 ![Seed 99 after fix 8: a terminal lake with a salt-flat ring in the south](worldgen/seed-99-fix8.png)
 
 ![Biomes and lakes after fix 8](worldgen/overview-biomes-fix8.png)
+
+### Fix 9, continental geology (2026-10-28, changes every seed's terrain, rivers, biomes and history)
+
+The continents' interiors were noise. Now (`planetgen.js`, assembly and after erosion):
+
+- **Provinces.** Continental crust is split into provinces (about one per 110 cells, grown
+  noisily from random seeds): half sedimentary platforms at 10-160 m (the great plains), a third
+  old shields at 220-500 m, the rest broad swells at 700-1,200 m. Their levels are blurred
+  over two cells; a broad swell (±130 m) and local relief (±70 m) lie over them.
+- **Old worn ranges.** About half the seams between provinces are old sutures, each worn to its
+  own height (500-1,400 m, ridged): Appalachians, Urals. Region feature "old mountains".
+- **Plateaus.** Behind a collision the overriding plate (the less dense one; always the
+  continental side of an Andean margin) is raised by half the range's push (a third behind an
+  Andean margin), flat to 1.3 range-widths behind the crest: Tibet, the Altiplano. Region
+  feature "plateau".
+- **Foreland basins.** In front of every young range, past its plateau, the crust sinks 350 m:
+  Ganges, Po, Chaco.
+- **Graded rivers and floodplains.** After erosion, rivers with 12+ cells of catchment lower
+  their beds to 8 + 700 / catchment metres a cell above the next cell downstream (the Amazon
+  falls ~10 m a cell); those with 40+ cells pull their banks down to 60 m above the river. Young
+  ranges (uplift over 1,000 m) keep their gorges. Region feature "floodplain".
+- **Deltas.** A river of 60+ cells meeting shelf shallower than 250 m builds one cell of land at
+  4 m. Region feature "delta".
+- `_gen.geo` holds the marks (1 delta, 2 floodplain, 4 plateau, 8 old range); regions take them
+  from the planet cell they lie in.
+
+18 seeds, median (range):
+
+| | Fix 8 | Fix 9 | Earth |
+|---|---|---|---|
+| Land median height | 683 m (215-919) | 503 m (378-713) | ~450 m |
+| Land under 200 m | ~20% | 26% (21-31) | ~28% |
+| Land 90th percentile | 1,858 m | 2,226 m | ~2,000 m |
+| Plateaus (flagged), share of land | none | 1.9% (0.2-6) | ~3% (Tibet 1.7%) |
+| Old worn ranges, share of land | none | 13% | ~10% |
+| Floodplains / delta cells | none | 7% / 16 | |
+| Mountains without tectonic uplift | 15% | 5.7% | few |
+| Largest catchment, share of land | 9% | 7.4% | Amazon 4.7% |
+| Lakes | 1.8% | 2.2% | 1.8% |
+| Desert / forest / grassland | 21 / 21 / 11% | 20 / 18 / 11% | 20 / 16 / 8% |
+
+Regions (3 seeds × 3 squares): coast agreement 0.98, biome difference median 0.06 (max 0.15).
+Region histories tell every contact; planet histories run. Generation ~0.47 s.
+
+![Seed 42 geology: height bands, old ranges (orange), plateaus (purple), floodplains (cyan), deltas (red)](worldgen/geology-42-fix9.png)
+
+![Elevation after fix 9](worldgen/overview-elevation-fix9.png)

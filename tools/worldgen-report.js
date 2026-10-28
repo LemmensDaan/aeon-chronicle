@@ -385,7 +385,13 @@ function measure(world) {
   /* terminal lakes (closed, sized by evaporation) and land below sea level */
   let tl = 0, bsl = 0;
   for (let i = 0; i < N; i++) { if (g.lake[i] && g.terminal && g.terminal[i]) tl += AREA[i]; if (land(i) && g.Hm && g.Hm[i] < 0) bsl += AREA[i]; }
-  m.hydro.terminalLakesPctOfLand = r1(pct(tl, landA)); m.hydro.belowSeaLevelPctOfLand = r1(pct(bsl, landA));
+  m.hydro.terminalLakesPctOfLand = r1(pct(tl, landA));
+  /* continental geology: lowlands, plateaus, old worn ranges, floodplains, deltas */
+  if (g.geo) {
+    let lo = 0, pl = 0, old = 0, fp = 0, de = 0;
+    for (let i = 0; i < N; i++) { if (!dry(i)) continue; if (g.Hm[i] < 200) lo += AREA[i]; if (g.geo[i] & 4) pl += AREA[i]; if (g.geo[i] & 8) old += AREA[i]; if (g.geo[i] & 2) fp += AREA[i]; if (g.geo[i] & 1) de++; }
+    m.geology = { lowlandUnder200mPct: r1(pct(lo, dryA)), plateauPct: r1(pct(pl, dryA)), oldRangesPct: r1(pct(old, dryA)), floodplainPct: r1(pct(fp, dryA)), deltaCells: de };
+  } m.hydro.belowSeaLevelPctOfLand = r1(pct(bsl, landA));
 
   /* -- biomes -- */
   const bA = {}, bT = {}, bTw = {};

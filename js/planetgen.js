@@ -263,12 +263,12 @@ function generate(world, pack, rng) {
      decides an effect: { amp, width, peak } spread inland along the plate. */
   /* effAmp is the effect's strength on the old unitless scale (what later stages read as
      `uplift`); effM is its height in metres, which builds the elevation */
-  const effAmp = new Float32Array(N), effM = new Float32Array(N), effW = new Float32Array(N), effPeak = new Float32Array(N);
+  const effAmp = new Float32Array(N), effM = new Float32Array(N), effW = new Float32Array(N), effPeak = new Float32Array(N), effOther = new Int16Array(N);
   const isSource = new Uint8Array(N), ridge = new Uint8Array(N);
   const stress = new Float32Array(N);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x, A = plates[plateOf[i]];
-    let best = 0, bm = 0, bw = 0, bp = 0;
+    let best = 0, bm = 0, bw = 0, bp = 0, bo = 0;
     for (let k = 0; k < 4; k++) {
       const j = NB4[i * 4 + k];
       if (j < 0 || plateOf[j] === plateOf[i]) continue;
@@ -288,11 +288,11 @@ function generate(world, pack, rng) {
         if (ci) { amp = 0.12 * c; m = 1400 * c; w = 1.6; pk = 0; }                          /* continental rift */
         else { amp = -0.08 * c; m = 0; w = 2.6; pk = 0; }       /* mid-ocean ridge: its height is the young floor's (below) */
       }
-      if (Math.abs(amp) > Math.abs(best)) { best = amp; bm = m; bw = w; bp = pk; }
+      if (Math.abs(amp) > Math.abs(best)) { best = amp; bm = m; bw = w; bp = pk; bo = plateOf[j]; }
       stress[i] = Math.max(stress[i], Math.abs(c));
       if (c < 0 && !ci && !cj) ridge[i] = 1;
     }
-    if (best !== 0) { isSource[i] = 1; effAmp[i] = best; effM[i] = bm; effW[i] = bw; effPeak[i] = bp; }
+    if (best !== 0) { isSource[i] = 1; effAmp[i] = best; effM[i] = bm; effW[i] = bw; effPeak[i] = bp; effOther[i] = bo; }
   }
   /* spread each effect inland within its own plate (multi-source BFS) */
   const srcOf = new Int32Array(N).fill(-1), dist = new Float32Array(N).fill(Infinity);
@@ -377,14 +377,73 @@ function generate(world, pack, rng) {
   const dRidge = bfs((i) => ridge[i], (i) => !cont[i], 40);       /* cells of sea floor from a ridge */
   /* behind the ranges the crust stands higher: uplands and plateaus */
   const halo = blurWrap(upliftM.map(function (v) { return Math.max(0, v); }), W, H, 3);
+  /* ----- continental geology -----
+     A continent is a patchwork of provinces welded together over its history: old shields (a
+     few hundred metres, worn flat), sedimentary platforms (the great lowland plains) and a few
+     broad swells (East Africa). Where two provinces were welded an old range has worn down to
+     hills (Appalachians, Urals). Behind a young collision the overriding plate is pushed up into
+     a plateau (Tibet, the Altiplano behind the Andes), and in front of each young range a
+     foreland basin sinks under its debris (Ganges, Po, Chaco). */
+  const geoBase = new Float32Array(N).fill(300), suture = new Float32Array(N), plateau = new Float32Array(N), foreland = new Float32Array(N);
+  {
+    const prov = new Int32Array(N).fill(-1), cells = [];
+    for (let i = 0; i < N; i++) if (cont[i]) cells.push(i);
+    const nProv = clamp(Math.round(cells.length / 110), 3, 120), base = [];
+    const heap = Heap(N * 8 + 256), cost = new Float32Array(N).fill(Infinity);
+    for (let p = 0; p < nProv && cells.length; p++) {
+      const s = rng.pick(cells), r = rng.next();
+      base.push(r < 0.5 ? rng.range(10, 160) : r < 0.87 ? rng.range(220, 500) : rng.range(700, 1200));
+      cost[s] = 0; heap.push(0, s * 128 + p);
+    }
+    while (heap.size()) {
+      const c0 = heap.topKey(), v = heap.pop(), c = (v / 128) | 0, p = v % 128;
+      if (prov[c] >= 0) continue;
+      prov[c] = p;
+      for (let k = 0; k < 4; k++) {
+        const n = NB4[c * 4 + k];
+        if (n < 0 || !cont[n] || prov[n] >= 0) continue;
+        const nc = c0 + 0.5 + jitter[n] * 1.5;
+        if (nc < cost[n]) { cost[n] = nc; heap.push(nc, n * 128 + p); }
+      }
+    }
+    for (let i = 0; i < N; i++) geoBase[i] = prov[i] >= 0 ? base[prov[i]] : cont[i] ? 300 : 150;
+    geoBase.set(blurWrap(geoBase, W, H, 2));
+    /* about half the provinces' seams are old ranges, each worn to its own height */
+    const seam = new Map();
+    for (let i = 0; i < N; i++) {
+      if (prov[i] < 0) continue;
+      for (let k = 0; k < 4; k++) {
+        const n = NB4[i * 4 + k];
+        if (n < 0 || prov[n] < 0 || prov[n] === prov[i]) continue;
+        const key = Math.min(prov[i], prov[n]) * 128 + Math.max(prov[i], prov[n]);
+        if (!seam.has(key)) seam.set(key, rng.next() < 0.5 ? rng.range(500, 1400) : 0);
+        suture[i] = Math.max(suture[i], seam.get(key));
+      }
+    }
+    suture.set(blurWrap(suture, W, H, 1));
+    /* plateaus and foreland basins from the young ranges, by distance from their plate boundary */
+    for (let i = 0; i < N; i++) {
+      const s = srcOf[i];
+      if (s < 0 || !cont[i] || effM[s] < 1500) continue;
+      const d = dist[i], pk = effPeak[s], w = effW[s];
+      const over = pk === 2 || plates[plateOf[i]].density < plates[effOther[s]].density;
+      if (over) {
+        const far = pk + 1.3 * w;
+        plateau[i] = effM[s] * (pk === 2 ? 0.35 : 0.5) * (d <= far ? 1 : Math.exp(-((d - far) * (d - far)) / (0.6 * w * w)));
+      }
+      const c0 = over ? pk + 2.4 * w : pk + 1.1 * w;
+      foreland[i] = -350 * Math.exp(-((d - c0) * (d - c0)) / 2.5);
+    }
+  }
   const hm = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     let h;
     if (cont[i]) {
-      /* broad uplands and lowlands, skewed so plains are common and uplands rarer; the plains
-         keep a gentle slope (no floor), so their water gathers into rivers */
-      const u = 0.42 + 1.6 * nf(noise, i, 0.035, 4, 0.5);
-      h = 100 + 1300 * Math.pow(clamp(u, 0, 1), 2.5) + 160 * u + 0.2 * halo[i] + 220 * nf(noise3, i, 0.14, 3, 0.5) - 900 * Math.exp(-(dCont[i] - 1) / 1.6);
+      /* the province's level, its old ranges (worn, ridged), plateau and foreland, a gentle swell
+         over all so the plains drain, and the drop toward the continent's edge */
+      const worn = suture[i] * (0.5 + 0.9 * noise2.ridged(CX[i] * 0.3, CY[i] * 0.3, CZ[i] * 0.3, 3));
+      h = geoBase[i] + worn + plateau[i] * (1 - clamp(upliftM[i] / Math.max(1, plateau[i] * 2), 0, 1) * 0.5) + foreland[i]
+          + 0.1 * halo[i] + 260 * nf(noise, i, 0.035, 4, 0.5) + 140 * nf(noise3, i, 0.14, 3, 0.5) - 900 * Math.exp(-(dCont[i] - 1) / 1.6);
     } else {
       h = -(2600 + 2900 * (1 - Math.exp(-dRidge[i] * 10.7 / 60)));
       if (dFoot[i] <= 1) h = Math.max(h, -3000);
@@ -409,6 +468,37 @@ function generate(world, pack, rng) {
       if (drop <= 0) continue;
       const cut = 0.011 * Math.sqrt(f.acc[c]) * drop;
       hm[c] = Math.max(hm[p] + 0.5, hm[c] - cut);
+    }
+  }
+
+  /* big rivers grade their beds: they run down a gentle slope to the sea (the Amazon falls about
+     10 m in 270 km) and lay a floodplain either side; where one meets a shallow shelf it builds
+     a delta out into the sea. Young ranges keep their gorges. geo marks what is left for the
+     regions: 1 delta, 2 floodplain, 4 plateau, 8 old worn range */
+  const geo = new Uint8Array(N);
+  {
+    const f = floodFill(N, NB8, hm, 0, null);
+    for (let k = 0; k < f.count; k++) {
+      const c = f.order[k], p = f.parent[c];
+      if (hm[c] <= 0 || p < 0 || f.acc[c] < 12 || upliftM[c] >= 1000) continue;
+      const bed = Math.max(0, hm[p]) + 8 + 700 / f.acc[c];
+      if (hm[c] > bed) hm[c] = bed;
+    }
+    for (let k = 0; k < f.count; k++) {
+      const c = f.order[k], p = f.parent[c];
+      if (hm[c] <= 0 || p < 0 || f.acc[c] < 40 || upliftM[c] >= 1000) continue;
+      geo[c] |= 2;
+      for (let j = 0; j < 8; j++) {
+        const n = NB8[c * 8 + j];
+        if (n < 0 || hm[n] <= 0 || upliftM[n] >= 600 || hm[n] > hm[c] + 400) continue;
+        if (hm[n] > hm[c] + 60) { hm[n] = hm[c] + 60; geo[n] |= 2; }
+      }
+      if (hm[p] <= 0 && hm[p] > -250 && f.acc[c] >= 60) { hm[p] = 4; geo[p] |= 1; geo[c] |= 1; }
+    }
+    for (let i = 0; i < N; i++) {
+      if (hm[i] <= 0) continue;
+      if (plateau[i] > 1200 && hm[i] > 2000 && upliftM[i] < plateau[i]) geo[i] |= 4;
+      if (suture[i] > 350 && upliftM[i] < 500 && hm[i] > geoBase[i] + 300) geo[i] |= 8;
     }
   }
 
@@ -458,7 +548,7 @@ function generate(world, pack, rng) {
         const src = a.slice();
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) a[y * W + wx(x + off)] = src[y * W + x];
       };
-      [E, hm, plateOf, cont, uplift, stress, srcAmp].forEach(roll);
+      [E, hm, plateOf, cont, uplift, stress, srcAmp, geo].forEach(roll);
       const at = (i) => ((i / W) | 0) * W + wx(i % W + off);
       plates.forEach(function (p) { p.seed = at(p.seed); });
       hotspots.forEach(function (h) { h.x = wx(h.x + off); });
@@ -646,7 +736,7 @@ function generate(world, pack, rng) {
 
   const fin = finish(world, pack, {
     W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, Hm: hm, T: T, Tamp: Tamp, precip: precip, pSum: pSum, coastDist: coastDist, latRad: latRad,
-    uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont,
+    uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont, geo: geo,
     nf2: (i, f, o, g) => nf(noise2, i, f, o, g), nf3: (i, f, o, g) => nf(noise3, i, f, o, g),
     K: 1, area: 1, minLen: 4, inflow: null, mtnOffset: 0,
   });
@@ -654,7 +744,7 @@ function generate(world, pack, rng) {
   /* debug layers for the inspector page; not enumerable so nothing copies them */
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, E, Hm: hm, T, Tamp, SST, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
+    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
              riverT: fin.riverT, mtnOffset: fin.mtnOffset, precip, stress, srcAmp, ms: Date.now() - t0 },
   });
 }
@@ -939,6 +1029,12 @@ function finish(world, pack, L) {
     if (basin[i] && P[i] < 0.3) reg.features.push("salt-flat");
     if (uplift[i] > 0.2 && stress[i] > 0) reg.features.push("fault");
     if (srcAmp[i] < -0.05 && cont[i]) reg.features.push("rift");
+    if (L.geo) {
+      if (L.geo[i] & 1) reg.features.push("delta");
+      else if (L.geo[i] & 2) reg.features.push("floodplain");
+      if (L.geo[i] & 4) reg.features.push("plateau");
+      if (L.geo[i] & 8) reg.features.push("old mountains");
+    }
 
     const nr = L.nf3(i, 0.12, 3, 0.5);
     const foodBase = { grassland: 0.78, forest: 0.6, jungle: 0.58, savanna: 0.55, swamp: 0.42, taiga: 0.32, tundra: 0.14, desert: 0.08, mountain: 0.12, ice: 0.02 };
@@ -1126,9 +1222,10 @@ function region(world, si) {
   }
 
   const uplift = new Float32Array(N), stress = new Float32Array(N), srcAmp = new Float32Array(N);
-  const plateOf = new Int16Array(N), cont = new Uint8Array(N);
+  const plateOf = new Int16Array(N), cont = new Uint8Array(N), geo = new Uint8Array(N);
   for (let i = 0; i < N; i++) {
     const c = near(i);
+    geo[i] = g.geo ? g.geo[c] : 0;
     uplift[i] = g.uplift[c]; stress[i] = g.stress[c]; srcAmp[i] = g.srcAmp[c]; plateOf[i] = g.plateOf[c]; cont[i] = g.cont[c];
   }
 
@@ -1151,7 +1248,7 @@ function region(world, si) {
   const out = { square: sq.id, squareIndex: si, K: K, margin: MARGIN, px0: px0, py0: py0, width: W, height: H, regions: [] };
   const fin = finish(out, world.pack, {
     W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, T: T, Tamp: Tamp, precip: precip, pSum: pSum, coastDist: coastDist, latRad: latRad,
-    uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont,
+    uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont, geo: geo,
     nf2: (i, f, o, gn) => nfr(nzA, i, f, o, gn), nf3: (i, f, o, gn) => nfr(nzB, i, f, o, gn),
     K: K, area: 1 / (K * K), minLen: 2 * K, inflow: inflow, mtnOffset: mtnOffset, riverT: 0.35, minLake: K * K,
   });

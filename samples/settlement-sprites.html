@@ -172,10 +172,18 @@ const TOWNS = [
 /* ------------------------------------------------------------ extras, shelved for later */
 const CATHEDRAL = sprite([".k.....k.", "kfk...kfk", "kFk...kFk", "kgk.k.kgk", "kgkkgkkgk", "kgkgwgkgk", "kgkgggkgk", "kgkkbkkgk", "kgkkbkkgk", "kkkkkkkkk"]);
 const GABLED = compose([[HOUSE5, 0, 3], [HOUSE5, 6, 3], [TALL5, 3, 0]]);
-const WINDMILLS = [sprite(["kc.....ck", ".kc...ck.", "..kkfkk..", "...kfk...", "..ckgkc..", ".ckkgkkc.", "kc.kgk.ck", "..kgggk..", "..kgbgk..", "..kkkkk.."]),
-                   sprite(["....k....", "...kck...", "...kck...", "kcckfkcck", "kkkkfkkkk", "...kck...", "..kkckk..", "..kgggk..", "..kgbgk..", "..kkkkk.."])];
+/* things that turn (the windmill's sails, the water wheel) have four frames, 22.5 degrees apart,
+   turning clockwise: four spokes look the same every 90 degrees, so two frames (upright and
+   crossed) only flipped back and forth. Drawn by hand: computed spokes came out ragged. */
+const BODY = ["....kfk....", "....kgk....", "...kgggk...", "...kgggk...", "...kgbgk...", "...kkkkk..."];
+const WINDMILLS = [
+  [".....kc....", ".....kc....", ".....kc....", ".ccc.k.....", ".kkkkkkkkk.", "....kkkccc.", "....kkk....", "...kckgk...", "...kckgk...", BODY[4], BODY[5]],
+  [".......kc..", ".c....kc...", ".kcc..kc...", "..kk.k.....", "....kkk....", "....kkkkk..", "...ckgkcck.", "...kkggk.c.", "..ckgggk...", BODY[4], BODY[5]],
+  [".kc......kc", "..kc....kc.", "...k...kc..", "....k.k....", ".....k.....", "....kfk....", "..ckkgkk...", ".ckkgggkk..", "ck.kgggkck.", "...kgbgk.c.", BODY[5]],
+  ["...kc......", "....kc.....", "....kc...k.", ".....k.kkc.", "..cckkkcc..", ".ckkkkk....", ".k..kck....", "...kgckk...", "...kggck...", BODY[4], BODY[5]],
+].map(function (rows) { return sprite(rows); });
 const WINDMILL = WINDMILLS[0];
-function turnAt(t, ms) { return Math.floor(t / ms) % 2; }
+function turnAt(t, ms) { return Math.floor(t / ms) % 4; }
 const EXTRAS = [
   { name: "Keep, flag on a pole (extra)", note: "Kept as an extra design: the narrow keep with the realm's flag on a pole over its middle merlon.", sp: KEEP_POLE },
   { name: "Hill city (extra)", note: "Kept as an extra design: houses climb to a tower, a low wall at the foot of the hill with a brown dot for its gate.", sp: HILL },
@@ -184,7 +192,7 @@ const EXTRAS = [
     sp: compose([[HOUSE5, 0, 4], [HOUSE5, 8, 4], [CATHEDRAL, 2, 0]]) },
   { name: "Gabled row (extra)", note: "Shelved as an extra design: a street front of three narrow houses, the middle one tallest.", sp: GABLED },
   { name: "Windmill (extra)", note: "Shelved as an extra design. For later: with the economy, a windmill could be added to a place that grows grain or prospers, rather than being a town design of its own.",
-    sp: compose([[WINDMILL, 2, 0], [HOUSE5, 0, 4]]), at: function (t) { return compose([[WINDMILLS[turnAt(t, 400)], 2, 0], [HOUSE5, 0, 4]]); } },
+    sp: compose([[WINDMILL, 2, 0], [HOUSE5, 0, 5]]), at: function (t) { return compose([[WINDMILLS[turnAt(t, 220)], 2, 0], [HOUSE5, 0, 5]]); } },
 ];
 const TOWN_W = TOWNS[0].sp, CITY_W = CITIES[0].sp;    /* the picks so far, used by the water panels */
 
@@ -206,7 +214,8 @@ const LIGHT_L = sprite(["..k..", ".kok.", "kkkkk", ".kwk.", ".kek.", ".kwk.", ".
 const BRIDGE_S = sprite(["kkkkkkk", "bbbbbbb", "b.....b"]);
 const BRIDGE_M = sprite(["kkkkkkkkk", "ggggggggg", "ggkkkkkgg", "gk.....kg", "kk.....kk"]);
 const BRIDGE_L = sprite(["kkkkkkkkkkk", "ggggggggggg", "gkkkgggkkkg", "k...kgk...k", "k...kgk...k"]);
-const WHEELS = [sprite([".khk.", "khkhk", "hhkhh", "khkhk", ".khk."]), sprite([".hkh.", "hhkhh", "kkkkk", "hhkhh", ".hkh."])];
+const WHEELS = [[".hkh.", "hhkhh", "kkkkk", "hhkhh", ".hkh."], [".hhk.", "khkhh", "hkkkh", "hhkhk", ".khh."],
+                [".hhh.", "hkhkh", "hhkhh", "hkhkh", ".hhh."], [".khh.", "hhkhk", "hkkkh", "khkhh", ".hhk."]].map(function (rows) { return sprite(rows); });
 const MILL = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwkwk", "kkkkk"]);
 const BIGMILL = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwwkwwk", "kwwkbwk", "kkkkkkk"]);
 const STILT = sprite(["..k..", ".kfk.", "kffFk", "kwkwk", "kkkkk", "b...b", "b...b"]);
@@ -235,7 +244,7 @@ function agesAt(t) { return AGE_KINDS.map(function (k, i) { return harbour(TOWN_
 const T = TOWN_W, C = CITY_W;
 const RIVER = [
   { name: "Watermill (no road crosses)", note: "Where no road crosses the river at the place: a mill on the bank with its wheel in the stream; a bigger mill at the city.", roads: "near",
-    at: function (t) { const WHEEL = WHEELS[turnAt(t, 250)]; return [compose([[VILLAGE, 0, 0], [MILL, 7, 0], [WHEEL, 10, 1]], 12),
+    at: function (t) { const WHEEL = WHEELS[turnAt(t, 160)]; return [compose([[VILLAGE, 0, 0], [MILL, 7, 0], [WHEEL, 10, 1]], 12),
         compose([[T, 0, 0], [MILL, T.w, T.h - 6], [WHEEL, T.w + 3, T.h - 5]], T.w + 5),
         compose([[C, 0, 0], [BIGMILL, C.w, C.h - 7], [WHEEL, C.w + 5, C.h - 5]], C.w + 7)]; } },
   { name: "Bridge (a road crosses)", note: "Where a road crosses: the village only gets a plank bridge; the town and the city stand on both banks, joined by a stone bridge.", roads: "across",

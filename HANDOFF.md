@@ -437,6 +437,14 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   their homeland's side for 60 years after landing (`drawArrivals`, from the chronicle's sketch-arrival /
   sketch-raid events; `ev.sketch.by` added). A newcomer realm's chronicle page opens with a Homeland world map:
   the square it came from, this square and the way between (`homeMap`, pages.js).
+- **Realism fixes 4+5, heights in metres, sea level from the crust (2026-10-28, changes every seed's
+  terrain, climate, biomes and history):** planetgen builds `hm` in metres (`_gen.Hm`; elevation =
+  `eOfM`), no quantile sea level or stretch to the highest cell. Uplift in metres, ocean depth from
+  ridge distance (age-depth), ~20% of continental crust as shelf, mountains = above the latitude's
+  treeline and 1,200 m (`overTree`; finish() takes `mtnOffset`, regions match the planet's share),
+  lapse 6 C/km. Land 39.5% -> 32%, land median 1,211 -> 683 m, shelf 1.3% -> 10% of ocean,
+  mountains 10% -> 4.6%. Forest up (31%), desert down (12%): for the climate fixes. Numbers:
+  docs/WORLDGEN_REALISM.md, Progress.
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;
@@ -565,7 +573,8 @@ rivers (systems pruned to 4+ cells) → Whittaker biomes.
   squared, instead of stopping dead at 0.12. That cutoff drew a straight line along the tundra edge
   where civilisation ended. Historical realms now hold ~75% of the tundra by 1500 AD (was ~8%).
   Both changes alter every seed.
-- Generation takes about 0.4 s. A typical world: 3–9% mountains, roughly 20% desert, 1–4% ice.
+- Generation takes about 0.5 s. A typical world (since realism fixes 4+5): ~32% land, 1–11% mountains
+  (above the treeline), 12% desert, 1–9% ice. Heights are in metres in `_gen.Hm`.
 
 ## Visual direction (decided)
 

@@ -128,6 +128,22 @@ function floodFill(N, NB8, E, sea, runoff) {
   return { Ef: Ef, parent: parent, order: order, count: o, acc: acc };
 }
 
+/* heights: metres <-> E (the sea at 0.5; 5,000 m at 1, held there above; -7,000 m at 0) */
+const TOP_M = 5000, DEEP_M = 7000;
+function eOfM(h) { return h > 0 ? 0.5015 + 0.4985 * Math.min(1, h / TOP_M) : 0.5 * Math.max(0, 1 + h / DEEP_M); }
+function mOfE(e) { return e > 0.5 ? Math.max(0, (e - 0.5015) / 0.4985) * TOP_M : (e / 0.5 - 1) * DEEP_M; }
+/* cooling with height, in the T scale (1 = 55.6 degC): 6 degC a km, a little under the free
+   air's 6.5, as sunlit ground warms the air over it */
+const LAPSE_T = 6 / 55.6;
+/* the treeline by latitude (degrees), in metres; above it land is "mountain": rock, alpine
+   meadow and glacier. ~3,800 m in the tropics, ~2,200 m at 45 degrees, never under 500 m */
+function treeline(deg) {
+  return Math.max(500, deg <= 20 ? 3800 : deg <= 45 ? 3800 - (deg - 20) * 64 : 2200 - (deg - 45) * 82);
+}
+/* how far (m) a height h at latitude deg stands above where mountains begin: the treeline, and
+   never under 1,200 m (low cold uplands above the treeline are tundra) */
+function overTree(h, deg) { return Math.min(h - treeline(deg), h - 1200); }
+
 function quantile(arr, q) {
   const s = Float32Array.from(arr).sort();
   return s[clamp(Math.floor(s.length * q), 0, s.length - 1)];
@@ -245,12 +261,14 @@ function generate(world, pack, rng) {
   /* ================================================== 3. tectonics ===== */
   /* For each boundary cell, the strongest interaction with a neighbouring plate
      decides an effect: { amp, width, peak } spread inland along the plate. */
-  const effAmp = new Float32Array(N), effW = new Float32Array(N), effPeak = new Float32Array(N);
-  const isSource = new Uint8Array(N);
+  /* effAmp is the effect's strength on the old unitless scale (what later stages read as
+     `uplift`); effM is its height in metres, which builds the elevation */
+  const effAmp = new Float32Array(N), effM = new Float32Array(N), effW = new Float32Array(N), effPeak = new Float32Array(N);
+  const isSource = new Uint8Array(N), ridge = new Uint8Array(N);
   const stress = new Float32Array(N);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x, A = plates[plateOf[i]];
-    let best = 0, bw = 0, bp = 0;
+    let best = 0, bm = 0, bw = 0, bp = 0;
     for (let k = 0; k < 4; k++) {
       const j = NB4[i * 4 + k];
       if (j < 0 || plateOf[j] === plateOf[i]) continue;
@@ -259,21 +277,22 @@ function generate(world, pack, rng) {
       const nx = dxw(x, jx), ny = jy - y;
       const c = clamp((A.vx - B.vx) * nx + (A.vy - B.vy) * ny, -1.6, 1.6);   /* + = converging */
       const ci = cont[i], cj = cont[j];
-      let amp = 0, w = 1, pk = 0;
+      let amp = 0, m = 0, w = 1, pk = 0;
       if (c > 0) {
-        if (ci && cj) { amp = 0.44 * c; w = 4.5; pk = 1; }                   /* collision orogeny */
-        else if (ci && !cj) { amp = 0.36 * c; w = 2.6; pk = 2; }             /* andean margin */
-        else if (!ci && cj) { amp = -0.17 * c; w = 1.2; pk = 0; }            /* trench, subducting */
-        else if (A.density < B.density) { amp = 0.3 * c; w = 1.5; pk = 1; }  /* island arc */
-        else { amp = -0.15 * c; w = 1.2; pk = 0; }
+        if (ci && cj) { amp = 0.44 * c; m = 4800 * c; w = 4.5; pk = 1; }                   /* collision orogeny */
+        else if (ci && !cj) { amp = 0.36 * c; m = 4400 * c; w = 2.6; pk = 2; }             /* andean margin */
+        else if (!ci && cj) { amp = -0.17 * c; m = -2500 * c; w = 1.2; pk = 0; }           /* trench, subducting */
+        else if (A.density < B.density) { amp = 0.3 * c; m = 5600 * c; w = 1.5; pk = 1; }  /* island arc */
+        else { amp = -0.15 * c; m = -2500 * c; w = 1.2; pk = 0; }
       } else if (c < 0) {
-        if (ci) { amp = 0.12 * c; w = 1.6; pk = 0; }                          /* continental rift */
-        else { amp = -0.08 * c; w = 2.6; pk = 0; }                            /* mid-ocean ridge */
+        if (ci) { amp = 0.12 * c; m = 1400 * c; w = 1.6; pk = 0; }                          /* continental rift */
+        else { amp = -0.08 * c; m = 0; w = 2.6; pk = 0; }       /* mid-ocean ridge: its height is the young floor's (below) */
       }
-      if (Math.abs(amp) > Math.abs(best)) { best = amp; bw = w; bp = pk; }
+      if (Math.abs(amp) > Math.abs(best)) { best = amp; bm = m; bw = w; bp = pk; }
       stress[i] = Math.max(stress[i], Math.abs(c));
+      if (c < 0 && !ci && !cj) ridge[i] = 1;
     }
-    if (best !== 0) { isSource[i] = 1; effAmp[i] = best; effW[i] = bw; effPeak[i] = bp; }
+    if (best !== 0) { isSource[i] = 1; effAmp[i] = best; effM[i] = bm; effW[i] = bw; effPeak[i] = bp; }
   }
   /* spread each effect inland within its own plate (multi-source BFS) */
   const srcOf = new Int32Array(N).fill(-1), dist = new Float32Array(N).fill(Infinity);
@@ -290,12 +309,13 @@ function generate(world, pack, rng) {
       }
     }
   }
-  const uplift = new Float32Array(N);
+  const uplift = new Float32Array(N), upliftM = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const s = srcOf[i];
     if (s < 0) continue;
-    const d = dist[i], w = effW[s], pk = effPeak[s];
-    uplift[i] = effAmp[s] * Math.exp(-((d - pk) * (d - pk)) / (w * w));
+    const d = dist[i], w = effW[s], pk = effPeak[s], f = Math.exp(-((d - pk) * (d - pk)) / (w * w));
+    uplift[i] = effAmp[s] * f;
+    upliftM[i] = effM[s] * f;
   }
 
   /* hotspots: volcanic chains dragged out behind the moving plate */
@@ -309,60 +329,93 @@ function generate(world, pack, rng) {
     for (let k = 0; k <= len; k++) {
       const cx = sx + dx * k * 2.3, cy = sy + dy * k * 2.3;
       const amp = 0.27 * Math.exp(-k * 0.33) * (cont[s] ? 0.4 : 1);
+      const ampM = 6500 * Math.exp(-k * 0.33) * (cont[s] ? 0.35 : 1);
       for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) {
         const yy = Math.round(cy) + oy;
         if (yy < 0 || yy >= H) continue;
         const i = yy * W + wx(Math.round(cx) + ox);
         const r2 = ox * ox + oy * oy;
         uplift[i] += amp * Math.exp(-r2 / 1.4);
+        upliftM[i] += ampM * Math.exp(-r2 / 1.4);
       }
     }
   }
 
   /* a straight plate boundary can leave a one-cell-wide wall; belts should be broad */
-  {
-    const soft = blurWrap(uplift, W, H, 1);
-    for (let i = 0; i < N; i++) uplift[i] = uplift[i] * 0.45 + soft[i] * 0.55;
+  for (const u of [uplift, upliftM]) {
+    const soft = blurWrap(u, W, H, 1);
+    for (let i = 0; i < N; i++) u[i] = u[i] * 0.45 + soft[i] * 0.55;
   }
 
-  /* ----- assemble elevation ----- */
-  const contSmooth = blurWrap(Float32Array.from(cont), W, H, 2);
-  const elev = new Float32Array(N);
+  /* ----- assemble elevation, in metres above sea level -----
+     The sea is at 0 m for every world and the crust decides what lies above it
+     (docs/WORLDGEN_REALISM.md, fixes 4 and 5):
+     - continental crust stands a few hundred metres up, lower toward its edges, so about a
+       quarter of it is shelf sea 40-220 m deep (marginal seas, shelf islands)
+     - the ocean floor deepens as it ages and cools, from 2.6 km at the ridges to ~5 km at
+       100 million years, levelling off near 5.5 km (a cell is ~267 km, sea floor spreads ~25 km
+       a million years: ~10.7 Myr a cell), with
+       the continental slope at the foot of every shelf
+     - the plate boundaries add their heights in metres: ranges, arcs, trenches, rifts */
+  /* distance in cells over 8 neighbours (diagonals sqrt 2), so the floor's age lines run round,
+     not in diamonds */
+  const bfs = function (from, through, cap) {
+    const d = new Float32Array(N).fill(cap), heap = Heap(N * 8 + 8);
+    for (let i = 0; i < N; i++) if (from(i)) { d[i] = 0; heap.push(0, i); }
+    while (heap.size()) {
+      const k0 = heap.topKey(), c = heap.pop();
+      if (k0 > d[c]) continue;
+      for (let k = 0; k < 8; k++) {
+        const n = NB8[c * 8 + k], nd = d[c] + DIST8[k];
+        if (n >= 0 && through(n) && nd < d[n]) { d[n] = nd; heap.push(nd, n); }
+      }
+    }
+    return d;
+  };
+  const dCont = bfs((i) => !cont[i], (i) => cont[i], 30);         /* 1 on a continent's edge */
+  const dFoot = bfs((i) => cont[i], (i) => !cont[i], 30);         /* 1 at the foot of its slope */
+  const dRidge = bfs((i) => ridge[i], (i) => !cont[i], 40);       /* cells of sea floor from a ridge */
+  /* behind the ranges the crust stands higher: uplands and plateaus */
+  const halo = blurWrap(upliftM.map(function (v) { return Math.max(0, v); }), W, H, 3);
+  const hm = new Float32Array(N);
   for (let i = 0; i < N; i++) {
-    const base = lerp(0.3, 0.6, contSmooth[i]);
-    const mtn = clamp(uplift[i] / 0.22, 0, 1);
-    const crest = (noise2.ridged(CX[i] * 0.16, CY[i] * 0.16, CZ[i] * 0.16, 4) - 0.55) * 0.2 * mtn;
-    elev[i] = base + uplift[i] + crest
-            + nf(noise, i, 0.035, 4, 0.5) * 0.11
-            + nf(noise3, i, 0.14, 3, 0.5) * 0.04;
+    let h;
+    if (cont[i]) {
+      /* broad uplands and lowlands, skewed so plains are common and uplands rarer; the plains
+         keep a gentle slope (no floor), so their water gathers into rivers */
+      const u = 0.42 + 1.6 * nf(noise, i, 0.035, 4, 0.5);
+      h = 100 + 1300 * Math.pow(clamp(u, 0, 1), 2.5) + 160 * u + 0.2 * halo[i] + 220 * nf(noise3, i, 0.14, 3, 0.5) - 900 * Math.exp(-(dCont[i] - 1) / 1.6);
+    } else {
+      h = -(2600 + 2900 * (1 - Math.exp(-dRidge[i] * 10.7 / 60)));
+      if (dFoot[i] <= 1) h = Math.max(h, -3000);
+      h += 250 * nf(noise3, i, 0.14, 3, 0.5);
+    }
+    const mtn = clamp(upliftM[i] / 1500, 0, 1);
+    h += upliftM[i] + (noise2.ridged(CX[i] * 0.16, CY[i] * 0.16, CZ[i] * 0.16, 4) - 0.55) * 1800 * mtn;
+    /* the highest ranges grow more slowly than the push under them (erosion, gravity) */
+    if (h > 5000) h = 5000 + (h - 5000) * 0.4;
+    /* continental crust below the sea is shelf (a rift may sink deeper) */
+    if (cont[i] && h < 0 && upliftM[i] > -300) h = -40 - 180 * (1 - Math.exp(h / 400));
+    hm[i] = h;
   }
 
   /* ================================================== 4. erosion ======= */
-  const oceanFrac = rng.range(0.58, 0.7);
-  let sea = quantile(elev, oceanFrac);
-  const flood = (E, runoff) => floodFill(N, NB8, E, sea, runoff);
   for (let pass = 0; pass < 3; pass++) {
-    const f = flood(elev, null);
+    const f = floodFill(N, NB8, hm, 0, null);
     for (let k = 0; k < f.count; k++) {
       const c = f.order[k], p = f.parent[c];
-      if (elev[c] <= sea || p < 0) continue;
-      const drop = elev[c] - elev[p];
+      if (hm[c] <= 0 || p < 0) continue;
+      const drop = hm[c] - hm[p];
       if (drop <= 0) continue;
       const cut = 0.011 * Math.sqrt(f.acc[c]) * drop;
-      elev[c] = Math.max(elev[p] + 2e-4, elev[c] - cut);
+      hm[c] = Math.max(hm[p] + 0.5, hm[c] - cut);
     }
   }
-  sea = quantile(elev, oceanFrac);
 
-  /* normalise: ocean -> [0, 0.5], land -> (0.5, 1] */
-  let lo = Infinity, hi = -Infinity;
-  for (let i = 0; i < N; i++) { if (elev[i] < lo) lo = elev[i]; if (elev[i] > hi) hi = elev[i]; }
+  /* E, the 0..1 scale every later stage reads: the sea at 0.5, 5,000 m at 1 (higher is held at 1),
+     -7,000 m at 0; the same scale for every world */
   const E = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    E[i] = elev[i] <= sea ? 0.5 * (elev[i] - lo) / (sea - lo || 1)
-                          : 0.5 + 0.0015 + 0.4985 * (elev[i] - sea) / (hi - sea || 1);
-  }
-  sea = 0.5;
+  for (let i = 0; i < N; i++) E[i] = eOfM(hm[i]);
   const isOcean = (i) => E[i] <= 0.5;
 
   /* ----- seam: the map wraps east-west, so turn the planet until the left/right edge runs
@@ -387,7 +440,7 @@ function generate(world, pack, rng) {
         const src = a.slice();
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) a[y * W + wx(x + off)] = src[y * W + x];
       };
-      [E, plateOf, cont, uplift, stress, srcAmp].forEach(roll);
+      [E, hm, plateOf, cont, uplift, stress, srcAmp].forEach(roll);
       const at = (i) => ((i / W) | 0) * W + wx(i % W + off);
       plates.forEach(function (p) { p.seed = at(p.seed); });
       hotspots.forEach(function (h) { h.x = wx(h.x + off); });
@@ -431,9 +484,8 @@ function generate(world, pack, rng) {
   }
   for (let i = 0; i < N; i++) {
     if (isOcean(i)) { T[i] = SST[i]; continue; }
-    const h = (E[i] - 0.5) / 0.5;
     const cdist = Math.min(coastDist[i], 25) / 25;
-    T[i] = T[i] - 0.34 * Math.pow(Math.max(0, h), 1.3) - 0.06 * cdist * Math.abs(Math.sin(latRad[i]));
+    T[i] = T[i] - LAPSE_T * Math.max(0, hm[i]) / 1000 - 0.06 * cdist * Math.abs(Math.sin(latRad[i]));
   }
   /* coasts feel their offshore water */
   for (let i = 0; i < N; i++) {
@@ -508,17 +560,17 @@ function generate(world, pack, rng) {
   }
 
   const fin = finish(world, pack, {
-    W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, T: T, precip: precip, coastDist: coastDist, latRad: latRad,
+    W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, Hm: hm, T: T, precip: precip, coastDist: coastDist, latRad: latRad,
     uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont,
     nf2: (i, f, o, g) => nf(noise2, i, f, o, g), nf3: (i, f, o, g) => nf(noise3, i, f, o, g),
-    K: 1, area: 1, minLen: 4, inflow: null, mtnLine: null,
+    K: 1, area: 1, minLen: 4, inflow: null, mtnOffset: 0,
   });
 
   /* debug layers for the inspector page; not enumerable so nothing copies them */
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, E, T, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, hotspots,
-             riverT: fin.riverT, mtnLine: fin.mtnLine, precip, stress, srcAmp, ms: Date.now() - t0 },
+    value: { plateOf, plates, cont, uplift, E, Hm: hm, T, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, hotspots,
+             riverT: fin.riverT, mtnOffset: fin.mtnOffset, precip, stress, srcAmp, ms: Date.now() - t0 },
   });
 }
 
@@ -527,8 +579,9 @@ function generate(world, pack, rng) {
    made before this point: W, H, N, NB4, NB8, E, T, precip, coastDist (in planet cells), latRad,
    uplift, stress, srcAmp, plateOf, cont; nf2 and nf3, noise at a cell; K (cells a planet cell
    across), area (planet cells a cell, 1 / K^2), minLen (shortest river kept, in cells), inflow
-   (runoff entering from outside the grid, or null), mtnLine (null: worked out here) and
-   riverT (null: 0.96, the planet's); minLake, the fewest cells a lake or basin has (null: 1). The
+   (runoff entering from outside the grid, or null), mtnOffset (metres above the treeline where
+   "mountain" begins: 0 on the planet) and riverT (null: 0.96, the planet's); minLake, the fewest
+   cells a lake or basin has (null: 1). The
    regions go on target.regions; the debug layers are returned. */
 function finish(world, pack, L) {
   const W = L.W, H = L.H, N = L.N, NB4 = L.NB4, NB8 = L.NB8, E = L.E, T = L.T, precip = L.precip;
@@ -537,11 +590,14 @@ function finish(world, pack, L) {
   const isOcean = (i) => E[i] <= 0.5;
 
   /* ================================================== 6. hydrology ===== */
-  /* roughen cold lowlands slightly: glacial scour leaves lake districts */
+  /* roughen cold lowlands slightly: glacial scour leaves lake districts; and give every plain
+     a few metres of swell, so water gathers into rivers instead of running down a flat slope
+     in parallel lines */
   const Eh = Float32Array.from(E);
   for (let i = 0; i < N; i++) {
     if (isOcean(i)) continue;
-    if (T[i] < 0.34 && E[i] < 0.62) Eh[i] += (L.nf3(i, 0.5, 2, 0.5) + 0.5) * 0.012;
+    if (T[i] < 0.34 && E[i] < eOfM(1100)) Eh[i] += (L.nf3(i, 0.5, 2, 0.5) + 0.5) * 0.012;
+    Eh[i] += (L.nf2(i, 0.3, 3, 0.5) + 0.5) * 0.012;
   }
   /* rain on one fixed scale for every world (the median wettest-3% level over many seeds),
      so a dry world stays dry and a wet one wet */
@@ -652,12 +708,11 @@ function finish(world, pack, L) {
   }
 
   /* ================================================== 7. biomes ======== */
-  let mtnLine = L.mtnLine;
-  if (mtnLine == null) {
-    const hLand = [];
-    for (let i = 0; i < N; i++) if (!isOcean(i) && !lake[i]) hLand.push(E[i]);
-    mtnLine = Math.max(0.66, quantile(hLand, 0.9));
-  }
+  /* mountains are the land above the treeline (plus the grid's offset), so a world gets as many
+     as its tectonics raise, not a fixed share */
+  const mtnOffset = L.mtnOffset || 0;
+  const aboveTree = (i) => overTree(mOfE(E[i]), Math.abs(latRad[i]) * 180 / Math.PI) - mtnOffset;
+  const lowland = eOfM(200);
 
   const slope = new Float32Array(N);
   for (let i = 0; i < N; i++) {
@@ -680,10 +735,10 @@ function finish(world, pack, L) {
      desert with a river in it); they only make wet lowland into swamp. */
   function classify(i) {
     const c = tempC[i], mm = rainMm[i], e = E[i];
-    if (e >= mtnLine) return c < -14.5 ? "ice" : "mountain";
+    if (aboveTree(i) >= 0) return c < -14.5 ? "ice" : "mountain";
     if (c < -17) return "ice";
     if (c < -8) return "tundra";
-    const soggy = slope[i] < 0.035 && e < 0.6 &&
+    const soggy = slope[i] < 0.008 && e < lowland &&
                   (hyd.acc[i] >= riverT || coastDist[i] <= 2 || basin[i]);
     if (c < 3) {                                     /* boreal */
       if (mm < 300) return c >= -2 ? "grassland" : "tundra";   /* cold steppe, polar desert */
@@ -711,6 +766,7 @@ function finish(world, pack, L) {
     const reg = {
       id: i, x: x, y: y, name: null,
       elevation: r3(lake[i] ? Math.max(E[i], lakeLevel[i]) : E[i]),
+      heightM: Math.round(lake[i] ? mOfE(Math.max(E[i], lakeLevel[i])) : L.Hm ? L.Hm[i] : mOfE(E[i])),
       temperature: r3(T[i]), moisture: r3(M[i]),
       precipitation: r3(P[i]),
       tempC: Math.round(tempC[i] * 10) / 10, rainMm: Math.round(rainMm[i]),
@@ -763,7 +819,7 @@ function finish(world, pack, L) {
     let food = (foodBase[biome] !== undefined ? foodBase[biome] : 0.4) + 0.12 * nr;
     if (reg.river) food += biome === "desert" ? 0.45 : 0.2;
     if (coastal || lakeside) food += 0.08;
-    const metal = (biome === "mountain" ? 0.6 : E[i] > 0.62 ? 0.28 : 0.06) + 0.25 * clamp(uplift[i] / 0.3, 0, 1) + 0.15 * nr;
+    const metal = (biome === "mountain" ? 0.6 : E[i] > eOfM(1200) ? 0.28 : 0.06) + 0.25 * clamp(uplift[i] / 0.3, 0, 1) + 0.15 * nr;
     const exo = clamp((L.nf2(i, 0.08, 3, 0.5) - 0.1) * 1.8, 0, 1) + (stress[i] > 0.8 ? 0.2 : 0) + (biome === "desert" || biome === "jungle" ? 0.06 : 0);
     reg.resources = { food: r3(clamp(food, 0, 1)), metal: r3(clamp(metal, 0, 1)), exotic: r3(clamp(exo, 0, 1)) };
     regions.push(reg);
@@ -771,7 +827,7 @@ function finish(world, pack, L) {
   /* rivers only flow into land/lake/sea cells that exist; drop flowTo for non-rivers
      that drain into the sea directly — the renderer only draws river cells anyway */
 
-  return { acc: hyd.acc, lake: lake, basin: basin, riverT: riverT, mtnLine: mtnLine, P: P, M: M, isRiver: isRiver };
+  return { acc: hyd.acc, lake: lake, basin: basin, riverT: riverT, mtnOffset: mtnOffset, P: P, M: M, isRiver: isRiver };
 }
 
 /* ============================================================== region === */
@@ -865,7 +921,7 @@ function region(world, si) {
   const Ec = new Float32Array(N), E = new Float32Array(N), MT = new Float32Array(N), RG = new Float32Array(N);
   const landInd = new Float32Array(PW * PH);
   const mtnInd = new Float32Array(PW * PH);
-  for (let i = 0; i < PW * PH; i++) { landInd[i] = g.E[i] > 0.5 ? 1 : 0; mtnInd[i] = g.E[i] >= g.mtnLine ? 1 : 0; }
+  for (let i = 0; i < PW * PH; i++) { landInd[i] = g.E[i] > 0.5 ? 1 : 0; mtnInd[i] = g.E[i] > 0.5 && overTree(g.Hm[i], Math.abs(world.regions[i].y + 0.5 - PH / 2) / PH * 150) >= 0 ? 1 : 0; }
   let rs = 0, rw = 0;
   for (let i = 0; i < N; i++) {
     const ec = cubic(g.E, FX[i], FY[i]), up = cubic(g.uplift, FX[i], FY[i]);
@@ -900,13 +956,12 @@ function region(world, si) {
 
   /* ----- climate from the planet ----- */
   const T = new Float32Array(N), precip = new Float32Array(N), latRad = new Float32Array(N);
-  const lift = (e) => Math.pow(Math.max(0, (e - 0.5) / 0.5), 1.3);
   const LT = overLandField(g.T), LE = overLandField(g.E), LP = overLandField(g.precip);
   for (let i = 0; i < N; i++) {
     latRad[i] = (0.5 - (FY[i] + 0.5) / PH) * Math.PI * (75 / 90);
     if (E[i] <= 0.5) { T[i] = clamp(cubic(g.T, FX[i], FY[i]), 0, 1); continue; }
     const tl = overLand(LT, FX[i], FY[i]), el = overLand(LE, FX[i], FY[i]), pl = overLand(LP, FX[i], FY[i]);
-    T[i] = clamp((tl != null ? tl : cubic(g.T, FX[i], FY[i])) - 0.34 * (lift(E[i]) - lift(el != null ? el : 0.5)), 0, 1);
+    T[i] = clamp((tl != null ? tl : cubic(g.T, FX[i], FY[i])) - LAPSE_T * (mOfE(E[i]) - mOfE(Math.max(0.5015, el != null ? el : 0.5015))) / 1000, 0, 1);
     precip[i] = pl != null ? pl : 0.03;
     /* local weather the planet cannot hold: ragged edges to its climate belts */
     T[i] = clamp(T[i] + nfr(nzC, i, 0.9, 2, 0.5) * 0.02, 0, 1);
@@ -946,17 +1001,20 @@ function region(world, si) {
     uplift[i] = g.uplift[c]; stress[i] = g.stress[c]; srcAmp[i] = g.srcAmp[c]; plateOf[i] = g.plateOf[c]; cont[i] = g.cont[c];
   }
 
-  /* the mountain line that gives the square as much mountain land as the planet does: the noise
-     makes peaks and valleys, not more mountains (a plateau just under the planet's line would
-     otherwise break out in peaks all over) */
+  /* how far above the treeline mountains begin here, so the square gets as much mountain land
+     as the planet gives it: the noise makes peaks and valleys, not more mountains (a plateau
+     just under the treeline would otherwise break out in peaks all over) */
   const ix0 = (sq.x0 - px0) * K, ix1 = (sq.x1 - px0) * K, iy0 = (sq.y0 - py0) * K, iy1 = (sq.y1 - py0) * K;
-  let mtnLine = g.mtnLine;
+  let mtnOffset = 0;
   {
     let pl = 0, pm = 0;
-    for (let y = sq.y0; y < sq.y1; y++) for (let x = sq.x0; x < sq.x1; x++) { const e = g.E[y * PW + pwx(x)]; if (e > 0.5) { pl++; if (e >= g.mtnLine) pm++; } }
+    for (let y = sq.y0; y < sq.y1; y++) for (let x = sq.x0; x < sq.x1; x++) { const c = y * PW + pwx(x); if (g.E[c] > 0.5) { pl++; if (mtnInd[c]) pm++; } }
     const fe = [];
-    for (let y = iy0; y < iy1; y++) for (let x = ix0; x < ix1; x++) if (E[y * W + x] > 0.5) fe.push(E[y * W + x]);
-    if (pl && fe.length) mtnLine = pm ? Math.max(0.55, quantile(fe, 1 - pm / pl)) : Math.max(g.mtnLine, quantile(fe, 1) + 1e-6);
+    for (let y = iy0; y < iy1; y++) for (let x = ix0; x < ix1; x++) {
+      const i = y * W + x;
+      if (E[i] > 0.5) fe.push(overTree(mOfE(E[i]), Math.abs(latRad[i]) * 180 / Math.PI));
+    }
+    if (pl && fe.length) mtnOffset = pm ? Math.max(-800, quantile(fe, 1 - pm / pl)) : Math.max(0, quantile(fe, 1) + 1);
   }
 
   const out = { square: sq.id, squareIndex: si, K: K, margin: MARGIN, px0: px0, py0: py0, width: W, height: H, regions: [] };
@@ -964,7 +1022,7 @@ function region(world, si) {
     W: W, H: H, N: N, NB4: NB4, NB8: NB8, E: E, T: T, precip: precip, coastDist: coastDist, latRad: latRad,
     uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont,
     nf2: (i, f, o, gn) => nfr(nzA, i, f, o, gn), nf3: (i, f, o, gn) => nfr(nzB, i, f, o, gn),
-    K: K, area: 1 / (K * K), minLen: 2 * K, inflow: inflow, mtnLine: mtnLine, riverT: 0.35, minLake: K * K,
+    K: K, area: 1 / (K * K), minLen: 2 * K, inflow: inflow, mtnOffset: mtnOffset, riverT: 0.35, minLake: K * K,
   });
   /* the square itself; the margin around it is "beyond", the neighbours' land */
   for (const r of out.regions) {
@@ -974,7 +1032,7 @@ function region(world, si) {
   Object.defineProperty(out, "_gen", {
     enumerable: false, configurable: true,
     value: { E: E, Ec: Ec, T: T, P: fin.P, M: fin.M, acc: fin.acc, lake: fin.lake, basin: fin.basin, riverT: fin.riverT,
-             mtnLine: fin.mtnLine, precip: precip, inflow: inflow, ms: Date.now() - t0 },
+             mtnOffset: fin.mtnOffset, precip: precip, inflow: inflow, ms: Date.now() - t0 },
   });
   return out;
 }

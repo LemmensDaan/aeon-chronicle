@@ -11,8 +11,8 @@
    Output goes to tools/out/ (gitignored): metrics.json, summary.txt, seed-<n>.png (every layer
    of one seed), overview-*.png (one layer, every seed) and chart-*.png (zonal profiles).
 
-   Units: the generator has none. Elevation is 0..1 with the sea at 0.5 and the highest land
-   cell always 1; temperature and rain are 0..1. Where a number is compared with Earth, the
+   Units: elevation is 0..1 with the sea at 0.5, 5,000 m at 1 and -7,000 m at 0 (planetgen's
+   eOfM; exact since realism fixes 4-5); temperature and rain are 0..1. Where a number is compared with Earth, the
    assumption that turns it into metres or degrees is stated next to it (EARTH below).
    Every Earth figure here is a rounded textbook value, good to a few percent, not a dataset. */
 "use strict";
@@ -228,7 +228,7 @@ function measure(world) {
   /* -- mountains -- */
   const mtn = new Uint8Array(N);
   let mtnA = 0;
-  for (let i = 0; i < N; i++) if (dry(i) && E[i] >= g.mtnLine) { mtn[i] = 1; mtnA += AREA[i]; }
+  for (let i = 0; i < N; i++) if (dry(i) && world.regions[i].biome === "mountain") { mtn[i] = 1; mtnA += AREA[i]; }
   /* distance (km) from a convergent plate boundary */
   const dConv = new Float64Array(N).fill(Infinity);
   {
@@ -267,7 +267,7 @@ function measure(world) {
     ranges.push({ cells: q.length, km: len });
   }
   ranges.sort((a, b) => b.km - a.km);
-  m.mountains = { mtnLine: r3(g.mtnLine), pctOfLand: r1(pct(mtnA, dryA)), within500kmOfConvergent: r1(pct(near500, mtnA)),
+  m.mountains = { pctOfLand: r1(pct(mtnA, dryA)), within500kmOfConvergent: r1(pct(near500, mtnA)),
     within1000km: r1(pct(near1000, mtnA)), withoutTectonicUplift: r1(pct(noUplift, mtnA)),
     ranges: ranges.length, singleCellRanges: ranges.filter((r) => r.cells === 1).length,
     longestKm: ranges.slice(0, 3).map((r) => Math.round(r.km)) };

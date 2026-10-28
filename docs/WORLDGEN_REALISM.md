@@ -445,3 +445,59 @@ Earth's, and the map has more mid-latitude land than Earth (land share, fix 5).
 ![Biomes after fix 3](worldgen/overview-biomes-fix3.png)
 
 ![Biome share by latitude after fix 3](worldgen/chart-biome-latitude-fix3.png)
+
+### Fixes 4 and 5, heights in metres and sea level from the crust (2026-10-28, changes every seed's terrain, climate, biomes and history)
+
+Terrain is now built in metres (`world._gen.Hm`, sea at 0 m) and only then mapped to elevation:
+land 0.5015 + 0.4985 × min(1, m / 5,000), ocean 0.5 × (1 + m / 7,000). The harness's assumed
+scale is now exact. Nothing is stretched to the highest cell any more, and the sea level is no
+longer a quantile: land is what the crust and tectonics lift above 0 m.
+
+- **Continental crust:** 100-1,500 m of low-frequency relief (skewed, so most is lowland), a
+  share of the nearby uplift, and a drop of up to 900 m towards the continent's edge. The
+  outermost ~25% of continental crust lies under water as shelf at -40 to -220 m.
+- **Oceanic crust:** depth from age, using distance to the mid-ocean ridge as age:
+  -(2,600 + 2,900 × (1 - e^(-age/60 Ma))). Continental feet stay above -3,000 m.
+- **Tectonics in metres:** collision ranges +4,800 m, Andean margins +4,400, island arcs +5,600,
+  trenches -2,500, continental rifts -1,400, hotspots up to +6,500 (a third on continents). Above
+  5,000 m peaks are compressed.
+- **Mountains:** a cell is mountain (or ice peak) when it stands above the treeline for its
+  latitude (3,800 m to 20°, falling to 2,200 m at 45° and 500 m near the poles) and above 1,200 m.
+  There is no fixed mountain share any more. Regions match the planet square's mountain share
+  as before.
+- **Lapse rate:** 6 °C per km of height (was a curve on the old unitless height).
+- Distances inland, offshore and from ridges use a Dijkstra over the 8 neighbours, so the sea
+  floor has no diamond-shaped streaks.
+
+18 seeds, median (range):
+
+| | Before | After | Earth |
+|---|---|---|---|
+| Land share | 39.5% (30-46) | 32.4% (24-37) | 29% |
+| Continental crust under water | 2.8% | 20.1% (11-33) | ~25% |
+| Land on oceanic crust | 5% | 2% | Iceland, arcs |
+| Land median height | 1,211 m | 683 m (219-925) | ~400-700 m |
+| Land 90th percentile | 2,059 m | 1,868 m | ~2,000 m |
+| Ocean median depth | -3,618 m | -4,322 m | ~-4,000 |
+| Shelf (0 to -200 m), share of ocean | 1.3% | 9.8% (5-15) | ~8% |
+| Shelf depth median | -632 m | -134 m | ~-130 m |
+| Abyss, share of ocean | 36% | 59% | ~55% |
+| Mountains, share of land | 10.3% | 4.6% (1-11) | ~4% above the treeline |
+| Mean °C of mountain cells | +10.3 | -6.1 | cold |
+| Mountains within 1,000 km of a convergent margin | 89% | 90% | most |
+| Land median °C | 16.3 | 14.0 | ~14 |
+| Generation | 1.4 s | 0.5 s | |
+
+Regions (`tools/region-report.js`, 3 seeds × 3 squares): coast agreement 0.98, biome difference
+median 0.04 (max 0.15), mountain share 0 / 0 / 0.15 against the planet's 0 / 0 / 0.16.
+
+Side effects for the climate fixes still to come: forest rose to 31% (21%) and desert fell to
+12% (16%), because the land is now colder with height and less of it is mountain; Earth has
+about 16% and 20%. Swamp is 1.9%. About 16% of mountain area (median) has no tectonic uplift
+under it: high plateaus where the continental relief and a hotspot add up.
+
+![Elevation after fixes 4 and 5](worldgen/overview-elevation-fix45.png)
+
+![Hypsometry after fixes 4 and 5](worldgen/chart-hypsometry-fix45.png)
+
+![Biomes after fixes 4 and 5](worldgen/overview-biomes-fix45.png)

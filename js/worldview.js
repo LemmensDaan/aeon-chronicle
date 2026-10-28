@@ -341,12 +341,49 @@ function drawBeyond(canvas, world) {
   ctx.save();
   ctx.setTransform(vw.dpr, 0, 0, vw.dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
+  /* past the region's own grid, the planet's land fills the rest of the screen */
+  const far = farOf(world);
+  if (far) {
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, cw, ch); ctx.rect(vw.ox, vw.oy, W * s, H * s); ctx.clip("evenodd");
+    ctx.fillStyle = "#1c2a3c"; ctx.fillRect(0, 0, cw, ch);
+    ctx.drawImage(far.img, vw.ox + far.x * s, vw.oy + far.y * s, far.img.width * s, far.img.height * s);
+    ctx.restore();
+  }
   ctx.drawImage(world._beyondImg, vw.ox, vw.oy, W * s, H * s);
   let x0 = W, x1 = 0, y0 = H, y1 = 0;
   for (const r of world.regions) if (!r.beyond) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x + 1); y0 = Math.min(y0, r.y); y1 = Math.max(y1, r.y + 1); }
   ctx.strokeStyle = "#3a2614"; ctx.lineWidth = 2;
   ctx.strokeRect(vw.ox + x0 * s, vw.oy + y0 * s, (x1 - x0) * s, (y1 - y0) * s);
   ctx.restore();
+}
+
+/* the planet around a region, FAR planet cells each way, one region cell a pixel (each planet
+   cell a block of K), shaded and hatched like the beyond band; x is in region cells, from the
+   region's left edge. Drawn only, made once per region. */
+const FAR = 40;
+function farOf(world) {
+  const planet = world.planet, sq = world.square;
+  if (!planet || !sq || !sq.K) return null;
+  if (world._farImg) return world._farImg;
+  const K = sq.K, PW = planet.width, PH = planet.height, biomes = world.pack.biomes || {};
+  const gx0 = sq.px0 - FAR, gy0 = Math.max(0, sq.py0 - FAR);
+  const gw = Math.round(world.width / K) + 2 * FAR, gy1 = Math.min(PH, sq.py0 + Math.round(world.height / K) + FAR), gh = gy1 - gy0;
+  const cv = document.createElement("canvas");
+  cv.width = gw * K; cv.height = gh * K;
+  const ctx = cv.getContext("2d"), img = ctx.createImageData(cv.width, cv.height), d = img.data;
+  for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+    const px = (((gx0 + Math.floor(x / K)) % PW) + PW) % PW, r = planet.regions[(gy0 + Math.floor(y / K)) * PW + px];
+    const b = r && !r.barren && biomes[r.biome];
+    const c = b ? hexRgb(b.color) : [45, 70, 105];
+    const shade = (x + y) % 4 === 0 ? 0.5 : 0.72, i = (y * cv.width + x) * 4;
+    d[i] = c[0] * shade; d[i + 1] = c[1] * shade; d[i + 2] = c[2] * shade; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const v = { img: cv, x: -FAR * K, y: (gy0 - sq.py0) * K };
+  Object.defineProperty(world, "_farImg", { enumerable: false, configurable: true, writable: true, value: v });
+  return v;
 }
 
 /* what lies beyond a region at a cell: the neighbouring square's first people */

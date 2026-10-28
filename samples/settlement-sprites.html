@@ -122,6 +122,10 @@ function keep(w, h) {
 /* a house standing behind a wall: its roof and plastered front, down to the wall's merlons (the
    last row sits behind them, so plaster, not ground, shows between the merlons) */
 const BEHIND5 = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwwwk"]);
+/* lower ones for the chosen set: a flatter roof and one row of plaster, so the houses stay small
+   behind the wall */
+const LOW5 = sprite([".kfk.", "kffFk", "kwwwk"]);
+const LOW7 = sprite(["..kfk..", ".kffFk.", "kfffFFk", "kwwwwwk"]);
 const BEHIND7 = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwwwwwk", "kwwwwwk"]);
 /* a low wall, w wide: merlons, coping, a stone face with a brown dot for its gate, a foot */
 function lowWall(w) {
@@ -140,7 +144,7 @@ const FLAG = sprite(["kff", "kfF", "k.."]);
 const KEEP_POLE = compose([[BEHIND5, 0, 3], [BEHIND5, 10, 3], [keep(5, 10), 5, 1], [FLAG, 7, -1], [wall(15, 5, true), 0, 7]]);
 const CAPITALS = [
   { name: "Wide keep, banner on its face (chosen)", note: "The keep is 7 wide, stone either side of the realm's banner hung from a bar under the merlons; it now stands centred over the wall's gate.",
-    sp: compose([[BEHIND5, 0, 3], [BEHIND5, 10, 3], [keep7(true), 4, 1], [wall(15, 5, true), 0, 7]]) },
+    sp: compose([[LOW5, 0, 5], [LOW5, 10, 5], [keep7(true), 4, 1], [wall(15, 5, true), 0, 7]]) },
 ];
 const CAPITAL = CAPITALS[0].sp;
 
@@ -149,7 +153,7 @@ const BELFRY = sprite([".k.", "kfk", "kFk", "kkk", "kyk", "kkk", "kgk", "kgk", "
 const HILL = compose([[SPIRE, 5, 0], [HOUSE5, 2, 1], [HOUSE5, 6, 1], [HOUSE5, 0, 3], [HOUSE5, 4, 3], [HOUSE5, 8, 3], [lowWall(13), 0, 6]]);
 const CITIES = [
   { name: "Belfry over a low wall (chosen)", note: "The belfry with its golden bell over houses behind a low wall, smaller than the capital's, so a city never looks like a capital.",
-    sp: compose([[BEHIND7, 0, 2], [BEHIND5, 6, 3], [BELFRY, 5, 0], [lowWall(11), 0, 6]]) },
+    sp: compose([[LOW7, 0, 3], [LOW5, 6, 4], [BELFRY, 5, 0], [lowWall(11), 0, 6]]) },
 ];
 
 /* ------------------------------------------------------------ towns */
@@ -162,7 +166,7 @@ const GATETOWER = sprite(["..k..", ".kfk.", "kffFk", "kkkkk", "khkhk", "khhhk", 
 const STOCKADE_LOOKOUT = compose([[BEHIND7, 0, 1], [WATCH, 6, -2], [STOCKADE, 0, 5]]);
 const TOWNS = [
   { name: "Stockade (chosen)", note: "Pointed stakes in two woods with a gate; the houses behind show roof and plaster over the stakes.",
-    sp: compose([[BEHIND5, 0, 1], [BEHIND7, 4, 0], [STOCKADE, 0, 5]]) },
+    sp: compose([[LOW5, 0, 3], [LOW7, 4, 2], [STOCKADE, 0, 5]]) },
 ];
 
 /* ------------------------------------------------------------ extras, shelved for later */
@@ -199,7 +203,7 @@ const LIGHT_L = sprite(["..k..", ".kok.", "kkkkk", ".kwk.", ".kek.", ".kwk.", ".
 const BRIDGE_S = sprite(["kkkkkkk", "bbbbbbb", "b.....b"]);
 const BRIDGE_M = sprite(["kkkkkkkkk", "ggggggggg", "ggkkkkkgg", "gk.....kg", "kk.....kk"]);
 const BRIDGE_L = sprite(["kkkkkkkkkkk", "ggggggggggg", "gkkkgggkkkg", "k...kgk...k", "k...kgk...k"]);
-const WHEEL = sprite(["..kkk..", ".kbkbk.", "kbbkbbk", "kkkkkkk", "kbbkbbk", ".kbkbk.", "..kkk.."]);
+const WHEEL = sprite([".khk.", "khkhk", "hhkhh", "khkhk", ".khk."]);
 const MILL = sprite(["..k..", ".kfk.", "kffFk", "kwwwk", "kwkwk", "kkkkk"]);
 const BIGMILL = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", "kwwkwwk", "kwwkbwk", "kkkkkkk"]);
 const STILT = sprite(["..k..", ".kfk.", "kffFk", "kwkwk", "kkkkk", "b...b", "b...b"]);
@@ -228,9 +232,9 @@ function agesAt(t) { return AGE_KINDS.map(function (k, i) { return harbour(TOWN_
 const T = TOWN_W, C = CITY_W;
 const RIVER = [
   { name: "Watermill (no road crosses)", note: "Where no road crosses the river at the place: a mill on the bank with its wheel in the stream; a bigger mill at the city.", roads: "near",
-    s: [compose([[VILLAGE, 0, 0], [MILL, 7, 0], [WHEEL, 10, -1]], 13),
-        compose([[T, 0, 0], [MILL, T.w, T.h - 6], [WHEEL, T.w + 3, T.h - 7]], T.w + 6),
-        compose([[C, 0, 0], [BIGMILL, C.w, C.h - 7], [WHEEL, C.w + 5, C.h - 7]], C.w + 8)] },
+    s: [compose([[VILLAGE, 0, 0], [MILL, 7, 0], [WHEEL, 10, 1]], 12),
+        compose([[T, 0, 0], [MILL, T.w, T.h - 6], [WHEEL, T.w + 3, T.h - 5]], T.w + 5),
+        compose([[C, 0, 0], [BIGMILL, C.w, C.h - 7], [WHEEL, C.w + 5, C.h - 5]], C.w + 7)] },
   { name: "Bridge (a road crosses)", note: "Where a road crosses: the village only gets a plank bridge; the town and the city stand on both banks, joined by a stone bridge.", roads: "across",
     s: [compose([[VILLAGE, 0, 0], [BRIDGE_S, 6, 3]], 9),
         compose([[T, 0, 0], [BRIDGE_M, T.w - 1, T.h - 5], [HOUSE5, T.w + 7, T.h - 6]], T.w + 3),

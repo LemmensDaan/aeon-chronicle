@@ -283,12 +283,77 @@ function buildTerrain(world) {
     return (e(x0, y0) * (1 - tx) + e(x0 + 1, y0) * tx) * (1 - ty) + (e(x0, y1) * (1 - tx) + e(x0 + 1, y1) * tx) * ty;
   };
 
-  const E = new Float32Array(N), land = new Uint8Array(N), cellOf = new Int32Array(N);
+  /* lakes: the lake cells blended between their centres and the line drawn through the half-way
+     mark, wobbled by a little noise, so the shore curves instead of following the cells' squares
+     (a region's "beyond" land is flagged lake to keep it dry; it is no lake here) */
+  const isLake = function (r) { return r.lake && !r.beyondBiome ? 1 : 0; };
+  const lakeAt = function (fx, fy) {
+    const x = fx - 0.5, y = Math.max(0, Math.min(H - 1, fy - 0.5));
+    const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0, y1 = Math.min(y0 + 1, H - 1);
+    const l = function (i, j) { return isLake(R[j * W + ((i % W) + W) % W]); };
+    return (l(x0, y0) * (1 - tx) + l(x0 + 1, y0) * tx) * (1 - ty) + (l(x0, y1) * (1 - tx) + l(x0 + 1, y1) * tx) * ty;
+  };
+  /* smooth value noise in [0,1), f lattice points a cell, wrapping east-west with the map */
+  const vnoise = function (fx, fy, f, salt) {
+    const x = fx * f, y = fy * f, x0 = Math.floor(x), y0 = Math.floor(y), P = W * f;
+    const sx = x - x0, sy = y - y0, tx = sx * sx * (3 - 2 * sx), ty = sy * sy * (3 - 2 * sy);
+    const v = function (i, j) { return cellRand(((i % P) + P) % P * 65536 + j, salt); };
+    return (v(x0, y0) * (1 - tx) + v(x0 + 1, y0) * tx) * (1 - ty) + (v(x0, y0 + 1) * (1 - tx) + v(x0 + 1, y0 + 1) * tx) * ty;
+  };
+
+  /* lake: 1 on a lake's water, so it is drawn as one (no surf, no beach on its shore) */
+  const E = new Float32Array(N), land = new Uint8Array(N), lake = new Uint8Array(N), cellOf = new Int32Array(N);
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
-    const i = y * VW + x, c = cellAt((x + 0.5) / PPC, (y + 0.5) / PPC);
-    E[i] = elev((x + 0.5) / PPC, (y + 0.5) / PPC);
+    const i = y * VW + x, fx = (x + 0.5) / PPC, fy = (y + 0.5) / PPC, c = cellAt(fx, fy);
+    E[i] = elev(fx, fy);
     cellOf[i] = c.id;
-    land[i] = E[i] > 0.5 && !c.lake ? 1 : 0;
+    if (c.beyondBiome) { land[i] = 0; lake[i] = 1; continue; }
+    lake[i] = lakeAt(fx, fy) > 0.35 + vnoise(fx, fy, 2, 41) * 0.3 ? 1 : 0;
+    land[i] = E[i] > 0.5 && !lake[i] ? 1 : 0;
+  }
+  /* round the coast's corners: a narrow inlet or neck of land a cell or two wide comes out of the
+     blend with square corners, so each pixel takes what most of a small disc round it is, twice;
+     straight runs of coast keep their line (lakes and their shores stay as drawn, and so does
+     the middle of every cell, so a one-cell island or channel is never rounded away) */
+  const mid = function (v) { const m = v % PPC; return m === (PPC >> 1) - 1 || m === PPC >> 1; };
+  for (let pass = 0; pass < 2; pass++) {
+    const prev = land.slice();
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x;
+      if (lake[i] || (mid(x) && mid(y))) continue;
+      let n = 0, k = 0;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const ny = y + dy;
+        if ((dx === 2 || dx === -2) && (dy === 2 || dy === -2)) continue;
+        if (ny < 0 || ny >= VH) continue;
+        const j = ny * VW + (x + dx + VW) % VW;
+        if (lake[j]) continue;
+        n++; k += prev[j];
+      }
+      if (n) land[i] = 2 * k > n ? 1 : 2 * k < n ? 0 : prev[i];
+    }
+  }
+  /* water at sea level that never reaches the open sea is a lake to the eye: a body of it
+     touching neither the map's top or bottom (nor, in a region, its sides) and smaller than a
+     hundredth of the map */
+  {
+    const seen = new Uint8Array(N), q = new Int32Array(N), wraps = !world.square;
+    for (let s = 0; s < N; s++) {
+      if (land[s] || lake[s] || seen[s]) continue;
+      let n = 0, open = false;
+      q[n++] = s; seen[s] = 1;
+      for (let h = 0; h < n; h++) {
+        const c = q[h], x = c % VW, y = (c - x) / VW;
+        if (y === 0 || y === VH - 1 || (!wraps && (x === 0 || x === VW - 1))) open = true;
+        for (let k = 0; k < 4; k++) {
+          const ny = y + (k === 2) - (k === 3), nx = x + (k === 0) - (k === 1);
+          if (ny < 0 || ny >= VH || (!wraps && (nx < 0 || nx >= VW))) continue;
+          const j = ny * VW + (nx + VW) % VW;
+          if (!land[j] && !lake[j] && !seen[j]) { seen[j] = 1; q[n++] = j; }
+        }
+      }
+      if (!open && n < N / 100) for (let h = 0; h < n; h++) lake[q[h]] = 1;
+    }
   }
 
   const px = new Uint8ClampedArray(N * 4);
@@ -296,7 +361,7 @@ function buildTerrain(world) {
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
     const i = y * VW + x, e = E[i], t = bayer(x, y);
     if (!land[i]) {
-      if (R[cellOf[i]].lake) {
+      if (lake[i]) {
         /* lakes (Daan, 2026-10-28, from samples/settlement-sprites.html): shallow along the shore,
            dithered into mid-blue further out, no stripes and no surf */
         let d = 8;
@@ -321,18 +386,22 @@ function buildTerrain(world) {
     const c = cellAt((x + 0.5) / PPC + (t - 0.5) * 0.9, (y + 0.5) / PPC + (bayer(y + 1, x + 2) - 0.5) * 0.9);
     const biome = c.barren ? "grassland" : c.biome;
     const eNW = E[Math.max(0, y - 1) * VW + (x + VW - 1) % VW], eSE = E[Math.min(VH - 1, y + 1) * VW + (x + 1) % VW];
-    const lvl = Math.min(2, Math.floor(Math.max(0, Math.min(0.999, 0.55 + (eNW - eSE) * 38)) * 2 + t));
-    /* beaches: land touching the sea is sand, and low ground a pixel further in, except under
-       mountains, ice and swamp; lake shores stay green */
+    let lvl = Math.min(2, Math.floor(Math.max(0, Math.min(0.999, 0.55 + (eNW - eSE) * 38)) * 2 + t));
+    /* beaches: land touching the sea is sand, low ground a pixel further in and the lowest a few
+       pixels in, except under mountains, ice and swamp; lake shores stay green, and low ground
+       inland is its own land a shade lighter, not sand */
     let sea = 0;
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
       const ny = y + dy, j = ny * VW + (x + dx + VW) % VW;
-      if (ny < 0 || ny >= VH || land[j] || R[cellOf[j]].lake) continue;
+      if (ny < 0 || ny >= VH || land[j] || lake[j]) continue;
       const dd = Math.max(Math.abs(dx), Math.abs(dy));
       if (!sea || dd < sea) sea = dd;
     }
-    const beach = sea && biome !== "ice" && biome !== "swamp" && biome !== "mountain" && (sea === 1 ? e < 0.56 : e < 0.515 + t * 0.01);
-    if (beach || (e < 0.506 && biome !== "ice" && biome !== "swamp")) put(i, P.sand[lvl]);
+    const low = e < 0.506 && biome !== "ice" && biome !== "swamp";
+    const beach = sea && biome !== "mountain" && biome !== "ice" && biome !== "swamp" &&
+      (sea === 1 ? e < 0.56 : sea === 2 ? e < 0.515 + t * 0.01 : low);
+    if (low && !beach) lvl = Math.min(2, lvl + 1);
+    if (beach) put(i, P.sand[lvl]);
     else if (biome === "mountain" && e > 0.86) put(i, P.snow[lvl]);
     else put(i, (P[biome] || P.grassland)[lvl]);
   }
@@ -389,7 +458,7 @@ function buildTerrain(world) {
   const foam = [], glints = [];
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
     const i = y * VW + x;
-    if (land[i] || R[cellOf[i]].lake) continue;
+    if (land[i] || lake[i]) continue;
     let coast = false;
     for (let dy = -1; dy <= 1 && !coast; dy++) for (let dx = -1; dx <= 1; dx++) {
       const ny = y + dy;

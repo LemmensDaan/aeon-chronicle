@@ -162,6 +162,9 @@ function build(spec) {
   }
   const roads = (spec.roads || []).map(function (r) { return trace(r, false, true).filter(function (p) { return p[0] >= 0 && p[1] >= 0 && p[0] < W && p[1] < H; }); });
   const lanes = (spec.lanes || []).map(function (r) { return trace(r, false, true); });
+  const hedge = new Uint8Array(N);
+  const field = new Int32Array(N);
+  for (let i = 0; i < N; i++) if (biome[i] === B.farm) { const fa = fieldAt(i % W, Y((i - i % W) / W)); hedge[i] = fa.edge; field[i] = fa.id; }
   const road = new Uint8Array(N);
   for (const r of roads) for (const p of r) road[p[1] * W + p[0]] = 1;
 
@@ -174,7 +177,7 @@ function build(spec) {
     else if (kind[i] === 1) col = d === 1 ? (t < 0.5 ? P.foam : P.shallow) : d <= 3 + t * 2 ? P.shallow : d <= 9 + t * 3 ? P.mid : P.deep;
     else if (kind[i] === 3) col = P.river;
     else if (b === B.mountain && h[i] > 2700) col = P.snow[lvl[i]];
-    else if (b === B.farm) col = farmBase(x, y, i, lvl[i]);
+    else if (b === B.farm) col = farmBase(x, Y(y), i, lvl[i]);
     else if (b === B.orchard) col = (x % 3 === 0 && y % 2 === 0) ? P.forest[1] : P.grassland[lvl[i]];
     else if (b === B.town) col = P.grassland[lvl[i]];
     else col = LAND_PAL[b][lvl[i]];
@@ -189,7 +192,7 @@ function build(spec) {
   }
 
   const S = { kind: kind, biome: biome, lvl: lvl, h: h, cold: cold, warm: warm, rain: rain, sum: sum, jit: jit,
-              toLand: toLand, toSea: toSea, toLake: toLake, rivers: rivers, riverPx: riverPx, mouths: mouths,
+              toLand: toLand, toSea: toSea, toLake: toLake, hedge: hedge, field: field, rivers: rivers, riverPx: riverPx, mouths: mouths,
               towns: towns, roads: roads, lanes: lanes, road: road, base: base, south: !!spec.south, flip: flip,
               wind: spec.wind == null ? 1 : spec.wind, name: spec.name };
   /* lake and river ice (pixelmap.js buildTerrain): each lake pixel's distance from the shore and how long it stays frozen */
@@ -210,9 +213,18 @@ function build(spec) {
   return S;
 }
 /* farmland: a patchwork of fields, each with its own crop and its own few days' lead */
-function fieldOf(x, y) { return Math.floor((x + Math.floor(y / 5) * 3) / 6) * 97 + Math.floor(y / 5); }
+/* fields 7 by 5 pixels, each row of them shifted its own way, with hedges between them (and here
+   and there a track instead) so the farmland reads as fields, not a blob */
+function fieldAt(x, y) {
+  const band = Math.floor(y / 5), off = Math.floor(hash(band, 5) * 7), fx = x + off, col = Math.floor(fx / 7);
+  const edge = fx % 7 === 0 ? 1 : y % 5 === 0 ? (hash(band, 8) < 0.35 ? 2 : 1) : 0;
+  return { id: col * 97 + band, edge: edge, cx: col * 7 + 3.5 - off, cy: band * 5 + 2.5 };
+}
+const HEDGE = ["#24512a", "#2c5e2e"], TRACK = "#8a6a40", HEDGE_BARE = ["#4e4034", "#5e4c3c"];
 function farmBase(x, y, i, l) {
-  const f = fieldOf(x, y), k = hash(f, 3);
+  const fa = fieldAt(x, y);
+  if (fa.edge) return fa.edge === 2 ? TRACK : HEDGE[(x + y) & 1];
+  const f = fa.id, k = hash(f, 3);
   return k < 0.3 ? P.grassland[l] : k < 0.55 ? P.savanna[(l + 1) % 3] : k < 0.8 ? P.grassland[(l + 1) % 3] : P.forest[2];
 }
 K.build = build;
@@ -238,7 +250,8 @@ function temperateSpec(south) {
       const vx = x - 66, vy = y - 53;
       if (vx * vx + vy * vy * 1.6 < 12) return B.town;
       if (x >= 54 && x <= 62 && y >= 56 && y <= 63) return B.orchard;
-      if (vx * vx + vy * vy * 1.6 < 260 && vnoise(x * 0.12, y * 0.12, 4) < 0.62) return B.farm;
+      const fa = fieldAt(x, y), fx = fa.cx - 66, fy = fa.cy - 53;
+      if (fx * fx + fy * fy * 1.6 < 300 && hash(fa.id, 6) < 0.85) return B.farm;
       if (vnoise(x * 0.12, y * 0.12, 4) > 0.55) return c.cold[i] < -10 ? B.taiga : B.forest;
       return B.grass;
     },
@@ -383,7 +396,7 @@ FX.snow = function (f) {
     else m = snowMargin(S, i, f.lp);
     if (m <= 0 || (m < 0.025 && b > m / 0.025)) continue;
     /* trees stand dark through the snow */
-    if ((S.biome[i] === B.forest || S.biome[i] === B.taiga || S.biome[i] === B.jungle) && b > 0.55) continue;
+    if ((S.biome[i] === B.forest || S.biome[i] === B.taiga || S.biome[i] === B.jungle || S.hedge[i] === 1) && b > 0.55) continue;
     if (S.road[i] && b < 0.3) continue;
     put(f, i, P.snow[S.biome[i] === B.mountain ? S.lvl[i] : Math.min(2, S.lvl[i] + 1)]);
   }
@@ -429,26 +442,26 @@ FX.autumn = function (f) {
     else if (q < tm.out + 0.07) put(f, i, bb < (q - tm.out) / 0.03 ? R.leaf[l] : R.bare[l]);
   }
 };
-/* a short burst of blossom in spring: orchards, wild cherry on the edges of the woods, flowers in the meadows */
-FX.blossom = function (f) {
+/* blossom in spring, just before the leaves: each tree flowers for about ten days somewhere in a
+   four-week spell, so it spreads through the orchard rather than lighting up all at once; a few
+   wild cherries on the edges of the woods (unless orchardsOnly), a petal or two blowing off */
+FX.blossom = function (f, st, opts) {
   if (f.lp == null) return;
-  const S = f.S, t = f.t / 1000;
+  const S = f.S, t = f.t / 1000, only = opts && opts.orchardsOnly;
   for (let i = 0; i < N; i++) {
     const b = S.biome[i];
     if (S.cold[i] < -12 || S.cold[i] > 12 || S.kind[i] !== 0 || S.road[i]) continue;
     const x = i % W, y = (i - x) / W, tree = b === B.orchard && x % 3 === 0 && y % 2 === 0;
-    const edge = b === B.forest && S.toSea[i] > 1 && hash(i, 91) < 0.22 && isEdge(S, x, y);
-    const meadow = (b === B.grass || b === B.farm && hash(fieldOf(x, y), 3) < 0.3) && hash(i, 92) < 0.09;
-    if (!tree && !edge && !meadow) continue;
-    const start = leafTiming(S, i).out - 0.07 + (meadow ? 0.04 : 0) + S.jit[i] * 0.015, k = (f.lp - start) / 0.07;
+    const edge = !only && b === B.forest && S.toSea[i] > 1 && hash(i, 91) < 0.07 && isEdge(S, x, y);
+    if (!tree && !edge) continue;
+    const start = leafTiming(S, i).out - 0.08 + hash(i, 97) * 0.05, k = (f.lp - start) / 0.028;
     if (k < 0 || k > 1) continue;
-    const env = Math.sin(k * Math.PI);
-    if (bayer(x, y) > env * 1.3) continue;
-    put(f, i, meadow ? (hash(i, 93) < 0.6 ? "#f0d860" : "#fbf3f6") : hash(i, 94) < 0.55 ? "#fbf3f6" : hash(i, 95) < 0.6 ? "#f2b8cc" : "#e08aa8");
-    /* petals blowing off the orchard as it ends */
-    if (tree && k > 0.55) {
-      const life = (t * 0.8 + hash(i, 96)) % 1, px = x + Math.round(life * 6 * S.wind), py = y + Math.round(life * 3);
-      if (px >= 0 && px < W && py < H && S.kind[py * W + px] === 0 && life < 0.8) put(f, py * W + px, "#f2b8cc");
+    /* opening, full, then going over: white with a blush in the orchard, white in the woods */
+    const full = k > 0.2 && k < 0.75;
+    put(f, i, !full ? (tree ? "#e7b9c8" : "#d8d0c8") : tree && hash(i, 94) < 0.4 ? "#f6cfdc" : "#fbf3f6");
+    if (tree && k > 0.6 && hash(i, 98) < 0.3) {
+      const life = (t * 0.5 + hash(i, 96)) % 1, px = x + Math.round(life * 5 * S.wind), py = y + Math.round(life * 2);
+      if (life < 0.7 && px >= 0 && px < W && py < H && S.kind[py * W + px] === 0) put(f, py * W + px, "#f6cfdc");
     }
   }
 };
@@ -470,8 +483,13 @@ FX.plains = function (f) {
     if (b !== B.grass && b !== B.farm && b !== B.steppe && b !== B.town && !(b === B.orchard && !((i % W) % 3 === 0 && ((i / W) | 0) % 2 === 0))) continue;
     if (S.cold[i] > 12 || S.road[i]) continue;
     const x = i % W, y = (i - x) / W, own = LAND_PAL[b];
-    if (b === B.farm && hash(fieldOf(x, y), 3) >= 0.3) {
-      const fj = hash(fieldOf(x, y), 4) * 0.05, crop = hash(fieldOf(x, y), 3) < 0.8 ? R.wheat : R.ripe;
+    /* hedges in leaf from spring to autumn, bare in winter; tracks as they are */
+    if (b === B.farm && S.hedge[i]) {
+      if (S.hedge[i] === 1 && (q < 0.28 || q >= 0.8)) put(f, i, HEDGE_BARE[(x + y) & 1]);
+      continue;
+    }
+    if (b === B.farm && hash(S.field[i], 3) >= 0.3) {
+      const fj = hash(S.field[i], 4) * 0.05, crop = hash(S.field[i], 3) < 0.8 ? R.wheat : R.ripe;
       const fl = (y % 2) ? l : Math.max(0, l - 1);   /* furrows */
       if (q < 0.2 + fj || q >= 0.78 + fj) put(f, i, R.plough[fl]);
       else if (q < 0.3 + fj) mixRamp(f, i, R.plough, R.leaf, (q - 0.2 - fj) / 0.1, fl);
@@ -520,19 +538,34 @@ FX.monsoonRain = function (f) {
   for (let k = 0; k < n; k++) {
     const cyc = Math.floor(t / 9 + hash(k, 1)), life = (t / 9 + hash(k, 1)) % 1;
     const cx = 10 + hash(k, cyc) * 100 + life * 18, cy = 66 - life * 50 - hash(k, cyc + 7) * 10, r = 7 + hash(k, cyc + 3) * 6;
-    const env = Math.sin(life * Math.PI), flash = hash(k, Math.floor(t * 6)) < 0.02;
+    /* lightning: now and then a strike, a flash of the whole cloud with a forked bolt to the ground,
+       out, and struck again, as lightning flickers */
+    const env = Math.sin(life * Math.PI), slot = t / 0.7 + hash(k, 9), u = slot % 1, sid = Math.floor(slot);
+    const strike = env > 0.5 && hash(k * 31, sid) < 0.3, bolt = strike && (u < 0.07 || (u > 0.13 && u < 0.2)), glow = strike && u < 0.3;
     for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r * 1.4); x <= cx + r * 1.4; x++) {
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
       const d = Math.hypot((x - cx) / 1.4, y - cy) / r + (vnoise(x * 0.3, y * 0.3 + t, 72) - 0.5) * 0.5;
       if (d > env) continue;
       const i = y * W + x;
-      if (flash && d < env * 0.6) { shade(f, i, 1.35); continue; }
-      shade(f, i, 0.78);
+      if (bolt) { shade(f, i, 1.45); continue; }
+      shade(f, i, glow ? 0.95 : 0.78);
       if (hash(i, Math.floor(t * 10)) < 0.07 || hash(i - W - 1, Math.floor(t * 10)) < 0.07) put(f, i, "#9fb8d0");
     }
-    if (flash) {
-      let x = Math.round(cx), y = Math.round(cy - r * 0.5);
-      for (let s = 0; s < 8; s++, y++) { x += hash(k * 13 + s, Math.floor(t * 6)) < 0.5 ? -1 : 1; if (x >= 0 && x < W && y >= 0 && y < H) put(f, y * W + x, "#fff8d0"); }
+    if (bolt) {
+      const pts = [], len = 11 + Math.floor(hash(k, sid + 1) * 5);
+      let x = Math.round(cx + (hash(k, sid + 2) - 0.5) * r), y = Math.round(cy - r * 0.6), dir = hash(k, sid + 3) < 0.5 ? -1 : 1;
+      for (let st = 0; st < len; st++, y++) {
+        if (hash(k * 7 + st, sid) < 0.45) dir = -dir;
+        if (hash(k * 5 + st, sid) < 0.6) x += dir;
+        pts.push([x, y]);
+        /* a fork from the upper part, running off sideways */
+        if (st === 4) for (let b = 1, bx = x; b <= 4; b++) { bx -= dir; pts.push([bx, y + b]); }
+      }
+      const dot = function (x, y, col) { if (x >= 0 && x < W && y >= 0 && y < H) put(f, y * W + x, col); };
+      for (const p of pts) { dot(p[0] - 1, p[1], "#f3df6a"); dot(p[0] + 1, p[1], "#f3df6a"); }
+      for (const p of pts) dot(p[0], p[1], "#ffffff");
+      const g = pts[len + 3] || pts[pts.length - 1];
+      dot(g[0] - 1, g[1] + 1, "#fff3a0"); dot(g[0] + 1, g[1] + 1, "#fff3a0"); dot(g[0], g[1] + 1, "#ffffff");
     }
   }
 };
@@ -601,28 +634,43 @@ function events(f, st, sched) {
 }
 /* the season's dates in the place's own year, turned into calendar days */
 function onCalendar(S, lp) { return Math.round(wrap(lp + MIDWINTER + (S.south ? 0.5 : 0)) * 365); }
-/* tropical cyclones: three or so a year in the late summer and autumn, coming in off the warm sea
-   with the trade winds and curving away poleward; spinning anticlockwise in the north */
-FX.hurricanes = function (f, st) {
-  const S = f.S, t = f.t / 1000;
+/* tropical cyclones: two or three a year in the late summer and autumn, coming in off the warm sea
+   with the trade winds and curving away poleward. Drawn like the winter gales, as weather over the
+   map rather than a cloud on it: the sea and land go dark under the storm, rain streaks through it,
+   whitecaps on the sea and surf thrown up on the coast it passes. style "spiral": dark bands wind
+   in to a calm eye and turn (anticlockwise in the north); "mass": one dark mass, no eye, the rain
+   driven before the wind. */
+FX.hurricanes = function (f, st, opts) {
+  const S = f.S, t = f.t / 1000, mass = opts && opts.style === "mass", hs = S.south ? -1 : 1;
   const list = events(f, st, function (y) {
     const out = [];
-    for (let k = 0; k < 3; k++) if (hash(y, k + 11) < 0.8) out.push({ day: onCalendar(S, 0.56 + hash(y, k) * 0.28), dur: 9, minMs: 5000, k: k, y: y });
+    for (let k = 0; k < 3; k++) if (hash(y, k + 11) < 0.8) out.push({ day: onCalendar(S, 0.56 + hash(y, k) * 0.28), dur: 9, minMs: 6000, k: k, y: y });
     return out;
   });
   for (const a of list) {
     const p = a.prog, y0 = 44 + hash(a.e.y, a.e.k + 20) * 18;
-    const cx = W + 14 - p * (W + 30), cy = y0 - p * p * 42, r = 13 * Math.sin(Math.PI * Math.min(1, p * 1.1)) + 2;
-    const spin = (S.south ? -1 : 1) * t * 2.2;
-    for (let y = Math.floor(cy - r - 2); y <= cy + r + 2; y++) for (let x = Math.floor(cx - r - 2); x <= cx + r + 2; x++) {
+    const cx = W + 16 - p * (W + 34), cy = y0 - p * p * 42, r = 16 * Math.min(1, Math.sin(Math.PI * p) * 1.6) + 2;
+    const spin = hs * t * 1.3;
+    for (let y = Math.floor(cy - r - 3); y <= cy + r + 3; y++) for (let x = Math.floor(cx - r * 1.3 - 3); x <= cx + r * 1.3 + 3; x++) {
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
-      const dx = x - cx, dy = (y - cy) * 1.25, d = Math.hypot(dx, dy) / r;
-      if (d > 1.1 || d < 0.1) continue;
-      const arm = Math.sin(Math.atan2(dy, dx) * 2 - d * 7 * (S.south ? -1 : 1) + spin) * 0.5 + 0.5, i = y * W + x;
-      const v = arm * (1 - d) * 1.6 + (1 - d) * 0.5;
-      if (v < 0.25) { if (d < 1) shade(f, i, 0.85); continue; }
-      if (v < 0.45 && bayer(x, y) > (v - 0.25) * 5) { shade(f, i, 0.8); continue; }
-      put(f, i, R.cloud[v > 0.9 ? 2 : v > 0.6 ? 1 : 0]);
+      const i = y * W + x, dx = x - cx, dy = (y - cy) * 1.2;
+      const d = Math.hypot(mass ? dx / 1.3 : dx, dy) / r + (vnoise(x * 0.3 - t * 0.8, y * 0.3, 74) - 0.5) * 0.3;
+      if (d > 1) {
+        /* surf thrown up on the coast ahead of it */
+        if (d < 1.5 && S.kind[i] === 1 && S.toLand[i] <= 2 && hash(i, Math.floor(t * 6)) < 0.5) put(f, i, WHITE);
+        continue;
+      }
+      let band;
+      if (mass) band = 1 - d * 0.5;
+      else {
+        if (d < 0.13) { shade(f, i, 0.92); continue; }               /* the eye */
+        band = 0.5 + 0.5 * Math.sin(Math.atan2(dy, dx) * 2 - hs * d * 7 + spin);
+      }
+      shade(f, i, 0.8 - 0.36 * band * (1 - d * 0.4));
+      /* rain in slanting lines as in the gales, in the bands */
+      if (band > 0.45 && ((x * 3 + y * hs + Math.floor(t * 16)) % 6 + 6) % 6 === 0) {
+        put(f, i, "#9fb8d0");
+      } else if (S.kind[i] === 1 && band > 0.35 && hash(i, Math.floor(t * 5)) < 0.08) put(f, i, WHITE);
     }
   }
 };
@@ -652,9 +700,40 @@ FX.gales = function (f, st) {
 };
 
 /* ------------------------------------------------------------ ambient life */
-/* merchant ships to and fro along the trade lanes, a voyage at a time; fewer in winter where the sea
-   freezes, none through sea ice, the usual numbers when held */
+/* Ships, caravans and boats see the ice and snow coming and make for home before it closes in:
+   threat() is 0 when it is far off and climbs to 1 as it arrives (and back down after the thaw);
+   they are drawn that share of the way from where they would be to their harbour, town or shore.
+   The warning is about 20 days, or 2.5 seconds of playback at the faster speeds, so there is
+   always time to see them go. */
+function threat(frozen, lp, f) {
+  if (lp == null) return frozen(null) ? 1 : 0;
+  if (frozen(lp)) return 1;
+  const L = Math.min(0.25, Math.max(20, f.speed * 2.5) / 365);
+  for (let s = 1; s <= 16; s++) {
+    const d = L * s / 16;
+    if (frozen(wrap(lp + d)) || frozen(wrap(lp - d))) { const k = 1 - (s - 1) / 16; return k * k * (3 - 2 * k); }
+  }
+  return 0;
+}
+function inMap(p) { return p[0] >= 0 && p[0] < W && p[1] >= 0 && p[1] < H; }
+function nearTown(S, p, r, port) {
+  for (const tw of S.towns) if ((!port || tw.port) && Math.abs(tw.x - p[0]) <= r && Math.abs(tw.y - p[1]) <= r) return true;
+  return false;
+}
+/* the places along a route where they can wait: towns on it, and the ends that run off the map */
+function homes(S, route, port) {
+  const out = [];
+  route.forEach(function (p, k) {
+    if (!inMap(p)) { if (k === 0 || k === route.length - 1) out.push(k); return; }
+    if (nearTown(S, p, port ? 4 : 2, port) && (!out.length || k - out[out.length - 1] > 3)) out.push(k);
+  });
+  return out;
+}
+
+/* merchant ships to and fro along the trade lanes, a voyage at a time; before the ice closes a lane they make for the nearest harbour on it (or sail off
+   the map) and lie there with their sails down until it opens again */
 const SHIP = [".s..", ".ss.", "hhhh"], SHIP_COL = { s: "#efe6d6", h: "#7a4a22" };
+const MOORED = [".m..", ".m..", "hhhh"], MOORED_COL = { m: "#4e2f16", h: "#7a4a22" };
 function sprite(f, rows, cols, x0, y0, flipX, landOk) {
   for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) {
     const ch = rows[r][flipX ? rows[r].length - 1 - c : c];
@@ -667,91 +746,125 @@ function sprite(f, rows, cols, x0, y0, flipX, landOk) {
 }
 FX.ships = function (f) {
   const S = f.S, t = f.t / 1000;
-  /* winter at the place: fewer sail where the coldest month freezes the sea */
+  if (!S.laneHomes) S.laneHomes = S.lanes.map(function (l) { return homes(S, l, true); });
   S.lanes.forEach(function (lane, li) {
-    const len = lane.length;
-    for (let k = 0; k < 3; k++) {
-      const speed = 4 + hash(li, k) * 2, pos = t * speed + hash(li, k + 9) * len * 2, voyage = Math.floor(pos / (2 * len));
+    const len = lane.length, hs = S.laneHomes[li], sea = lane.filter(function (q) { return inMap(q) && S.kind[q[1] * W + q[0]] === 1; });
+    const k = threat(function (lp) { for (const q of sea) if (K.seaIced(S, q[1] * W + q[0], lp)) return true; return false; }, f.lp, f);
+    for (let m = 0; m < 3; m++) {
+      const speed = 4 + hash(li, m) * 2, pos = t * speed + hash(li, m + 9) * len * 2, voyage = Math.floor(pos / (2 * len));
       let s = pos % (2 * len);
       const back = s >= len; if (back) s = 2 * len - s - 1;
-      const p = lane[Math.max(0, Math.min(len - 1, Math.floor(s)))], i = p[1] * W + p[0];
-      if (p[0] < -3 || p[0] >= W || p[1] < 0 || p[1] >= H) continue;
-      const iCl = Math.max(0, Math.min(N - 1, i)), coldSea = S.cold[iCl] < -4;
-      const traffic = f.lp == null ? 0.7 : coldSea ? 0.7 - 0.5 * Math.max(0, Math.cos(2 * Math.PI * f.lp)) : 0.75;
-      if (hash(li * 7 + k, voyage) > traffic) continue;
-      let iced = false;
-      if (f.lp != null) for (const q of lane) { const j = q[1] * W + q[0]; if (q[0] >= 0 && q[0] < W && q[1] >= 0 && q[1] < H && K.seaIced(S, j, f.lp)) { iced = true; break; } }
-      else for (const q of lane) { const j = q[1] * W + q[0]; if (q[0] >= 0 && q[0] < W && q[1] >= 0 && q[1] < H && K.seaIced(S, j, null)) { iced = true; break; } }
-      if (iced) continue;
-      const nx = lane[Math.min(len - 1, Math.floor(s) + 1)], dir = (nx[0] - p[0]) * (back ? -1 : 1);
-      /* a wake behind */
-      const wk = lane[Math.max(0, Math.min(len - 1, Math.floor(s) + (back ? 3 : -3)))];
-      if (wk[0] >= 0 && wk[0] < W && wk[1] >= 0 && wk[1] < H && S.kind[wk[1] * W + wk[0]] === 1 && Math.floor(t * 4) % 2) put(f, wk[1] * W + wk[0], PALE);
-      sprite(f, SHIP, SHIP_COL, p[0] - 2, p[1] - 2, dir < 0, false);
+      if (hash(li * 7 + m, voyage) > 0.75) continue;
+      let at = s, dir = back ? -1 : 1, moored = false;
+      if (k > 0 && hs.length) {
+        let home = hs[0];
+        for (const h of hs) if (Math.abs(h - s) < Math.abs(home - s)) home = h;
+        /* lying in harbour a few pixels out from the quay, one behind the other */
+        const into = home < len / 2 ? 1 : -1;
+        let berth = home;
+        if (inMap(lane[home])) {
+          while (berth + into >= 0 && berth + into < len && !(inMap(lane[berth]) && S.kind[lane[berth][1] * W + lane[berth][0]] === 1)) berth += into;
+          berth = Math.max(0, Math.min(len - 1, berth + into * (1 + m * 4)));
+        }
+        at = s + (berth - s) * k; dir = berth >= s ? 1 : -1; moored = k > 0.97;
+      }
+      const p = lane[Math.max(0, Math.min(len - 1, Math.round(at)))];
+      if (!inMap(p)) continue;
+      if (moored) { sprite(f, MOORED, MOORED_COL, p[0] - 2, p[1] - 2, false, false); continue; }
+      const wk = lane[Math.max(0, Math.min(len - 1, Math.round(at) - dir * 3))];
+      if (inMap(wk) && S.kind[wk[1] * W + wk[0]] === 1 && Math.floor(t * 4) % 2) put(f, wk[1] * W + wk[0], PALE);
+      const nx = lane[Math.max(0, Math.min(len - 1, Math.round(at) + dir))];
+      sprite(f, SHIP, SHIP_COL, p[0] - 2, p[1] - 2, nx[0] - p[0] < 0 || (nx[0] === p[0] && dir < 0), false);
     }
   });
 };
-/* caravans on the roads: camels where the land is dry (desert and steppe, rain under 400 mm), ox carts
-   elsewhere; they wait out deep snow */
+/* caravans on the roads: camels where the land is dry (desert and steppe, rain under 400 mm), an ox
+   cart and riders elsewhere; before snow closes their stretch of road they make for the nearest
+   town on it (or off the map) and wait there, bunched up, until it melts */
 const CAMEL = [".k.", "kkk", "k.k"], CAMEL_COL = { k: "#c8a060" };
 const CART = ["oll", "oww"], CART_COL = { o: "#4e2f16", l: "#d9c08a", w: "#2a1a0e" };
 const RIDER = ["m", "m"], RIDER_COL = { m: "#3a2a1a" };
+function snowed(S, i, lp) { return lp == null ? snowShare(S, i) >= 0.5 : snowMargin(S, i, lp) > 0.04; }
 FX.caravans = function (f) {
   const S = f.S, t = f.t / 1000;
+  if (!S.roadHomes) S.roadHomes = S.roads.map(function (r) { return homes(S, r, false); });
   S.roads.forEach(function (road, ri) {
-    const len = road.length;
+    const len = road.length, hs = S.roadHomes[ri];
     if (!len) return;
-    for (let k = 0; k < 2; k++) {
-      const speed = 2.2 + hash(ri, k) * 1.2, pos = t * speed + hash(ri, k + 5) * len * 2;
+    for (let c = 0; c < 2; c++) {
+      const speed = 2.2 + hash(ri, c) * 1.2, pos = t * speed + hash(ri, c + 5) * len * 2;
       let s = pos % (2 * len); const back = s >= len; if (back) s = 2 * len - s - 1;
+      /* the stretch of road it is on, between two towns (or a town and the end of the road) */
+      let a = 0, b = len - 1;
+      for (const h of hs) { if (h <= s) a = h; }
+      for (let q = hs.length - 1; q >= 0; q--) if (hs[q] >= s) b = hs[q];
+      const k = threat(function (lp) { for (let q = a; q <= b; q += 2) { const p = road[q]; if (inMap(p) && snowed(S, p[1] * W + p[0], lp)) return true; } return false; }, f.lp, f);
+      const home = s - a <= b - s ? a : b, at = s + (home - s) * k, parked = k > 0.97;
+      const dir = k > 0.02 ? (home >= s ? 1 : -1) : back ? -1 : 1;
       for (let m = 0; m < 4; m++) {
-        const sm = Math.floor(s + (back ? m : -m) * 4);
+        /* bunching up as they arrive; parked, they stand together beside the town */
+        const sm = Math.round(at - dir * m * 4 * (1 - k * 0.6));
         if (sm < 0 || sm >= len) continue;
-        const p = road[sm], i = p[1] * W + p[0];
-        if (f.lp != null && snowMargin(S, i, f.lp) > 0.04) continue;
-        if (f.lp == null && snowShare(S, i) >= 0.5) continue;
-        const nx = road[Math.min(len - 1, sm + 1)], left = (nx[0] - p[0]) * (back ? -1 : 1) < 0, bob = Math.floor(t * 4 + m) % 2;
-        if (S.rain[i] < 400) sprite(f, CAMEL, CAMEL_COL, p[0] - 1, p[1] - 2 - (m === 0 ? 0 : bob * 0), left, true);
-        else if (m < 2) sprite(f, CART, CART_COL, p[0] - 1, p[1] - 1, left, true);
-        else sprite(f, RIDER, RIDER_COL, p[0], p[1] - 1, false, true);
+        const p = road[sm];
+        if (!inMap(p)) continue;
+        const i = p[1] * W + p[0], nx = road[Math.max(0, Math.min(len - 1, sm + dir))];
+        const left = nx[0] - p[0] < 0, ox = parked ? (m % 2) * 3 - 1 : 0, oy = parked ? Math.floor(m / 2) * 2 + 1 : 0;
+        if (S.rain[i] < 400) sprite(f, CAMEL, CAMEL_COL, p[0] - 1 + ox, p[1] - 2 + oy, left, true);
+        else if (m < 2) sprite(f, CART, CART_COL, p[0] - 1 + ox, p[1] - 1 + oy, left, true);
+        else sprite(f, RIDER, RIDER_COL, p[0] + ox, p[1] - 1 + oy, false, true);
       }
     }
   });
 };
 /* fishing boats: off the coasts and on big lakes, out by day and home by night (at the slowest
-   speed; faster, the days blur and they stay out); none on frozen water */
-FX.fishing = function (f, opts) {
-  const S = f.S, t = f.t / 1000, hour = ((f.day % 1) + 1) % 1, ph = f.lp == null ? null : wrap(f.lp + 0.5);
+   speed; faster, the days blur and they stay out); before the ice reaches the shore they row in and
+   are pulled up on it for the winter, and go out again once it has gone (huts: ice fishing on the
+   frozen lake meanwhile) */
+FX.fishing = function (f, st, opts) {
+  const S = f.S, t = f.t / 1000, hour = ((f.day % 1) + 1) % 1;
   let out = 1;
   if (f.speed <= 1 && f.lp != null) out = hour < 0.25 || hour > 0.8 ? 0 : Math.min(1, (hour - 0.25) / 0.08, (0.8 - hour) / 0.08);
-  if (!S.fishSpots) {
-    S.fishSpots = [];
+  if (!S.fish) {
+    S.fish = [];
     for (let i = 0; i < N; i++) {
       const lake = S.kind[i] === 2 && S.toLand[i] >= 2 && hash(i, 111) < 0.03;
       const sea = S.kind[i] === 1 && S.toLand[i] >= 2 && S.toLand[i] <= 5 && hash(i, 112) < 0.012;
-      if (lake || sea) S.fishSpots.push(i);
+      if (!lake && !sea) continue;
+      /* the nearest bit of shore, and the water just off it */
+      const x0 = i % W, y0 = (i - x0) / W;
+      let best = null, bd = 1e9;
+      for (let y = Math.max(0, y0 - 14); y < Math.min(H, y0 + 15); y++) for (let x = Math.max(0, x0 - 14); x < Math.min(W, x0 + 15); x++) {
+        const j = y * W + x, d = (x - x0) * (x - x0) + (y - y0) * (y - y0);
+        if (S.kind[j] === 0 && d < bd) { bd = d; best = [x, y]; }
+      }
+      if (!best) continue;
+      const n = Math.max(1, Math.round(Math.sqrt(bd)));
+      let off = i;
+      for (let s = 0; s <= n; s++) { const x = Math.round(x0 + (best[0] - x0) * s / n), y = Math.round(y0 + (best[1] - y0) * s / n), j = y * W + x; if (S.kind[j] === S.kind[i]) off = j; }
+      S.fish.push({ i: i, x: x0, y: y0, hx: best[0], hy: best[1], off: off });
     }
   }
-  for (let k = 0; k < S.fishSpots.length; k++) {
-    const i = S.fishSpots[k], x0 = i % W, y0 = (i - x0) / W;
-    if (hash(k, 113) > out) continue;
-    let frozen = false;
-    if (S.kind[i] === 2) {
-      const lk = S.lakeK[i], fl = lk >= 0 ? iceLevel(S.lakeIce[lk], ph) : 0;
-      frozen = fl > 0 && S.lakeD[lk] <= fl;
-    } else frozen = K.seaIced(S, i, f.lp);
-    if (frozen) {
-      /* ice fishing: a hut and a hole on the frozen lake */
-      if (opts && opts.huts && S.kind[i] === 2) { put(f, i, "#7a4a22"); if (x0 + 1 < W) put(f, i + 1, "#2a3a5a"); }
+  const lakeFrozen = function (j, lp) { const lk = S.lakeK[j]; return lk >= 0 && iceLevel(S.lakeIce[lk], lp == null ? null : wrap(lp + 0.5)) >= Math.min(1, S.lakeD[lk]); };
+  const iced = function (j, lp) { return S.kind[j] === 2 ? lakeFrozen(j, lp) : K.seaIced(S, j, lp); };
+  for (let k = 0; k < S.fish.length; k++) {
+    const b = S.fish[k], i = b.i;
+    /* the ice comes from the shore, so they watch the water just off it */
+    const th = threat(function (lp) { return iced(b.off, lp) || iced(i, lp); }, f.lp, f);
+    if (th > 0.97) {
+      /* pulled up on the shore, keel up */
+      put(f, b.hy * W + b.hx, "#4e2f16");
+      if (b.hx + 1 < W && S.kind[b.hy * W + b.hx + 1] === 0) put(f, b.hy * W + b.hx + 1, "#6b4a2a");
+      if (opts && opts.huts && S.kind[i] === 2 && iced(i, f.lp)) { put(f, i, "#7a4a22"); if (b.x + 1 < W) put(f, i + 1, "#2a3a5a"); }
       continue;
     }
-    const x = x0 + Math.round(Math.sin(t * 0.3 + k) * 1.5), y = y0 + (Math.floor(t * 1.5 + k) % 2 ? 0 : 0);
+    if (hash(k, 113) > out) continue;
+    const sway = Math.round(Math.sin(t * 0.3 + k) * 1.5 * (1 - th));
+    const x = Math.round(b.x + (b.hx - b.x) * th) + sway, y = Math.round(b.y + (b.hy - b.y) * th);
+    if (x < 0 || x >= W) continue;
     const j = y * W + x;
-    if (S.kind[j] !== S.kind[i]) continue;
-    put(f, j, "#6b4a2a"); if (x + 1 < W && S.kind[j + 1] === S.kind[i]) put(f, j + 1, "#6b4a2a");
-    if (y > 0) put(f, j - W, "#efe6d6");
-    /* the net going in now and then */
-    if (Math.sin(t * 0.9 + k * 3) > 0.7 && x + 2 < W && S.kind[j + 2] === S.kind[i]) put(f, j + 2, PALE);
+    put(f, j, "#6b4a2a"); if (x + 1 < W && S.kind[j + 1] !== 0) put(f, j + 1, "#6b4a2a");
+    if (y > 0 && th < 0.5) put(f, j - W, "#efe6d6");
+    if (th === 0 && Math.sin(t * 0.9 + k * 3) > 0.7 && x + 2 < W && S.kind[j + 2] === S.kind[i]) put(f, j + 2, PALE);
   }
 };
 

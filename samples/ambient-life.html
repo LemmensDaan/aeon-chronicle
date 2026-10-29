@@ -12,7 +12,8 @@
 <h1>Ambient life</h1>
 <p class="lede">Ideas for the small life between the events: ships, caravans and fishing boats, on the same pieces of map
 as <a href="seasons.html">the seasons</a>. They move on the wall clock, so they read the same at every speed, but come and
-go on the calendar: fewer ships where the sea freezes, no boats on frozen water, caravans waiting out deep snow. Each
+go on the calendar: before the ice or snow closes in, ships, caravans and boats make for
+the nearest harbour, town or shore and wait there. Each
 panel has a date, a speed and <b>held</b> (the year-round look when the years fly by). <code>?only=3</code> shows one
 panel large.</p>
 <div class="all" id="all"><b>All panels</b></div>
@@ -27,22 +28,22 @@ function now(f) { FX.seaFoam(f); FX.current(f); FX.lakeIce(f); }
 const SCENES = [
   { title: "Merchant ships", scene: "trade", start: 0, note: "Ships to and fro along the trade lanes between the ports and off the edge of the map, a voyage at a time, a pale wake behind. A warm sea: the same all year.",
     draw: function (f) { now(f); FX.ships(f); } },
-  { title: "Merchant ships on a cold sea", scene: "temperate", start: 244, note: "Fewer ships in winter where the coldest month freezes the sea, and none on a lane the sea ice has closed: the north port is iced in from about January to March. Held: the usual numbers, with the summer's open lanes.",
+  { title: "Merchant ships on a cold sea", scene: "temperate", start: 244, note: "Revised: before the ice closes a lane, its ships make for the nearest harbour on it (or sail off the map) and lie there with their sails down, one behind the other, until it opens again; the north port is iced in from about January to March. Held: the usual numbers, with the summer's open lanes.",
     draw: function (f) { now(f); FX.seaIce(f); FX.snow(f); FX.ships(f); } },
   { title: "Caravans, camels and carts", scene: "trade", start: 0, note: "Caravans along the roads, a beast or cart every few pixels: camels where the land is dry (desert and steppe, rain under 400 mm), an ox cart and riders elsewhere, changing on the way from the desert town to the market.",
     draw: function (f) { now(f); FX.caravans(f); } },
-  { title: "Caravans in the north", scene: "temperate", start: 288, note: "Ox carts on the village's roads; where the snow lies deep they wait it out, so the northern road empties first in winter and fills again in spring.",
+  { title: "Caravans in the north", scene: "temperate", start: 288, note: "Ox carts on the village's roads. Revised: before snow closes their stretch of road they make for the nearest town on it (or off the map) and wait there, bunched up beside it, until it melts; the northern road empties first.",
     draw: function (f) { now(f); FX.snow(f); FX.caravans(f); } },
   { title: "Fishing boats", scene: "trade", start: 0, speed: 0, note: "Boats off the coasts and on the big lake, rocking, a net going in now and then. Out by day and home at night at 1 day/s (this panel starts there); faster, the days blur and they stay out.",
     draw: function (f) { now(f); FX.fishing(f); } },
-  { title: "Fishing on a lake that freezes", scene: "temperate", start: 288, note: "No boats where the ice has reached them, on the lake or the sea; they come back as it breaks up.",
+  { title: "Fishing on a lake that freezes", scene: "temperate", start: 288, note: "Revised: before the ice reaches the shore the boats row in and are pulled up on it for the winter (a brown fleck on the shore), and go out again once it has gone.",
     draw: function (f) { now(f); FX.seaIce(f); FX.fishing(f); } },
   { title: "Ice fishing", scene: "temperate", start: 288, note: "6, with a hut and a hole on the ice where a boat would be.",
-    draw: function (f) { now(f); FX.seaIce(f); FX.fishing(f, { huts: true }); } },
+    draw: function (f) { now(f); FX.seaIce(f); FX.fishing(f, null, { huts: true }); } },
   { title: "Trade coast, all together", scene: "trade", start: 0, note: "1 + 3 + 5.",
     draw: function (f) { now(f); FX.fishing(f); FX.caravans(f); FX.ships(f); } },
   { title: "Northern year, all together", scene: "temperate", start: 244, note: "2 + 4 + 7, with the seasons' snow, autumn woods and golden fields.",
-    draw: function (f) { now(f); FX.seaIce(f); FX.plains(f); FX.autumn(f); FX.blossom(f); FX.snow(f); FX.fishing(f, { huts: true }); FX.caravans(f); FX.ships(f); } },
+    draw: function (f) { now(f); FX.seaIce(f); FX.plains(f); FX.autumn(f); FX.blossom(f); FX.snow(f); FX.fishing(f, null, { huts: true }); FX.caravans(f); FX.ships(f); } },
 ];
 SEASONS.run(SCENES);
 </script>

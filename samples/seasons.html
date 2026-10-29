@@ -36,19 +36,19 @@ const SCENES = [
     draw: function (f) { now(f); FX.snow(f); FX.snowfall(f); } },
   { title: "Autumn woods", scene: "temperate", start: 244, note: "Broadleaf woods (not conifers, not the tropics): green, then gold, red or russet tree by tree, then bare through the winter and a fresh green in spring. The colder the earlier in autumn and the later in spring; the odd conifer stays green. Held: green.",
     draw: function (f) { now(f); FX.autumn(f); } },
-  { title: "Spring blossom", scene: "temperate", start: 60, speed: 1, note: "A short burst just before the leaves come: the village orchard white and pink (petals blowing off as it ends), wild cherry on the edges of the woods, flowers in the meadows a little later. Starts at 10 days/s; at 1 month/s it lasts under a second. Held: none.",
+  { title: "Spring blossom", scene: "temperate", start: 60, speed: 1, note: "Revised, calmer: each tree flowers for about ten days somewhere in a four-week spell just before the leaves, so the blossom spreads through the village orchard (white with a pink blush) instead of lighting up all at once; a few wild cherries on the edges of the woods, a petal or two blowing off; no meadow flowers. Starts at 10 days/s. Held: none.",
     draw: function (f) { now(f); FX.autumn(f); FX.blossom(f); } },
-  { title: "Golden plains", scene: "temperate", start: 91, note: "Grassland dull in winter, fresh green in spring, ripening gold in late summer (the drier the more); the village's fields green, golden, harvested to stubble and ploughed in autumn, each field a few days apart. Held: the biome's own colour.",
+  { title: "Golden plains", scene: "temperate", start: 91, note: "Grassland dull in winter, fresh green in spring, ripening gold in late summer (the drier the more). Revised: the village's farmland is laid out in fields with hedges between them (here and there a track), green, golden, harvested to stubble and ploughed, each field a few days apart; the hedges go bare in winter. Held: the biome's own colour, the fields and hedges as they are.",
     draw: function (f) { now(f); FX.plains(f); } },
   { title: "Wet and dry season", scene: "tropical", start: 121, note: "Savanna and monsoon land (summer rain over half): green through the rains, browning through the dry season; the jungle's edge dries a little. Desert to the north, about 10 to 20 N. Held: the biome's own colour, in between.",
     draw: function (f) { now(f); FX.wetDry(f); } },
-  { title: "Wet and dry with the rains", scene: "tropical", start: 121, note: "7, with rain cells drifting in off the sea through the monsoon, darkening the land under them, with now and then a flash of lightning. None when held.",
+  { title: "Wet and dry with the rains", scene: "tropical", start: 121, note: "7, with rain cells drifting in off the sea through the monsoon, darkening the land under them. Revised lightning: the whole cloud flashes, a forked white bolt with a yellow glow runs down to the ground, goes out and strikes again. None when held.",
     draw: function (f) { now(f); FX.wetDry(f); FX.monsoonRain(f); } },
   { title: "Phytoplankton blooms", scene: "temperate", start: 60, note: "Green-turquoise swirls on cool coastal sea and off the river mouth in spring and early summer, a smaller bloom in autumn; slowly turning. Warm seas only off river mouths. Held: none.",
     draw: function (f) { FX.seaFoam(f); FX.current(f); FX.plankton(f); FX.lakeIce(f); } },
   { title: "Sea ice", scene: "polar", start: 244, note: "Polar sea, about 80 N at the top to 66 N: ice grows out from the coasts and down from the pole in winter, smooth new ice at its edge, and breaks into floes on the way out; widest in March, least in September. Held: the summer minimum.",
     draw: function (f) { now(f); FX.seaIce(f); } },
-  { title: "Hurricanes", scene: "tropical", start: 213, note: "Two or three a year in late summer and autumn (hurricane belts), coming in off the warm sea with the trade winds and curving away poleward, spinning anticlockwise in the north. Set on the calendar but played for at least five seconds, so they can be seen at 1 yr/s. None when held.",
+  { title: "Hurricanes", scene: "tropical", start: 213, note: "Revised, drawn like the winter gales (12): the sea and land go dark under the storm, dark rain bands wind in to a calm eye and turn (anticlockwise in the north), rain streaks round it, whitecaps under it and surf thrown up on the coast ahead. Two or three a year in late summer and autumn, in off the warm sea and curving away poleward; at least six seconds each. None when held.",
     draw: function (f, st) { now(f); FX.wetDry(f); FX.hurricanes(f, st); } },
   { title: "Winter gales", scene: "temperate", start: 305, note: "Fronts sweeping in from the west half a dozen times a winter, dark with rain (snow where it is cold), whitecaps on the sea under them. At least four seconds each. None when held.",
     draw: function (f, st) { now(f); FX.snow(f); FX.gales(f, st); } },
@@ -61,6 +61,12 @@ const SCENES = [
   { title: "Tropical year, all together", scene: "tropical", start: 121, note: "8 + 9 + 11: plankton off the river mouth after the rains, storms late in the year.",
     draw: function (f, st) { FX.seaFoam(f); FX.current(f); FX.plankton(f); FX.wetDry(f); FX.monsoonRain(f); FX.hurricanes(f, st); } },
 ];
+/* added with the revisions */
+SCENES.push(
+  { title: "Spring blossom, orchards only", scene: "temperate", start: 60, speed: 1, note: "5 with only the village orchard flowering, nothing in the woods: the quietest version.",
+    draw: function (f, st) { now(f); FX.plains(f); FX.autumn(f); FX.blossom(f, st, { orchardsOnly: true }); } },
+  { title: "Hurricanes as a storm mass", scene: "tropical", start: 213, note: "11 without the spiral and eye: one dark mass moving along the same track, rain driven before it, whitecaps and surf. Closest to the winter gales.",
+    draw: function (f, st) { now(f); FX.wetDry(f); FX.hurricanes(f, st, { style: "mass" }); } });
 SEASONS.run(SCENES);
 </script>
 </body>

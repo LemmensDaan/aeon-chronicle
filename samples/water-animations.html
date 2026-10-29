@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aeon — lake and river animations</title>
+<link rel="stylesheet" href="../css/pixelify.css">
+<style>
+  :root { --ink: #2a1a0e; --soft: #6b4a2a; --red: #8a3a22; --paper: #e9d6ad; }
+  body { margin: 0; background: #2a1d12; color: var(--ink); font: 15px/1.4 "Pixelify Sans", Georgia, serif; }
+  main { max-width: 1180px; margin: 24px auto; padding: 26px 30px; background: var(--paper);
+         box-shadow: 0 0 0 1px #946a3c, 6px 8px 0 rgba(0,0,0,.35); outline: 1px solid rgba(58,38,20,.5); outline-offset: -8px; }
+  h1 { color: var(--red); font-weight: 600; margin: 0 0 4px; }
+  p.lede { margin: 4px 0 16px; color: var(--soft); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 22px 18px; }
+  figure { margin: 0; }
+  canvas { display: block; image-rendering: pixelated; outline: 2px solid var(--ink); width: 360px; height: 210px; }
+  figcaption b { display: block; color: var(--red); font-weight: 600; margin-top: 6px; }
+  figcaption span { color: var(--soft); font-size: 13px; }
+  @media (max-width: 420px) { main { padding: 16px; margin: 0; } canvas { width: 100%; height: auto; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Lake and river animations</h1>
+<p class="lede">Ideas for moving water inland, on one small piece of map in the game's own palette: a river runs down from the
+hills into a lake and on out to the sea. Every panel keeps the sea's foam shimmer the map has now, so each idea is seen
+beside what is there. Pick any to combine; the last panel is one such mix. <code>?t=ms</code> freezes a frame and
+<code>?only=4</code> shows one panel large.</p>
+<div class="grid" id="grid"></div>
+</main>
+<script>
+"use strict";
+/* ------------------------------------------------------------ palette (js/pixelmap.js) */
+const C = {
+  deep: "#16295f", mid: "#1f4294", shallow: "#3570c4", foam: "#a6dbff", river: "#3570c4",
+  sand: ["#d4b56c", "#e6cd88", "#f3e2a6"], grass: ["#4a9438", "#5fae45", "#80c95a"], forest: ["#215a2a", "#2c7436", "#3b8f44"],
+  mountain: ["#584c42", "#796a5b", "#9a8b79"], ice: ["#b4c5db", "#d3dfed", "#f1f6fc"],
+};
+const LIGHT = "#5f93d8", PALE = "#a6dbff", GLINT = "#cfeaff", WHITE = "#e8f4ff", FOAM_B = "#dcefff";
+const REED = "#48633e", CATTAIL = "#7a5a3a";
+const W = 120, H = 70, N = W * H;
+
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function bayer(x, y) { return (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16; }
+function hash(a, b) { let h = Math.imul(a + 1, 374761393) ^ Math.imul(b + 7, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function vnoise(x, y, s) {
+  const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, tx = fx * fx * (3 - 2 * fx), ty = fy * fy * (3 - 2 * fy);
+  const v = function (i, j) { return hash(i * 131 + s * 7919, j); };
+  return (v(x0, y0) * (1 - tx) + v(x0 + 1, y0) * tx) * (1 - ty) + (v(x0, y0 + 1) * (1 - tx) + v(x0 + 1, y0 + 1) * tx) * ty;
+}
+function px(g, x, y, col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+
+/* ------------------------------------------------------------ the piece of map */
+const LAKE_X = 46, LAKE_Y = 35;
+const S = (function () {
+  const kind = new Uint8Array(N);                          /* 0 land, 1 sea, 2 lake */
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const coast = 94 + (vnoise(0.5, y * 0.11, 1) - 0.5) * 16 - Math.max(0, y - 50) * 2.2;
+    const dx = (x - LAKE_X) / 17, dy = (y - LAKE_Y) / 8.5;
+    if (x > coast + (vnoise(x * 0.2, y * 0.2, 3) - 0.5) * 4) kind[y * W + x] = 1;
+    else if (dx * dx + dy * dy < 1 + (vnoise(x * 0.22, y * 0.22, 2) - 0.5) * 0.7) kind[y * W + x] = 2;
+  }
+  /* chebyshev distance from each water pixel to land, and from each land pixel to the sea */
+  const bfs = function (src, pass) {
+    const d = new Int16Array(N).fill(99), q = [];
+    for (let i = 0; i < N; i++) if (src(i)) { d[i] = 0; q.push(i); }
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h], x = c % W, y = (c - x) / W;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, j = ny * W + nx;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || !pass(j) || d[j] <= d[c] + 1) continue;
+        d[j] = d[c] + 1; q.push(j);
+      }
+    }
+    return d;
+  };
+  const toLand = bfs(function (i) { return kind[i] === 0; }, function (i) { return kind[i] !== 0; });
+  const toSea = bfs(function (i) { return kind[i] === 1; }, function (i) { return kind[i] === 0; });
+  const toLake = bfs(function (i) { return kind[i] === 2; }, function (i) { return kind[i] === 0; });
+
+  /* the river: Catmull-Rom through control points, one pixel per step, in the order it flows */
+  const trace = function (pts, wide) {
+    const out = [], seen = new Set();
+    const at = function (p0, p1, p2, p3, t) {
+      const t2 = t * t, t3 = t2 * t;
+      return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    };
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[Math.max(0, k - 1)], b = pts[k], c = pts[k + 1], d = pts[Math.min(pts.length - 1, k + 2)];
+      for (let s = 0; s <= 1; s += 0.02) {
+        const x = Math.round(at(a[0], b[0], c[0], d[0], s)), y = Math.round(at(a[1], b[1], c[1], d[1], s)), i = y * W + x;
+        if (seen.has(i) || x < 0 || y < 0 || x >= W || y >= H || kind[i] !== 0) continue;
+        seen.add(i); out.push([x, y, out.length]);
+        if (wide && !seen.has(i + W) && kind[i + W] === 0) { seen.add(i + W); out.push([x, y + 1, out.length - 1]); }
+      }
+    }
+    return out;
+  };
+  const upper = trace([[4, 2], [10, 9], [17, 13], [21, 21], [27, 26], [31, 32], [36, 35]], false);
+  const lower = trace([[58, 38], [64, 41], [70, 46], [76, 45], [83, 49], [90, 52], [99, 55], [104, 57]], true);
+  const river = new Uint8Array(N);
+  for (const p of upper.concat(lower)) river[p[1] * W + p[0]] = 1;
+  const last = lower[lower.length - 1], prev = lower[Math.max(0, lower.length - 8)];
+  const mouth = { x: last[0], y: last[1], a: Math.atan2(last[1] - prev[1], last[0] - prev[0]) };
+
+  const shore = [], open = [], reeds = [], foam = [];
+  for (let i = 0; i < N; i++) {
+    const x = i % W, y = (i - x) / W;
+    if (kind[i] === 2 && toLand[i] === 1) shore.push(i);
+    if (kind[i] === 2 && toLand[i] >= 3) open.push(i);
+    if (kind[i] === 1 && toLand[i] === 1) foam.push(i);
+    if (kind[i] === 0 && toLake[i] === 1 && !river[i] && hash(x, y * 3) < 0.18) reeds.push(i);
+  }
+  return { kind: kind, toLand: toLand, toSea: toSea, river: river, upper: upper, lower: lower, mouth: mouth,
+           shore: shore, open: open, reeds: reeds, foam: foam };
+})();
+
+/* the map as it is drawn now (pixelmap.js buildTerrain), once */
+const BASE = document.createElement("canvas");
+BASE.width = W; BASE.height = H;
+(function () {
+  const g = BASE.getContext("2d");
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, t = bayer(x, y), d = S.toLand[i];
+    let col;
+    if (S.kind[i] === 2) col = d <= 2 ? C.shallow : d <= 7 && t >= (d - 2) / 5 ? C.shallow : C.mid;
+    else if (S.kind[i] === 1) col = d === 1 ? (t < 0.5 ? C.foam : C.shallow) : d <= 3 + t * 2 ? C.shallow : d <= 9 + t * 3 ? C.mid : C.deep;
+    else {
+      const lvl = Math.min(2, Math.floor(vnoise(x * 0.3, y * 0.3, 9) * 2 + t));
+      const hill = x + y < 34 + vnoise(x * 0.2, y * 0.2, 6) * 10;
+      if (S.toSea[i] === 1 || (S.toSea[i] === 2 && t < 0.5)) col = C.sand[lvl];
+      else if (hill) col = C.mountain[lvl];
+      else if (vnoise(x * 0.12, y * 0.12, 4) > 0.55) col = C.forest[lvl];
+      else col = C.grass[lvl];
+    }
+    px(g, x, y, col);
+  }
+  for (const p of S.upper.concat(S.lower)) px(g, p[0], p[1], C.river);
+})();
+
+/* ------------------------------------------------------------ the pieces of animation */
+/* the sea's surf as the map has it now: foam pixels shimmer between two pale tones */
+function seaFoam(g, t) {
+  const tick = Math.floor(t / 1000 * 1.6);
+  g.fillStyle = tick % 2 ? C.foam : FOAM_B;
+  for (const i of S.foam) if ((i * 7 + tick) % 3 === 0) g.fillRect(i % W, (i / W) | 0, 1, 1);
+}
+/* bands of lighter water running down the river, quicker in the hills */
+function current(g, t, gap) {
+  const run = function (pts, speed) {
+    for (const p of pts) if (((Math.floor(p[2] - t / 1000 * speed) % gap) + gap) % gap === 0) px(g, p[0], p[1], LIGHT);
+  };
+  run(S.upper, 9); run(S.lower, 5);
+}
+/* single bright flecks carried down the river */
+function flecks(g, t) {
+  const runs = [[S.upper, 9, 3], [S.lower, 5, 4]];
+  runs.forEach(function (r, m) {
+    const pts = r[0].filter(function (p, k) { return k === 0 || p[2] !== r[0][k - 1][2]; }), len = pts.length;
+    for (let k = 0; k < r[2]; k++) {
+      const s = (t / 1000 * r[1] + hash(k, m) * len) % len, p = pts[Math.floor(s)];
+      if (Math.sin(t / 180 + k * 2) > -0.3) px(g, p[0], p[1], GLINT);
+    }
+  });
+}
+/* white water where the river comes down out of the hills */
+function rapids(g, t) {
+  const tick = Math.floor(t / 140);
+  for (const p of S.upper) if (p[2] < 26 && hash(p[2], tick) < 0.35) px(g, p[0], p[1], hash(p[2], tick + 99) < 0.5 ? WHITE : PALE);
+}
+/* rings spreading out from a few spots on open water and fading */
+function ripples(g, t) {
+  for (let k = 0; k < 4; k++) {
+    const ph = t / 1600 + hash(k, 5), cyc = Math.floor(ph), life = ph - cyc;
+    const c = S.open[Math.floor(hash(k, cyc) * S.open.length)], cx = c % W, cy = (c - cx) / W, r = 0.6 + life * 3.6;
+    for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
+      const i = y * W + x;
+      if (x < 0 || y < 0 || x >= W || y >= H || S.kind[i] !== 2) continue;
+      const dd = Math.hypot(x - cx, (y - cy) * 1.4);
+      if (Math.abs(dd - r) < 0.5 && bayer(x, y) < 1 - life) px(g, x, y, life < 0.45 ? PALE : LIGHT);
+    }
+  }
+}
+/* a slow swell running round the lake's shore, lapping pale as it passes */
+function lapping(g, t) {
+  for (const i of S.shore) {
+    const x = i % W, y = (i - x) / W, a = Math.atan2(y - LAKE_Y, (x - LAKE_X) / 2);
+    const s = Math.sin(a * 6 - t / 450);
+    if (s > 0.88) px(g, x, y, PALE);
+    else if (s > 0.6 && bayer(x, y) < 0.5) px(g, x, y, LIGHT);
+  }
+}
+/* gusts: lighter patches of ruffled water drifting across the lake with the wind */
+function gusts(g, t) {
+  for (let i = 0; i < N; i++) {
+    if (S.kind[i] !== 2 || S.toLand[i] < 2) continue;
+    const x = i % W, y = (i - x) / W, v = vnoise((x - t / 140) * 0.16, y * 0.4, 7);
+    if (v > 0.66 && bayer(x, y) < (v - 0.66) * 6) px(g, x, y, LIGHT);
+  }
+}
+/* the sun glinting here and there on open water, as on the sea */
+function glints(g, t) {
+  for (const i of S.open) {
+    if (hash(i, 17) > 0.05) continue;
+    if (Math.sin(t / 1000 * (1.5 + hash(i, 18) * 2) + hash(i, 19) * 6.28) > 0.95) px(g, i % W, (i / W) | 0, GLINT);
+  }
+}
+/* where the river meets the sea, a fan of lighter water drifts out and fades; thinner as the
+   river freezes (the river ices over from a level of 3), none while it is frozen */
+function plume(g, t, ice) {
+  const m = S.mouth, n = Math.round(22 * Math.max(0, Math.min(1, 1 - ((ice || 0) - 2) / 2)));
+  for (let k = 0; k < n; k++) {
+    const life = (t / 3200 + hash(k, 3)) % 1, a = m.a + (hash(k, 4) - 0.5) * 1.4, d = 1 + life * 15;
+    const x = Math.round(m.x + Math.cos(a) * d), y = Math.round(m.y + Math.sin(a) * d * 0.8), i = y * W + x;
+    if (x < 0 || y < 0 || x >= W || y >= H || S.kind[i] !== 1) continue;
+    if (bayer(x, y) < 1.2 - life) px(g, x, y, life < 0.4 ? PALE : LIGHT);
+  }
+}
+/* reeds along the lake's edge, swaying with the wind, a gust passing along them */
+function reeds(g, t) {
+  for (const i of S.reeds) {
+    const x = i % W, y = (i - x) / W, s = Math.sin(t / 600 - x * 0.25);
+    const lean = s > 0.4 ? 1 : s < -0.6 ? -1 : 0;
+    px(g, x, y, REED);
+    px(g, x + (lean > 0 ? 1 : 0), y - 1, REED);
+    px(g, x + lean, y - 2, CATTAIL);
+  }
+}
+/* winter: ice creeps in from the lake's shore and over the river, holds, then breaks up */
+function iceLevel(t) { return t < 3200 ? t / 3200 * 10 : t < 5200 ? 10 : Math.max(0, 10 - (t - 5200) / 2200 * 10); }
+function freeze(g, t) {
+  const f = iceLevel(t);
+  if (f <= 0) return;
+  for (let i = 0; i < N; i++) {
+    if (S.kind[i] !== 2) continue;
+    const x = i % W, y = (i - x) / W, d = S.toLand[i] + (vnoise(x * 0.3, y * 0.3, 11) - 0.5) * 2;
+    /* thawing, the ice breaks into floes before it goes */
+    if (d > f || (t > 5200 && hash(i, 23) > f / 10 + 0.3)) continue;
+    px(g, x, y, d > f - 1 ? C.ice[0] : bayer(x, y) < 0.3 ? C.ice[2] : C.ice[1]);
+  }
+  for (const p of S.upper.concat(S.lower)) if (f > 3 + hash(p[2], 2) * 4) px(g, p[0], p[1], C.ice[1]);
+}
+
+/* ------------------------------------------------------------ the panels */
+const SCENES = [
+  { title: "1. As now", note: "Lakes and rivers stand still; only the sea's foam shimmers. For comparison.", period: 4000,
+    draw: function () {} },
+  { title: "2. River current", note: "Bands of lighter water run down the river, quicker in the hills, slower in the broad lower course. Cheap: each river pixel needs only its place along the river.", period: 7000,
+    draw: function (g, t) { current(g, t, 7); } },
+  { title: "3. Flecks on the river", note: "A few single bright flecks ride the current, like the sea's glints but moving. Quieter than the bands.", period: 7000,
+    draw: function (g, t) { flecks(g, t); } },
+  { title: "4. Rapids in the hills", note: "White water flickers where the river comes down through hills or mountains (steep river cells only).", period: 4000,
+    draw: function (g, t) { rapids(g, t); } },
+  { title: "5. Ripples on the lake", note: "Rings spread from a few spots on open water and fade out: a fish rising, a raindrop.", period: 6400,
+    draw: function (g, t) { ripples(g, t); } },
+  { title: "6. Lapping shore", note: "A slow swell runs round the lake's edge, lapping pale as it passes. The lake's answer to the sea's surf, gentler.", period: 6000,
+    draw: function (g, t) { lapping(g, t); } },
+  { title: "7. Gusts on the lake", note: "Patches of ruffled water drift across the lake with the wind, could follow the planet's own wind direction.", period: 8000,
+    draw: function (g, t) { gusts(g, t); } },
+  { title: "8. Glints on the lake", note: "The sea's sun glints, on open lake water too.", period: 6000,
+    draw: function (g, t) { glints(g, t); } },
+  { title: "9. River mouth", note: "Where the river meets the sea, a fan of lighter water drifts out and fades.", period: 5600,
+    draw: function (g, t) { plume(g, t); } },
+  { title: "10. Reeds", note: "Reeds and cattails along the lake's edge, swaying as a gust passes along them. Temperate and warm lakes only.", period: 6000,
+    draw: function (g, t) { reeds(g, t); } },
+  { title: "11. Freeze and thaw", note: "In cold climates the lake freezes from the shore inward and the river with it, then breaks into floes and thaws. Could follow the seasons, or only the coldest lakes.", period: 8000,
+    draw: function (g, t) { freeze(g, t); } },
+  { title: "12. A quiet mix", note: "2 + 5 + 6 + 8 + 9 together: moving but not busy.", period: 8000,
+    draw: function (g, t) { current(g, t, 9); ripples(g, t); lapping(g, t); glints(g, t); plume(g, t); } },
+  { title: "13. Mix with rapids", note: "2 + 4 + 5 + 8 + 9.", period: 8000,
+    draw: function (g, t) { current(g, t, 9); rapids(g, t); ripples(g, t); glints(g, t); plume(g, t); } },
+  { title: "14. Mix with rapids and gusts", note: "2 + 4 + 5 + 7 + 8 + 9.", period: 8000,
+    draw: function (g, t) { current(g, t, 9); rapids(g, t); gusts(g, t); ripples(g, t); glints(g, t); plume(g, t); } },
+  { title: "15. Mix with rapids and gusts, through a winter", note: "2 + 4 + 5 + 7 + 8 + 9, with 11: the ice covers it all, and the river mouth stops running while the river is frozen.", period: 8000,
+    draw: function (g, t) { current(g, t, 9); rapids(g, t); gusts(g, t); ripples(g, t); glints(g, t); plume(g, t, iceLevel(t)); freeze(g, t); } },
+];
+
+/* ------------------------------------------------------------ run */
+const grid = document.getElementById("grid");
+/* ?only=4 shows just the fourth panel, three times larger */
+const ONLY = /[?&]only=([0-9]+)/.exec(location.search);
+if (ONLY) { grid.style.display = "block"; document.head.insertAdjacentHTML("beforeend", "<style>canvas { width: 1080px; height: 630px; max-width: 100%; }</style>"); }
+const panels = SCENES.filter(function (sc, k) { return !ONLY || k === +ONLY[1] - 1; }).map(function (sc) {
+  const fig = document.createElement("figure"), cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const cap = document.createElement("figcaption");
+  cap.innerHTML = "<b></b><span></span>";
+  cap.querySelector("b").textContent = sc.title; cap.querySelector("span").textContent = sc.note;
+  fig.appendChild(cv); fig.appendChild(cap); grid.appendChild(fig);
+  return { sc: sc, g: cv.getContext("2d") };
+});
+/* ?t=1500 freezes every panel at that moment, to look at one frame */
+const FIXED = /[?&]t=([0-9]+)/.exec(location.search);
+function frame(now) {
+  for (const p of panels) {
+    const t = FIXED ? +FIXED[1] % p.sc.period : now % p.sc.period;
+    p.g.drawImage(BASE, 0, 0);
+    seaFoam(p.g, FIXED ? +FIXED[1] : now);
+    p.sc.draw(p.g, t);
+  }
+  if (!FIXED) requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

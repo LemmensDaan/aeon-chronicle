@@ -303,6 +303,7 @@ function buildTerrain(world) {
 
   /* lake: 1 on a lake's water, so it is drawn as one (no surf, no beach on its shore) */
   const E = new Float32Array(N), land = new Uint8Array(N), lake = new Uint8Array(N), cellOf = new Int32Array(N);
+  const lakeD = new Uint8Array(N);                 /* on a lake, pixels to its shore (1-8), for the animation */
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
     const i = y * VW + x, fx = (x + 0.5) / PPC, fy = (y + 0.5) / PPC, c = cellAt(fx, fy);
     E[i] = elev(fx, fy);
@@ -370,6 +371,7 @@ function buildTerrain(world) {
           if (dd < d && ny >= 0 && ny < VH && land[ny * VW + (x + dx + VW) % VW]) d = dd;
         }
         put(i, d <= 2 ? P.shallow : d <= 7 && t >= (d - 2) / 5 ? P.shallow : P.mid);
+        lakeD[i] = d;
         continue;
       }
       let coast = false;
@@ -420,7 +422,26 @@ function buildTerrain(world) {
     return [r.x * PPC + 2 + (j - 0.5) * 2.4, r.y * PPC + 2 + ((j * 7.3) % 1 - 0.5) * 2.4];
   };
   const near = function (p, ref) { return p[0] - ref[0] > VW / 2 ? [p[0] - VW, p[1]] : ref[0] - p[0] > VW / 2 ? [p[0] + VW, p[1]] : p; };
-  const plot = function (x, y, s) { g.fillRect(((Math.round(x) % VW) + VW) % VW, Math.round(y), s, s); };
+  /* for the animation, each river pixel's place along its river (in pixels, falling downstream),
+     whether it runs fast (rapids), and the cell it belongs to */
+  const riverAt = new Map(), mouths = [];
+  const downstream = new Map();
+  const toMouth = function (r) {
+    let n = 0, q = r;
+    const path = [];
+    while (q.river && q.flowTo >= 0 && n < 4000 && !downstream.has(q.id)) { path.push(q); q = R[q.flowTo]; n++; }
+    let d = downstream.has(q.id) ? downstream.get(q.id) : 0;
+    for (let k = path.length - 1; k >= 0; k--) { d++; downstream.set(path[k].id, d); }
+    return downstream.get(r.id);
+  };
+  const plot = function (x, y, s, ph, fast, cell) {
+    const px0 = ((Math.round(x) % VW) + VW) % VW, py0 = Math.round(y);
+    g.fillRect(px0, py0, s, s);
+    for (let j = 0; j < s; j++) for (let k = 0; k < s; k++) {
+      const yy = py0 + j, i = yy * VW + (px0 + k) % VW;
+      if (yy >= 0 && yy < VH && land[i] && !riverAt.has(i)) riverAt.set(i, [ph, fast, cell]);
+    }
+  };
   for (const r of R) {
     if (!r.river || r.flowTo < 0) continue;
     const t = R[r.flowTo], s = r.river > world.riverThreshold * 6 ? 2 : 1;
@@ -428,11 +449,14 @@ function buildTerrain(world) {
     const u = t.flowTo >= 0 && t.river ? R[t.flowTo] : null;
     const m2 = u ? (function () { const c = near(centre(u), b); return [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2]; })() : b;
     const hasUp = r.neighbors.some(function (n) { return R[n].flowTo === r.id && R[n].river; });
-    if (!hasUp) for (let k = 0; k <= 6; k++) plot(a[0] + (m1[0] - a[0]) * k / 6, a[1] + (m1[1] - a[1]) * k / 6, s);
+    const dm = toMouth(r) * PPC, fast = r.biome === "mountain" || (r.heightM || 0) - (t.heightM || 0) > 150 ? 1 : 0;
+    if (!hasUp) for (let k = 0; k <= 6; k++) plot(a[0] + (m1[0] - a[0]) * k / 6, a[1] + (m1[1] - a[1]) * k / 6, s, dm - k / 12 * PPC, fast, r.id);
     for (let k = 0; k <= 10; k++) {
       const q = k / 10, iq = 1 - q;
-      plot(iq * iq * m1[0] + 2 * iq * q * b[0] + q * q * m2[0], iq * iq * m1[1] + 2 * iq * q * b[1] + q * q * m2[1], s);
+      plot(iq * iq * m1[0] + 2 * iq * q * b[0] + q * q * m2[0], iq * iq * m1[1] + 2 * iq * q * b[1] + q * q * m2[1], s, dm - (0.5 + q) * PPC, fast, r.id);
     }
+    /* where it runs out into the sea: a fan of lighter water drifts out from there */
+    if (t.barren && !t.lake && !t.beyondBiome) mouths.push([m1[0], m1[1], Math.atan2(b[1] - a[1], b[0] - a[0]), r.id]);
   }
 
   /* scenery: peaks, woods -- sparse, so borders and settlements stay readable. Which
@@ -467,6 +491,22 @@ function buildTerrain(world) {
     if (coast) foam.push(i);
     else if (E[i] < 0.47 && cellRand(i, 21) < 0.0025) glints.push([i, cellRand(i, 22) * 6.28, 1.5 + cellRand(i, 23) * 2]);
   }
+  /* and the inland water's: its river pixels (place along the river, fast or not, how long a
+     winter freezes it), its lake pixels (how far from the shore, how long frozen, a jitter for
+     the ice's edge) and where rivers reach the sea. A cell freezes for a share of the ambient
+     winter cycle that grows with how far its coldest month falls below freezing. */
+  const winter = function (cell) { const cc = R[cell].coldC; return cc == null || cc >= 0 ? 0 : Math.min(0.85, 0.2 - cc / 25); };
+  const river = { px: [], ph: [], fast: [], ice: [], jit: [] };
+  riverAt.forEach(function (v, i) { if (R[cellOf[i]].beyond) return; river.px.push(i); river.ph.push(v[0]); river.fast.push(v[1]); river.ice.push(winter(v[2])); river.jit.push(cellRand(i, 53)); });
+  const lakes = { px: [], d: [], ice: [], jit: [], open: [], glints: [] };
+  for (let i = 0; i < N; i++) {
+    if (!lakeD[i] || R[cellOf[i]].beyond || R[cellOf[i]].beyondBiome) continue;
+    const k = lakes.px.length;
+    lakes.px.push(i); lakes.d.push(lakeD[i] + (cellRand(i, 51) - 0.5) * 1.5); lakes.ice.push(winter(cellOf[i])); lakes.jit.push(cellRand(i, 52));
+    if (lakeD[i] >= 3) { lakes.open.push(k); if (cellRand(i, 54) < 0.006) lakes.glints.push([i, cellRand(i, 55) * 6.28, 1.5 + cellRand(i, 56) * 2]); }
+  }
+  const water = { river: river, lakes: lakes, mouths: mouths.map(function (m) { return [m[0], m[1], m[2], winter(m[3])]; }) };
+
   const clouds = [];
   for (let k = 0; k < Math.round(VW / 70); k++) clouds.push({ x: cellRand(k, 31) * VW, y: 10 + cellRand(k, 32) * (VH - 40), w: 26 + Math.floor(cellRand(k, 33) * 30), s: 3 + cellRand(k, 34) * 5 });
 
@@ -474,7 +514,7 @@ function buildTerrain(world) {
   frame.width = VW; frame.height = VH;
   return {
     W: W, H: H, VW: VW, VH: VH, land: land, cellOf: cellOf, terrain: terrain, props: props, propLayer: null,
-    foam: foam, glints: glints, clouds: clouds,
+    foam: foam, glints: glints, clouds: clouds, water: water, lake: lake,
     terrainPx: g.getImageData(0, 0, VW, VH).data,
     frame: frame, fctx: frame.getContext("2d"), fimg: frame.getContext("2d").createImageData(VW, VH), key: null,
   };
@@ -679,10 +719,11 @@ function drawRoads(c, w, d) {
    the deep sea, and dithered cloud shadows drift east across the map and wrap round. Drawn at map
    resolution (P device pixels per map pixel), clipped to the map, for a time in milliseconds. */
 const FOAM_A = "#a6dbff", FOAM_B = "#dcefff", GLINT = "#cfeaff";
-function drawAmbient(ctx, c, v, X0, now) {
+function drawAmbient(ctx, c, v, X0, now, rivers) {
   const P = v.P, VW = c.VW, Y0 = v.Y0, t = now / 1000, tick = Math.floor(t * 1.6);
   ctx.save();
   ctx.beginPath(); ctx.rect(X0, Y0, VW * P, c.VH * P); ctx.clip();
+  drawWater(ctx, c, v, X0, now, rivers);
   ctx.fillStyle = tick % 2 ? FOAM_A : FOAM_B;
   for (let k = 0; k < c.foam.length; k++) {
     const i = c.foam[k];
@@ -699,6 +740,97 @@ function drawAmbient(ctx, c, v, X0, now) {
     }
   }
   ctx.restore();
+}
+
+/* Inland water (samples/water-animations.html, panel 15; Daan, 2026-10-29): bands of current run
+   down the rivers, white water flickers where they run fast, rings spread on open lake water,
+   gusts ruffle it and the sun glints on it, and a fan of lighter water drifts out where a river
+   meets the sea. Lakes and rivers with a cold winter ice over from the shore in a slow cycle and
+   break up again, the colder the longer; the river mouth stops while its river is frozen. On
+   the clock like the rest of the ambient layer, not the calendar: the years go by far faster.
+   rivers: false in the data modes, which paint over the rivers. */
+const WATER_LIGHT = "#5f93d8", WATER_WHITE = "#e8f4ff", WINTER_MS = 30000, PAL_ICE = P.ice, WATER_PACKED = {};
+/* how far the ice has crept out from the shore (0-10 pixels) at ph of the cycle, for a place
+   frozen share of it (centred on mid-winter, half way through) */
+function iceLevel(share, ph) {
+  if (!share) return 0;
+  return Math.max(0, Math.min(10, Math.min(ph - (0.5 - share / 2), 0.5 + share / 2 - ph) * WINTER_MS / 1000 * 3));
+}
+function gustNoise(x, y) {
+  const x0 = Math.floor(x), y0 = Math.floor(y), sx = x - x0, sy = y - y0, tx = sx * sx * (3 - 2 * sx), ty = sy * sy * (3 - 2 * sy);
+  const v = function (i, j) { return cellRand((i & 0xffff) * 65536 + (j & 0xffff), 57); };
+  return (v(x0, y0) * (1 - tx) + v(x0 + 1, y0) * tx) * (1 - ty) + (v(x0, y0 + 1) * (1 - tx) + v(x0 + 1, y0 + 1) * tx) * ty;
+}
+function drawWater(ctx, c, v, X0, now, rivers) {
+  const P = v.P, VW = c.VW, VH = c.VH, Y0 = v.Y0, t = now / 1000, w = c.water, L = w.lakes, Rv = w.river;
+  const ph = (now % WINTER_MS) / WINTER_MS, thaw = ph > 0.5, ICE = PAL_ICE;
+  /* painted at map resolution into a layer of its own and laid over the map in one go (a frozen
+     lake is tens of thousands of pixels); the ice is painted after the water, over it */
+  if (!w.layer) {
+    w.layer = document.createElement("canvas"); w.layer.width = VW; w.layer.height = VH;
+    w.img = w.layer.getContext("2d").createImageData(VW, VH);
+    w.buf = new Uint32Array(w.img.data.buffer); w.set = [];
+  }
+  const buf = w.buf, set = w.set;
+  for (let k = 0; k < set.length; k++) buf[set[k]] = 0;
+  set.length = 0;
+  const dot = function (col, i) {
+    let p = WATER_PACKED[col];
+    if (p === undefined) { const q = rgb(col); p = WATER_PACKED[col] = ((255 << 24) | (q[2] << 16) | (q[1] << 8) | q[0]) >>> 0; }
+    buf[i] = p; set.push(i);
+  };
+
+  if (rivers) {
+    const tick = Math.floor(now / 140);
+    for (let k = 0; k < Rv.px.length; k++) {
+      const i = Rv.px[k];
+      if (iceLevel(Rv.ice[k], ph) > 3 + Rv.jit[k] * 4) { dot(ICE[1], i); continue; }
+      if (Rv.fast[k] && cellRand(i, tick) < 0.35) { dot(cellRand(i, tick + 99) < 0.5 ? WATER_WHITE : FOAM_A, i); continue; }
+      if (((Math.floor(Rv.ph[k] + t * (Rv.fast[k] ? 9 : 5)) % 9) + 9) % 9 === 0) dot(WATER_LIGHT, i);
+    }
+  }
+
+  /* gusts drifting east over the lakes */
+  for (let k = 0; k < L.px.length; k++) {
+    if (L.d[k] < 2) continue;
+    const i = L.px[k], x = i % VW, y = (i - x) / VW, g = gustNoise((x - t * 7) * 0.16, y * 0.4);
+    if (g > 0.74 && bayer(x, y) < (g - 0.74) * 5) dot(WATER_LIGHT, i);
+  }
+  /* ripples: a few rings at a time, about one per 800 pixels of open water */
+  const nr = L.open.length ? Math.min(25, Math.max(1, Math.round(L.open.length / 800))) : 0;
+  for (let k = 0; k < nr; k++) {
+    const p = t / 1.6 + cellRand(k, 61), cyc = Math.floor(p), life = p - cyc;
+    const ci = L.px[L.open[Math.floor(cellRand(k * 977 + cyc, 62) * L.open.length)]];
+    const cx = ci % VW, cy = (ci - cx) / VW, r = 0.6 + life * 3.6, rr = Math.ceil(r) + 1;
+    for (let dy = -rr; dy <= rr; dy++) for (let dx = -rr; dx <= rr; dx++) {
+      const y = cy + dy, x = (cx + dx + VW) % VW, j = y * VW + x;
+      if (y < 0 || y >= VH || !c.lake[j] || Math.abs(Math.hypot(dx, dy * 1.4) - r) >= 0.5 || bayer(x, y) >= 1 - life) continue;
+      dot(life < 0.45 ? FOAM_A : WATER_LIGHT, j);
+    }
+  }
+  for (const g of L.glints) if (Math.sin(t * g[2] + g[1]) > 0.95) dot(GLINT, g[0]);
+
+  /* river mouths: thinner as the river freezes (it ices over from a level of 3), none while frozen */
+  for (let m = 0; m < w.mouths.length; m++) {
+    const mo = w.mouths[m], n = Math.round(22 * Math.max(0, Math.min(1, 1 - (iceLevel(mo[3], ph) - 2) / 2)));
+    for (let k = 0; k < n; k++) {
+      const life = (t / 3.2 + cellRand(m * 31 + k, 63)) % 1, a = mo[2] + (cellRand(m * 31 + k, 64) - 0.5) * 1.4, d = 1 + life * 15;
+      const x = ((Math.round(mo[0] + Math.cos(a) * d) % VW) + VW) % VW, y = Math.round(mo[1] + Math.sin(a) * d * 0.8), j = y * VW + x;
+      if (y < 0 || y >= VH || c.land[j] || c.lake[j] || bayer(x, y) >= 1.2 - life) continue;
+      dot(life < 0.4 ? FOAM_A : WATER_LIGHT, j);
+    }
+  }
+
+  /* the ice: creeping in from the shore, and on the way out breaking into floes */
+  for (let k = 0; k < L.px.length; k++) {
+    const f = iceLevel(L.ice[k], ph), d = L.d[k];
+    if (!f || d > f || (thaw && L.jit[k] > f / 10 + 0.3)) continue;
+    const i = L.px[k];
+    dot(d > f - 1 ? ICE[0] : bayer(i % VW, (i / VW) | 0) < 0.3 ? ICE[2] : ICE[1], i);
+  }
+
+  w.layer.getContext("2d").putImageData(w.img, 0, 0);
+  ctx.drawImage(w.layer, X0, Y0, VW * P, VH * P);
 }
 
 /* ------------------------------------------------------------ scenery */
@@ -959,7 +1091,7 @@ function draw(canvas, world, opts) {
   ctx.fillStyle = INK;
   ctx.fillRect(X0 - 1, v.Y0 - 1, mw + 2, mh + 2);
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
-  if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time);
+  if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time, mode !== "population" && mode !== "elevation" && mode !== "habitability");
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
   const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null;
   const cell = PPC * v.P, env = fx && {

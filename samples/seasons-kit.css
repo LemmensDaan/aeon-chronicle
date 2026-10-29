@@ -1,0 +1,29 @@
+/* samples/seasons.html and samples/ambient-life.html, after samples/water-animations.html */
+:root { --ink: #2a1a0e; --soft: #6b4a2a; --red: #8a3a22; --paper: #e9d6ad; }
+body { margin: 0; background: #2a1d12; color: var(--ink); font: 15px/1.4 "Pixelify Sans", Georgia, serif; }
+main { max-width: 1180px; margin: 24px auto; padding: 26px 30px; background: var(--paper);
+       box-shadow: 0 0 0 1px #946a3c, 6px 8px 0 rgba(0,0,0,.35); outline: 1px solid rgba(58,38,20,.5); outline-offset: -8px; }
+h1 { color: var(--red); font-weight: 600; margin: 0 0 4px; }
+p.lede { margin: 4px 0 12px; color: var(--soft); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 22px 18px; }
+figure { margin: 0; min-width: 0; }
+figure.pair { grid-column: span 2; }
+.views { display: flex; gap: 8px; }
+.view { position: relative; }
+.view i { position: absolute; left: 4px; top: 3px; font-style: normal; font-size: 12px; color: #fff8e1; text-shadow: 1px 1px 0 #2a1a0e; }
+canvas { display: block; image-rendering: pixelated; outline: 2px solid var(--ink); width: 360px; height: 210px; }
+figcaption b { display: block; color: var(--red); font-weight: 600; margin-top: 4px; }
+figcaption span { color: var(--soft); font-size: 13px; }
+.ctl { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; flex-wrap: wrap; }
+.ctl .date { flex: 1; min-width: 90px; accent-color: var(--red); }
+.ctl .dname { width: 48px; color: var(--red); }
+.ctl button, .ctl select { font: inherit; font-size: 13px; background: #f3e6c4; color: var(--ink); border: 1px solid #946a3c; padding: 1px 6px; }
+.ctl button { width: 30px; }
+.ctl label { white-space: nowrap; }
+.all { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; padding: 6px 10px; background: #f3e6c4; border: 1px solid #946a3c; }
+.all .ctl { flex: 1; margin: 0; }
+.grid.only { display: block; }
+.grid.only canvas { width: 1080px; height: 630px; max-width: 100%; height: auto; aspect-ratio: 12 / 7; }
+.grid.only .pair canvas { width: 534px; }
+@media (max-width: 800px) { figure.pair { grid-column: auto; } .views { flex-direction: column; } }
+@media (max-width: 420px) { main { padding: 16px; margin: 0; } canvas { width: 100%; height: auto; } }

@@ -1,0 +1,850 @@
+/* Shared by samples/seasons.html and samples/ambient-life.html: small pieces of map in the game's
+   palette (js/pixelmap.js), each pixel carrying the climate a map cell has (coldC, warmC, rainMm,
+   summerRain, biome, heightM), the seasonal and ambient effects drawn from that data, and panels
+   with a date slider, a speed control and a held toggle. The calendar is the app's (ui.js): the
+   season is the date's share of the year, 0 on the first of January; mid-winter is MIDWINTER in
+   the north and half a year later in the south; faster than 1 year a second the season is null
+   and the map shows its held look. */
+(function () {
+"use strict";
+const K = window.SEASONS = {};
+const W = 120, H = 70, N = W * H;
+K.W = W; K.H = H;
+
+/* ------------------------------------------------------------ palette (js/pixelmap.js) */
+const P = {
+  deep: "#16295f", mid: "#1f4294", shallow: "#3570c4", foam: "#a6dbff", river: "#3570c4",
+  sand: ["#d4b56c", "#e6cd88", "#f3e2a6"],
+  grassland: ["#4a9438", "#5fae45", "#80c95a"], forest: ["#215a2a", "#2c7436", "#3b8f44"],
+  jungle: ["#1b663d", "#25804f", "#349b60"], savanna: ["#949539", "#b0af4a", "#cbc865"],
+  desert: ["#c2924c", "#d9b066", "#eacb88"], swamp: ["#384e30", "#48633e", "#5c794e"],
+  taiga: ["#2a5143", "#356453", "#477a65"], tundra: ["#7b8b74", "#94a48c", "#b2bfa7"],
+  ice: ["#b4c5db", "#d3dfed", "#f1f6fc"], mountain: ["#584c42", "#796a5b", "#9a8b79"],
+  snow: ["#c3cddb", "#e3eaf2", "#ffffff"],
+};
+const LIGHT = "#5f93d8", PALE = "#a6dbff", FOAM_B = "#dcefff", WHITE = "#e8f4ff", ROAD = "#604426";
+/* the new ramps, three shades each like the biomes */
+const R = {
+  gold: ["#9c7f22", "#c29d2e", "#dfbd4a"], red: ["#7e2e1a", "#a8432a", "#cf6a32"], russet: ["#6b4424", "#8a5a30", "#a8743c"],
+  bare: ["#4e4034", "#665444", "#7d6a55"], leaf: ["#4f9a36", "#6cb848", "#94d466"],
+  dormant: ["#5f6e40", "#76824c", "#8c975c"], ripe: ["#a49a38", "#c2b148", "#dac862"],
+  wheat: ["#c2a03c", "#d8b84e", "#ead06c"], stubble: ["#ad9668", "#c4ac7c", "#d8c290"], plough: ["#5e4630", "#76583a", "#8c6a46"],
+  dry: ["#98804a", "#b29a5a", "#c9b26e"], wet: ["#4f8a30", "#6aa43c", "#8ac052"],
+  bloom: ["#2d7d74", "#3f9a8c", "#6cc4ae"], cloud: ["#8f9aa8", "#c5ced8", "#eef3f8"],
+};
+K.P = P; K.R = R;
+
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function bayer(x, y) { return (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16; }
+function hash(a, b) { let h = Math.imul(a + 1, 374761393) ^ Math.imul(b + 7, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function vnoise(x, y, s) {
+  const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, tx = fx * fx * (3 - 2 * fx), ty = fy * fy * (3 - 2 * fy);
+  const v = function (i, j) { return hash(i * 131 + s * 7919, j); };
+  return (v(x0, y0) * (1 - tx) + v(x0 + 1, y0) * tx) * (1 - ty) + (v(x0, y0 + 1) * (1 - tx) + v(x0 + 1, y0 + 1) * tx) * ty;
+}
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function wrap(v) { return ((v % 1) + 1) % 1; }
+/* signed distance on the year's circle, -0.5..0.5 */
+function sdist(a, b) { return wrap(a - b + 0.5) - 0.5; }
+K.bayer = bayer; K.hash = hash; K.vnoise = vnoise; K.clamp = clamp;
+
+const PACKED = {};
+function pack(hex) {
+  let p = PACKED[hex];
+  if (p === undefined) {
+    const n = parseInt(hex.slice(1), 16);
+    p = PACKED[hex] = ((255 << 24) | ((n & 255) << 16) | (n & 0xff00) | (n >> 16)) >>> 0;
+  }
+  return p;
+}
+
+/* ------------------------------------------------------------ the calendar (pixelmap.js) */
+const MIDWINTER = 0.05;
+K.MIDWINTER = MIDWINTER;
+/* where a place stands in its own year: 0 at its mid-winter, 0.5 at mid-summer */
+function local(season, south) { return season == null ? null : wrap(season - MIDWINTER + (south ? 0.5 : 0)); }
+/* how far lake ice has crept out from the shore (0-10 pixels), as pixelmap.js iceLevel (ph: 0.5 at mid-winter) */
+function iceLevel(share, ph) {
+  if (!share) return 0;
+  if (ph == null) return share >= 0.5 ? 10 : 0;
+  return Math.max(0, Math.min(10, Math.min(ph - (0.5 - share / 2), 0.5 + share / 2 - ph) * 90));
+}
+/* the share of the year lakes and rivers stay frozen (pixelmap.js buildTerrain) */
+function winterShare(cc) { return cc == null || cc >= 0 ? 0 : Math.min(0.85, 0.2 - cc / 25); }
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function dateName(day) {
+  let d = Math.floor(((day % 365) + 365) % 365), m = 0;
+  while (d >= MDAYS[m]) { d -= MDAYS[m]; m++; }
+  return (d + 1) + " " + MONTHS[m];
+}
+K.local = local; K.iceLevel = iceLevel; K.dateName = dateName;
+
+/* ------------------------------------------------------------ biomes */
+const B = { sea: 0, lake: 1, river: 2, sand: 3, grass: 4, forest: 5, taiga: 6, mountain: 7, tundra: 8, icecap: 9,
+            savanna: 10, jungle: 11, desert: 12, farm: 13, orchard: 14, town: 15, steppe: 16 };
+K.B = B;
+const LAND_PAL = {};
+LAND_PAL[B.sand] = P.sand; LAND_PAL[B.grass] = P.grassland; LAND_PAL[B.forest] = P.forest; LAND_PAL[B.taiga] = P.taiga;
+LAND_PAL[B.mountain] = P.mountain; LAND_PAL[B.tundra] = P.tundra; LAND_PAL[B.icecap] = P.ice; LAND_PAL[B.savanna] = P.savanna;
+LAND_PAL[B.jungle] = P.jungle; LAND_PAL[B.desert] = P.desert; LAND_PAL[B.steppe] = P.savanna; LAND_PAL[B.farm] = P.grassland;
+LAND_PAL[B.orchard] = P.grassland; LAND_PAL[B.town] = P.grassland;
+
+/* ------------------------------------------------------------ building a piece of map */
+/* spec: water(x,y) 0 land / 1 sea / 2 lake; height(x,y) metres; climate(x,y,h) {cold, warm, rain, sum};
+   biome(x,y,ctx) a B code for land; rivers [[points], wide]; towns [[x,y,port]]; roads [[points]];
+   lanes [[points]] for ships; flip: the same map for the south (pole at the bottom, opposite seasons) */
+function build(spec) {
+  const flip = !!spec.flip, Y = function (y) { return flip ? H - 1 - y : y; };
+  const kind = new Uint8Array(N), biome = new Uint8Array(N), lvl = new Uint8Array(N);
+  const h = new Float32Array(N), cold = new Float32Array(N), warm = new Float32Array(N), rain = new Float32Array(N), sum = new Float32Array(N);
+  const jit = new Float32Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, sy = Y(y), w = spec.water(x, sy), hh = w ? 0 : spec.height(x, sy), c = spec.climate(x, sy, hh);
+    kind[i] = w; h[i] = hh; cold[i] = c.cold; warm[i] = c.warm; rain[i] = c.rain; sum[i] = c.sum;
+    jit[i] = hash(x * 3 + 1, sy * 5 + 2);
+    lvl[i] = Math.min(2, Math.floor(vnoise(x * 0.3, sy * 0.3, 9) * 2 + bayer(x, y)));
+  }
+  const bfs = function (src, pass) {
+    const d = new Int16Array(N).fill(99), q = [];
+    for (let i = 0; i < N; i++) if (src(i)) { d[i] = 0; q.push(i); }
+    for (let k = 0; k < q.length; k++) {
+      const c = q[k], x = c % W, y = (c - x) / W;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, j = ny * W + nx;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || !pass(j) || d[j] <= d[c] + 1) continue;
+        d[j] = d[c] + 1; q.push(j);
+      }
+    }
+    return d;
+  };
+  const toLand = bfs(function (i) { return kind[i] === 0; }, function (i) { return kind[i] !== 0; });
+  const toSea = bfs(function (i) { return kind[i] === 1; }, function (i) { return kind[i] !== 1; });
+  const toLake = bfs(function (i) { return kind[i] === 2; }, function (i) { return kind[i] === 0; });
+
+  /* rivers: Catmull-Rom through control points, one pixel per step, in the order they flow */
+  const trace = function (pts, wide, any) {
+    const out = [], seen = new Set();
+    const at = function (p0, p1, p2, p3, t) {
+      const t2 = t * t, t3 = t2 * t;
+      return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    };
+    pts = pts.map(function (p) { return [p[0], Y(p[1])]; });
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[Math.max(0, k - 1)], b = pts[k], c = pts[k + 1], d = pts[Math.min(pts.length - 1, k + 2)];
+      for (let s = 0; s <= 1; s += 0.02) {
+        const x = Math.round(at(a[0], b[0], c[0], d[0], s)), y = Math.round(at(a[1], b[1], c[1], d[1], s)), i = y * W + x;
+        if (seen.has(i) || x < -6 || y < -6 || x >= W + 6 || y >= H + 6) continue;
+        if (!any && (x < 0 || y < 0 || x >= W || y >= H || kind[i] !== 0)) continue;
+        seen.add(i); out.push([x, y, out.length]);
+        if (wide && kind[i + W] === 0 && !seen.has(i + W)) { seen.add(i + W); out.push([x, y + 1, out.length - 1]); }
+      }
+    }
+    return out;
+  };
+  const rivers = (spec.rivers || []).map(function (r) { return trace(r[0], r[1]); });
+  const riverPx = [].concat.apply([], rivers);
+  for (const p of riverPx) kind[p[1] * W + p[0]] = 3;
+  const mouths = rivers.filter(function (r) { const l = r[r.length - 1]; return l && toSea[l[1] * W + l[0]] <= 2; }).map(function (r) {
+    const l = r[r.length - 1], p = r[Math.max(0, r.length - 8)];
+    return { x: l[0], y: l[1], a: Math.atan2(l[1] - p[1], l[0] - p[0]), cold: cold[l[1] * W + l[0]] };
+  });
+
+  const towns = (spec.towns || []).map(function (t) { return { x: t[0], y: Y(t[1]), port: !!t[2], name: t[3] || "" }; });
+  const ctx = { kind: kind, h: h, cold: cold, warm: warm, rain: rain, toSea: toSea, toLake: toLake, towns: towns, Y: Y };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (kind[i] === 1) biome[i] = B.sea;
+    else if (kind[i] === 2) biome[i] = B.lake;
+    else if (kind[i] === 3) biome[i] = B.river;
+    else if (toSea[i] === 1 || (toSea[i] === 2 && bayer(x, y) < 0.5)) biome[i] = B.sand;
+    else biome[i] = spec.biome(x, Y(y), i, ctx);
+  }
+  const roads = (spec.roads || []).map(function (r) { return trace(r, false, true).filter(function (p) { return p[0] >= 0 && p[1] >= 0 && p[0] < W && p[1] < H; }); });
+  const lanes = (spec.lanes || []).map(function (r) { return trace(r, false, true); });
+  const road = new Uint8Array(N);
+  for (const r of roads) for (const p of r) road[p[1] * W + p[0]] = 1;
+
+  /* the map as pixelmap.js draws it, once */
+  const base = new Uint32Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, t = bayer(x, y), d = toLand[i], b = biome[i];
+    let col;
+    if (kind[i] === 2) col = d <= 2 ? P.shallow : d <= 7 && t >= (d - 2) / 5 ? P.shallow : P.mid;
+    else if (kind[i] === 1) col = d === 1 ? (t < 0.5 ? P.foam : P.shallow) : d <= 3 + t * 2 ? P.shallow : d <= 9 + t * 3 ? P.mid : P.deep;
+    else if (kind[i] === 3) col = P.river;
+    else if (b === B.mountain && h[i] > 2700) col = P.snow[lvl[i]];
+    else if (b === B.farm) col = farmBase(x, y, i, lvl[i]);
+    else if (b === B.orchard) col = (x % 3 === 0 && y % 2 === 0) ? P.forest[1] : P.grassland[lvl[i]];
+    else if (b === B.town) col = P.grassland[lvl[i]];
+    else col = LAND_PAL[b][lvl[i]];
+    if (road[i] && kind[i] === 0) col = ROAD;
+    base[i] = pack(col);
+  }
+  /* towns: a few roofs */
+  for (const tw of towns) for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) {
+    const x = tw.x + dx, y = tw.y + dy, i = y * W + x;
+    if (x < 0 || y < 0 || x >= W || y >= H || kind[i] !== 0) continue;
+    if (hash(x, y * 7) < 0.7) base[i] = pack((x + y) % 2 ? "#b5452e" : "#efe6d6");
+  }
+
+  const S = { kind: kind, biome: biome, lvl: lvl, h: h, cold: cold, warm: warm, rain: rain, sum: sum, jit: jit,
+              toLand: toLand, toSea: toSea, toLake: toLake, rivers: rivers, riverPx: riverPx, mouths: mouths,
+              towns: towns, roads: roads, lanes: lanes, road: road, base: base, south: !!spec.south, flip: flip,
+              wind: spec.wind == null ? 1 : spec.wind, name: spec.name };
+  /* lake and river ice (pixelmap.js buildTerrain): each lake pixel's distance from the shore and how long it stays frozen */
+  S.lakePx = []; S.lakeD = []; S.lakeIce = []; S.lakeJit = []; S.lakeK = new Int32Array(N).fill(-1);
+  for (let i = 0; i < N; i++) if (kind[i] === 2) {
+    S.lakeK[i] = S.lakePx.length;
+    S.lakePx.push(i); S.lakeD.push(toLand[i] + (hash(i, 51) - 0.5) * 1.5); S.lakeIce.push(winterShare(cold[i])); S.lakeJit.push(hash(i, 52));
+  }
+  S.foam = [];
+  for (let i = 0; i < N; i++) if (kind[i] === 1 && toLand[i] === 1) S.foam.push(i);
+  /* sea ice: how readily each sea pixel freezes, from its coldest month and the shore */
+  S.iceScore = new Float32Array(N);
+  for (let i = 0; i < N; i++) if (kind[i] === 1) {
+    const x = i % W, y = (i - x) / W;
+    const c = (-cold[i] - 8) / 20;
+    if (c > 0) S.iceScore[i] = Math.min(1.2, c) + (toLand[i] <= 2 ? 0.1 : toLand[i] <= 5 ? 0.05 : 0) + (vnoise(x * 0.15, y * 0.15, 31) - 0.5) * 0.16;
+  }
+  return S;
+}
+/* farmland: a patchwork of fields, each with its own crop and its own few days' lead */
+function fieldOf(x, y) { return Math.floor((x + Math.floor(y / 5) * 3) / 6) * 97 + Math.floor(y / 5); }
+function farmBase(x, y, i, l) {
+  const f = fieldOf(x, y), k = hash(f, 3);
+  return k < 0.3 ? P.grassland[l] : k < 0.55 ? P.savanna[(l + 1) % 3] : k < 0.8 ? P.grassland[(l + 1) % 3] : P.forest[2];
+}
+K.build = build;
+
+/* ------------------------------------------------------------ the pieces of map */
+function coast(y, x0) { return x0 + (vnoise(0.5, y * 0.11, 1) - 0.5) * 16 - Math.max(0, y - 50) * 2.2; }
+/* temperate: hills in the north-west, a lake, a river out to the sea in the east, a village with
+   fields and an orchard; from about 55 N at the top (coldest month -14) to 45 N at the bottom (+3) */
+function temperateSpec(south) {
+  const hill = function (x, y) { return x + y < 34 + vnoise(x * 0.2, y * 0.2, 6) * 10; };
+  return {
+    name: "temperate", south: south, flip: south, wind: 1,
+    water: function (x, y) {
+      const dx = (x - 46) / 17, dy = (y - 35) / 8.5;
+      if (x > coast(y, 94) + (vnoise(x * 0.2, y * 0.2, 3) - 0.5) * 4) return 1;
+      if (dx * dx + dy * dy < 1 + (vnoise(x * 0.22, y * 0.22, 2) - 0.5) * 0.7) return 2;
+      return 0;
+    },
+    height: function (x, y) { return hill(x, y) ? 1400 + (34 - x - y) * 70 + vnoise(x * 0.3, y * 0.3, 8) * 700 : 80 + vnoise(x * 0.1, y * 0.1, 5) * 300; },
+    climate: function (x, y, h) { const c = -14 + y * 0.25; return { cold: c - h * 0.0065, warm: 15 + y * 0.12 - h * 0.0065, rain: 650 + vnoise(x * 0.05, y * 0.05, 12) * 300, sum: 0.4 }; },
+    biome: function (x, y, i, c) {
+      if (hill(x, y)) return B.mountain;
+      const vx = x - 66, vy = y - 53;
+      if (vx * vx + vy * vy * 1.6 < 12) return B.town;
+      if (x >= 54 && x <= 62 && y >= 56 && y <= 63) return B.orchard;
+      if (vx * vx + vy * vy * 1.6 < 260 && vnoise(x * 0.12, y * 0.12, 4) < 0.62) return B.farm;
+      if (vnoise(x * 0.12, y * 0.12, 4) > 0.55) return c.cold[i] < -10 ? B.taiga : B.forest;
+      return B.grass;
+    },
+    rivers: [[[[4, 2], [10, 9], [17, 13], [21, 21], [27, 26], [31, 32], [36, 35]], false],
+             [[[58, 38], [64, 41], [70, 46], [76, 45], [83, 49], [90, 52], [99, 55], [104, 57]], true]],
+    towns: [[66, 53, false, "village"], [88, 9, true, "north port"], [91, 40, true, "south port"]],
+    roads: [[[-2, 58], [20, 56], [40, 55], [60, 54], [66, 53], [78, 47], [88, 41], [91, 40]], [[66, 53], [70, 32], [80, 18], [88, 9]]],
+    lanes: [[[92, 9], [100, 8], [110, 10], [125, 12]], [[94, 40], [102, 36], [112, 30], [125, 26]], [[94, 40], [100, 24], [96, 12], [92, 9]], [[104, 59], [112, 62], [125, 66]]],
+  };
+}
+/* tropical: desert in the north, savanna with a summer monsoon, jungle by a warm sea to the south and east */
+function tropicalSpec() {
+  return {
+    name: "tropical", wind: -1,
+    water: function (x, y) {
+      const shore = 50 + (vnoise(x * 0.06, 0.5, 21) - 0.5) * 14 + Math.max(0, x - 70) * 0.25;
+      if (y > shore || x > 104 + (vnoise(0.5, y * 0.1, 22) - 0.5) * 10) return 1;
+      const dx = (x - 42) / 9, dy = (y - 30) / 5;
+      if (dx * dx + dy * dy < 1 + (vnoise(x * 0.25, y * 0.25, 23) - 0.5) * 0.6) return 2;
+      return 0;
+    },
+    height: function (x, y) { const r = 30 - x * 0.5 - y * 0.6; return r > 0 ? 400 + r * 60 + vnoise(x * 0.3, y * 0.3, 24) * 300 : 60 + vnoise(x * 0.1, y * 0.1, 25) * 200; },
+    climate: function (x, y) { return { cold: 14 + y * 0.15, warm: 33 - y * 0.06, rain: 80 + y * 28 + (vnoise(x * 0.08, y * 0.08, 26) - 0.5) * 500, sum: y > 48 ? 0.65 : 0.85 }; },
+    biome: function (x, y, i, c) {
+      const r = c.rain[i];
+      if (c.h[i] > 900) return B.mountain;
+      if (r < 380) return B.desert;
+      if (r < 1350) return B.savanna;
+      return B.jungle;
+    },
+    rivers: [[[[6, 4], [14, 14], [24, 22], [33, 29]], false], [[[50, 31], [58, 36], [63, 42], [70, 47], [76, 54], [80, 62]], true]],
+    towns: [[22, 9, false, "oasis"], [74, 50, true, "port"]],
+    roads: [[[22, 9], [34, 16], [48, 24], [60, 34], [70, 44], [74, 50]]],
+    lanes: [[[78, 54], [90, 60], [105, 62], [125, 64]], [[78, 54], [96, 50], [112, 40], [125, 30]]],
+  };
+}
+/* polar: tundra and an ice cap to the west, a cold sea to the east, from about 80 N at the top (coldest month -32) to 66 N (-11) */
+function polarSpec() {
+  return {
+    name: "polar", wind: 1,
+    water: function (x, y) {
+      const shore = 34 + (vnoise(0.5, y * 0.09, 41) - 0.5) * 18 + y * 0.25;
+      if (x > shore + (vnoise(x * 0.2, y * 0.2, 42) - 0.5) * 5) {
+        const dx = (x - 86) / 10, dy = (y - 24) / 6;
+        return dx * dx + dy * dy < 1 + (vnoise(x * 0.25, y * 0.25, 43) - 0.5) * 0.8 ? 0 : 1;
+      }
+      return 0;
+    },
+    height: function (x, y) { return 200 + Math.max(0, 22 - y) * 40 + vnoise(x * 0.12, y * 0.12, 44) * 500; },
+    climate: function (x, y, h) { const c = -32 + y * 0.3; return { cold: c - h * 0.004, warm: 2 + y * 0.13 - h * 0.004, rain: 250, sum: 0.5 }; },
+    biome: function (x, y, i, c) { return c.warm[i] < 2.5 ? B.icecap : y > 56 && vnoise(x * 0.15, y * 0.15, 45) > 0.5 ? B.taiga : B.tundra; },
+    rivers: [[[[6, 40], [14, 46], [24, 50], [36, 54], [44, 56]], false]],
+    towns: [[48, 60, true, "harbour"]],
+    lanes: [[[52, 60], [70, 58], [92, 52], [125, 46]]],
+  };
+}
+/* trade: desert and steppe to the south-west, grassland and woods to the north, a big lake, a warm sea to the east with an island */
+function tradeSpec() {
+  return {
+    name: "trade", wind: 1,
+    water: function (x, y) {
+      const sea = x > 86 + (vnoise(0.5, y * 0.1, 61) - 0.5) * 14 + (vnoise(x * 0.2, y * 0.2, 62) - 0.5) * 4;
+      const ix = (x - 108) / 7, iy = (y - 20) / 5;
+      if (sea && !(ix * ix + iy * iy < 1 + (vnoise(x * 0.3, y * 0.3, 63) - 0.5) * 0.6)) return 1;
+      const dx = (x - 40) / 19, dy = (y - 16) / 8;
+      if (dx * dx + dy * dy < 1 + (vnoise(x * 0.2, y * 0.2, 64) - 0.5) * 0.6) return 2;
+      return 0;
+    },
+    height: function (x, y) { return 100 + vnoise(x * 0.1, y * 0.1, 65) * 400; },
+    climate: function (x, y) { const r = 120 + (W - x) * -1 + (H - y) * 14 + x * 6; return { cold: 6 + y * 0.08, warm: 24 + y * 0.12, rain: r + (vnoise(x * 0.08, y * 0.08, 66) - 0.5) * 200, sum: 0.35 }; },
+    biome: function (x, y, i, c) {
+      const r = c.rain[i];
+      if (r < 330) return B.desert;
+      if (r < 560) return B.steppe;
+      return vnoise(x * 0.12, y * 0.12, 67) > 0.6 ? B.forest : B.grass;
+    },
+    rivers: [[[[58, 20], [66, 26], [74, 30], [82, 33], [88, 34]], true]],
+    towns: [[8, 60, false, "desert town"], [52, 34, false, "market"], [84, 46, true, "port"], [106, 20, true, "island"], [80, 12, true, "north port"]],
+    roads: [[[-2, 64], [8, 60], [22, 54], [36, 46], [52, 34], [66, 40], [76, 44], [84, 46]], [[52, 34], [62, 26], [72, 16], [80, 12]]],
+    lanes: [[[88, 46], [96, 40], [104, 30], [106, 23]], [[88, 46], [100, 52], [112, 58], [125, 62]], [[83, 12], [94, 12], [102, 16], [104, 20]], [[110, 18], [118, 14], [125, 10]]],
+  };
+}
+const CACHE = {};
+K.scene = function (name) {
+  if (!CACHE[name]) CACHE[name] = build(name === "temperate" ? temperateSpec(false) : name === "south" ? temperateSpec(true)
+    : name === "tropical" ? tropicalSpec() : name === "polar" ? polarSpec() : tradeSpec());
+  return CACHE[name];
+};
+
+/* ------------------------------------------------------------ effects */
+/* each draws into a frame f: { S, buf, t (wall ms), season (null when held), day (the calendar,
+   in days), speed (days a second), lp (the place's own year, 0 at mid-winter, null when held) } */
+function put(f, i, col) { f.buf[i] = pack(col); }
+function shade(f, i, k) {
+  const p = f.buf[i];
+  f.buf[i] = ((255 << 24) | (Math.round(((p >> 16) & 255) * k) << 16) | (Math.round(((p >> 8) & 255) * k) << 8) | Math.round((p & 255) * k)) >>> 0;
+}
+const FX = K.fx = {};
+
+/* the sea's surf as the map has it now */
+FX.seaFoam = function (f) {
+  const tick = Math.floor(f.t / 1000 * 1.6), col = tick % 2 ? P.foam : FOAM_B;
+  for (const i of f.S.foam) if ((i * 7 + tick) % 3 === 0) put(f, i, col);
+};
+/* lake and river ice, exactly as pixelmap.js drawWater (the reference) */
+FX.lakeIce = function (f) {
+  const S = f.S, ph = f.lp == null ? null : wrap(f.lp + 0.5);
+  for (let k = 0; k < S.lakePx.length; k++) {
+    const fl = iceLevel(S.lakeIce[k], ph), d = S.lakeD[k];
+    if (!fl || d > fl || (ph > 0.5 && S.lakeJit[k] > fl / 10 + 0.3)) continue;
+    const i = S.lakePx[k];
+    put(f, i, d > fl - 1 ? P.ice[0] : bayer(i % W, (i / W) | 0) < 0.3 ? P.ice[2] : P.ice[1]);
+  }
+  for (const p of S.riverPx) {
+    const i = p[1] * W + p[0];
+    if (iceLevel(winterShare(S.cold[i]), ph) > 3 + hash(i, 53) * 4) put(f, i, P.ice[1]);
+  }
+};
+/* bands of current down the rivers, as the app has them (stopped where frozen: the ice is drawn after) */
+FX.current = function (f) {
+  const t = f.t / 1000;
+  for (const r of f.S.rivers) for (const p of r) if (((Math.floor(p[2] - t * 5) % 9) + 9) % 9 === 0) put(f, p[1] * W + p[0], LIGHT);
+};
+
+/* snow: the share of the year it lies, from the coldest month (with height already in it); lying
+   where the warmest month is below freezing, never melting */
+function snowShare(S, i) {
+  const c = S.cold[i];
+  if (S.warm[i] < 0) return 1;
+  if (c >= -1) return 0;
+  return Math.min(0.92, 0.12 - (c + 1) / 22) * (0.9 + S.jit[i] * 0.2);
+}
+/* how deep into its snow season a pixel is (positive: covered), peaking a few weeks after mid-winter */
+function snowMargin(S, i, lp) { const s = snowShare(S, i); return s ? s / 2 - Math.abs(sdist(lp, 0.04)) : -1; }
+FX.snow = function (f) {
+  const S = f.S;
+  for (let i = 0; i < N; i++) {
+    if (S.kind[i] !== 0 || S.biome[i] === B.icecap) continue;
+    const x = i % W, y = (i - x) / W, b = bayer(x, y);
+    let m;
+    if (f.lp == null) m = snowShare(S, i) >= 0.5 ? 1 : -1;
+    else m = snowMargin(S, i, f.lp);
+    if (m <= 0 || (m < 0.025 && b > m / 0.025)) continue;
+    /* trees stand dark through the snow */
+    if ((S.biome[i] === B.forest || S.biome[i] === B.taiga || S.biome[i] === B.jungle) && b > 0.55) continue;
+    if (S.road[i] && b < 0.3) continue;
+    put(f, i, P.snow[S.biome[i] === B.mountain ? S.lvl[i] : Math.min(2, S.lvl[i] + 1)]);
+  }
+};
+/* falling flakes where the snow is building (from the first snow to a little past mid-winter), drifting with the wind */
+FX.snowfall = function (f) {
+  if (f.lp == null) return;
+  const S = f.S, t = f.t / 1000, burst = vnoise(t * 0.25, 0.5, 71);
+  for (let k = 0; k < 260; k++) {
+    const sp = 6 + hash(k, 2) * 5, y = Math.floor(((hash(k, 1) * (H + 6) + t * sp) % (H + 6)) - 3);
+    const x = Math.floor((((hash(k, 3) * W + t * sp * 0.6 * S.wind + Math.sin(t * 1.3 + k) * 1.2) % W) + W) % W);
+    if (y < 0 || y >= H) continue;
+    const i = y * W + x, s = snowShare(S, i), d = sdist(f.lp, 0.04);
+    if (!s || d < -s / 2 - 0.03 || d > s / 6) continue;
+    if (hash(k, Math.floor(t / 3)) > 0.35 + burst * 0.65) continue;
+    put(f, i, hash(k, 5) < 0.5 ? "#ffffff" : P.snow[1]);
+  }
+};
+/* broadleaf woods turn in autumn: green, gold, red and russet by tree, bare in winter, a fresh green in spring */
+function leafTiming(S, i) {
+  const c = -clamp(S.cold[i] * 0.004, -0.03, 0.05);   /* colder: earlier in autumn, later in spring */
+  return { turn: 0.66 + S.jit[i] * 0.05 - c, out: 0.27 + S.jit[i] * 0.03 + c };
+}
+FX.autumn = function (f) {
+  if (f.lp == null) return;
+  const S = f.S, q = f.lp;
+  for (let i = 0; i < N; i++) {
+    const b = S.biome[i];
+    if ((b !== B.forest && b !== B.orchard) || S.road[i]) continue;
+    if (b === B.orchard && !((i % W) % 3 === 0 && ((i / W) | 0) % 2 === 0)) continue;
+    if (S.cold[i] < -12 || S.cold[i] > 9) continue;
+    const sp = hash(i, 81);
+    if (sp < 0.12) continue;                     /* the odd conifer stays green */
+    const x = i % W, y = (i - x) / W, bb = bayer(x, y), tm = leafTiming(S, i), l = S.lvl[i];
+    const ramp = sp < 0.5 ? R.gold : sp < 0.8 ? R.red : R.russet;
+    if (q >= tm.turn) {
+      const k = (q - tm.turn) / 0.14;
+      if (k < 0.25) { if (bb < k * 4) put(f, i, ramp[l]); }
+      else if (k < 0.7) put(f, i, ramp[l]);
+      else if (k < 1) put(f, i, bb < (k - 0.7) / 0.3 ? R.bare[l] : ramp[l]);
+      else put(f, i, R.bare[l]);
+    } else if (q < tm.out) put(f, i, R.bare[l]);
+    else if (q < tm.out + 0.07) put(f, i, bb < (q - tm.out) / 0.03 ? R.leaf[l] : R.bare[l]);
+  }
+};
+/* a short burst of blossom in spring: orchards, wild cherry on the edges of the woods, flowers in the meadows */
+FX.blossom = function (f) {
+  if (f.lp == null) return;
+  const S = f.S, t = f.t / 1000;
+  for (let i = 0; i < N; i++) {
+    const b = S.biome[i];
+    if (S.cold[i] < -12 || S.cold[i] > 12 || S.kind[i] !== 0 || S.road[i]) continue;
+    const x = i % W, y = (i - x) / W, tree = b === B.orchard && x % 3 === 0 && y % 2 === 0;
+    const edge = b === B.forest && S.toSea[i] > 1 && hash(i, 91) < 0.22 && isEdge(S, x, y);
+    const meadow = (b === B.grass || b === B.farm && hash(fieldOf(x, y), 3) < 0.3) && hash(i, 92) < 0.09;
+    if (!tree && !edge && !meadow) continue;
+    const start = leafTiming(S, i).out - 0.07 + (meadow ? 0.04 : 0) + S.jit[i] * 0.015, k = (f.lp - start) / 0.07;
+    if (k < 0 || k > 1) continue;
+    const env = Math.sin(k * Math.PI);
+    if (bayer(x, y) > env * 1.3) continue;
+    put(f, i, meadow ? (hash(i, 93) < 0.6 ? "#f0d860" : "#fbf3f6") : hash(i, 94) < 0.55 ? "#fbf3f6" : hash(i, 95) < 0.6 ? "#f2b8cc" : "#e08aa8");
+    /* petals blowing off the orchard as it ends */
+    if (tree && k > 0.55) {
+      const life = (t * 0.8 + hash(i, 96)) % 1, px = x + Math.round(life * 6 * S.wind), py = y + Math.round(life * 3);
+      if (px >= 0 && px < W && py < H && S.kind[py * W + px] === 0 && life < 0.8) put(f, py * W + px, "#f2b8cc");
+    }
+  }
+};
+function isEdge(S, x, y) {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const nx = x + dx, ny = y + dy;
+    if (nx >= 0 && ny >= 0 && nx < W && ny < H && S.biome[ny * W + nx] !== B.forest) return true;
+  }
+  return false;
+}
+/* grassland and farmland through the year: dormant in winter, a fresh green in spring, ripening gold
+   in late summer (the drier the more), fields harvested to stubble and ploughed in autumn */
+function mixRamp(f, i, a, b, k, l) { put(f, i, bayer(i % W, (i / W) | 0) < k ? b[l] : a[l]); }
+FX.plains = function (f) {
+  if (f.lp == null) return;
+  const S = f.S, q = f.lp;
+  for (let i = 0; i < N; i++) {
+    const b = S.biome[i], l = S.lvl[i];
+    if (b !== B.grass && b !== B.farm && b !== B.steppe && b !== B.town && !(b === B.orchard && !((i % W) % 3 === 0 && ((i / W) | 0) % 2 === 0))) continue;
+    if (S.cold[i] > 12 || S.road[i]) continue;
+    const x = i % W, y = (i - x) / W, own = LAND_PAL[b];
+    if (b === B.farm && hash(fieldOf(x, y), 3) >= 0.3) {
+      const fj = hash(fieldOf(x, y), 4) * 0.05, crop = hash(fieldOf(x, y), 3) < 0.8 ? R.wheat : R.ripe;
+      const fl = (y % 2) ? l : Math.max(0, l - 1);   /* furrows */
+      if (q < 0.2 + fj || q >= 0.78 + fj) put(f, i, R.plough[fl]);
+      else if (q < 0.3 + fj) mixRamp(f, i, R.plough, R.leaf, (q - 0.2 - fj) / 0.1, fl);
+      else if (q < 0.42 + fj) put(f, i, R.leaf[l]);
+      else if (q < 0.52 + fj) put(f, i, P.grassland[l]);
+      else if (q < 0.6 + fj) mixRamp(f, i, P.grassland, crop, (q - 0.52 - fj) / 0.08, l);
+      else if (q < 0.65 + fj) put(f, i, crop[l]);
+      else if (q < 0.72 + fj) put(f, i, R.stubble[l]);
+      else mixRamp(f, i, R.stubble, R.plough, (q - 0.72 - fj) / 0.06, fl);
+      continue;
+    }
+    const dry = clamp((900 - S.rain[i]) / 500, 0.35, 1);
+    if (q < 0.2 || q >= 0.86) put(f, i, R.dormant[l]);
+    else if (q < 0.3) mixRamp(f, i, R.dormant, R.leaf, (q - 0.2) / 0.1, l);
+    else if (q < 0.44) put(f, i, R.leaf[l]);
+    else if (q < 0.52) mixRamp(f, i, R.leaf, own, (q - 0.44) / 0.08, l);
+    else if (q < 0.62) mixRamp(f, i, own, R.ripe, (q - 0.52) / 0.1 * dry, l);
+    else if (q < 0.76) mixRamp(f, i, own, R.ripe, dry, l);
+    else mixRamp(f, i, R.ripe, R.dormant, (q - 0.76) / 0.1 + (1 - dry), l);
+  }
+};
+/* savanna and monsoon land (summerRain high): green in the rains, brown through the dry season; the held look is the biome's own, in between */
+function wetness(lp) {
+  if (lp < 0.36) return 0;
+  if (lp < 0.48) return (lp - 0.36) / 0.12;
+  if (lp < 0.72) return 1;
+  if (lp < 0.92) return 1 - (lp - 0.72) / 0.2;
+  return 0;
+}
+FX.wetDry = function (f) {
+  if (f.lp == null) return;
+  const S = f.S, g = wetness(f.lp);
+  for (let i = 0; i < N; i++) {
+    const b = S.biome[i];
+    if ((b !== B.savanna && b !== B.steppe && b !== B.jungle) || S.sum[i] < 0.55 || S.cold[i] < 8 || S.road[i]) continue;
+    const l = S.lvl[i];
+    if (b === B.jungle) { if (g < 0.3 && bayer(i % W, (i / W) | 0) < 0.25 * (1 - g)) put(f, i, P.savanna[0]); continue; }
+    mixRamp(f, i, R.dry, R.wet, g, l);
+  }
+};
+/* the monsoon itself: rain cells drift in off the sea through the rains, darkening the land, with now and then a flash */
+FX.monsoonRain = function (f) {
+  if (f.lp == null) return;
+  const S = f.S, t = f.t / 1000, g = f.lp < 0.36 || f.lp > 0.74 ? 0 : Math.sin((f.lp - 0.36) / 0.38 * Math.PI);
+  const n = Math.round(g * 5);
+  for (let k = 0; k < n; k++) {
+    const cyc = Math.floor(t / 9 + hash(k, 1)), life = (t / 9 + hash(k, 1)) % 1;
+    const cx = 10 + hash(k, cyc) * 100 + life * 18, cy = 66 - life * 50 - hash(k, cyc + 7) * 10, r = 7 + hash(k, cyc + 3) * 6;
+    const env = Math.sin(life * Math.PI), flash = hash(k, Math.floor(t * 6)) < 0.02;
+    for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r * 1.4); x <= cx + r * 1.4; x++) {
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const d = Math.hypot((x - cx) / 1.4, y - cy) / r + (vnoise(x * 0.3, y * 0.3 + t, 72) - 0.5) * 0.5;
+      if (d > env) continue;
+      const i = y * W + x;
+      if (flash && d < env * 0.6) { shade(f, i, 1.35); continue; }
+      shade(f, i, 0.78);
+      if (hash(i, Math.floor(t * 10)) < 0.07 || hash(i - W - 1, Math.floor(t * 10)) < 0.07) put(f, i, "#9fb8d0");
+    }
+    if (flash) {
+      let x = Math.round(cx), y = Math.round(cy - r * 0.5);
+      for (let s = 0; s < 8; s++, y++) { x += hash(k * 13 + s, Math.floor(t * 6)) < 0.5 ? -1 : 1; if (x >= 0 && x < W && y >= 0 && y < H) put(f, y * W + x, "#fff8d0"); }
+    }
+  }
+};
+/* phytoplankton: green-turquoise swirls on cool coastal sea and off river mouths, in spring and early summer (a smaller bloom in autumn) */
+FX.plankton = function (f) {
+  if (f.lp == null) return;
+  const S = f.S, t = f.t / 1000, q = f.lp;
+  const env = Math.max(Math.max(0, 1 - Math.abs(q - 0.33) / 0.11), 0.45 * Math.max(0, 1 - Math.abs(q - 0.74) / 0.05));
+  if (env <= 0) return;
+  for (let i = 0; i < N; i++) {
+    if (S.kind[i] !== 1 || S.toLand[i] < 2) continue;
+    const x = i % W, y = (i - x) / W;
+    let wgt = S.warm[i] < 24 ? clamp(1 - (S.toLand[i] - 2) / 16, 0, 1) : 0;
+    for (const m of S.mouths) wgt = Math.max(wgt, clamp(1 - Math.hypot(x - m.x, y - m.y) / 16, 0, 1));
+    if (!wgt) continue;
+    const v = vnoise(x * 0.12 + Math.sin(y * 0.15 + t * 0.2) * 0.9 + t * 0.04, y * 0.2 + Math.cos(x * 0.1 - t * 0.15) * 0.7, 41);
+    const m = v * wgt * env - 0.22;
+    if (m <= 0) continue;
+    if (m < 0.06 && bayer(x, y) > m / 0.06) continue;
+    put(f, i, R.bloom[m > 0.22 ? 2 : m > 0.1 ? 1 : 0]);
+  }
+};
+/* sea ice: out from the coasts and down from the pole in winter, broken into floes as it goes in
+   summer; widest about two months after mid-winter, least about two months after mid-summer */
+function iceExtent(lp) { return lp == null ? 0.2 : 0.2 + 0.78 * (0.5 + 0.5 * Math.cos(2 * Math.PI * (lp - 0.15))); }
+K.seaIced = function (S, i, lp) { return S.kind[i] === 1 && S.iceScore[i] > 1 - iceExtent(lp); };
+FX.seaIce = function (f) {
+  const S = f.S, E = iceExtent(f.lp), melting = f.lp != null && f.lp > 0.15 && f.lp < 0.65;
+  for (let i = 0; i < N; i++) {
+    if (S.kind[i] !== 1) continue;
+    const m = S.iceScore[i] - (1 - E);
+    if (m <= 0) continue;
+    const x = i % W, y = (i - x) / W, b = bayer(x, y);
+    if (m < 0.06) {
+      if (melting) { if (hash(i, 101) > 0.25 + m * 8) continue; put(f, i, hash(i, 102) < 0.5 ? P.ice[2] : P.ice[1]); }
+      else { if (b > 0.3 + m * 10) continue; put(f, i, P.ice[0]); }
+      continue;
+    }
+    const v = vnoise(x * 0.35, y * 0.18, 103);
+    put(f, i, v > 0.68 ? P.ice[2] : v < 0.3 && b < 0.5 ? P.ice[0] : P.ice[1]);
+  }
+};
+
+/* ------------------------------------------------------------ storms: rare, set on the calendar, drawn on the wall clock */
+/* a storm starts on its date but plays for at least minMs, so it can be seen even when the days fly by */
+function events(f, st, sched) {
+  if (f.lp == null) { st.active = []; return []; }
+  st.active = st.active || [];
+  const D = f.day, prev = st.prevD == null ? D : st.prevD;
+  if (f.paused) for (const a of st.active) a.born += f.dt;
+  if (D < prev || D - prev > 40) {
+    st.active = [];
+    for (let y = Math.floor(D / 365) - 1; y <= Math.floor(D / 365); y++) for (const e of sched(y)) {
+      const abs = y * 365 + e.day;
+      if (abs <= D && D < abs + e.dur) st.active.push({ e: e, abs: abs, born: f.now - (D - abs) / e.dur * e.minMs });
+    }
+  } else {
+    for (let y = Math.floor(prev / 365); y <= Math.floor(D / 365); y++) for (const e of sched(y)) {
+      const abs = y * 365 + e.day;
+      if (prev < abs && abs <= D) st.active.push({ e: e, abs: abs, born: f.now });
+    }
+  }
+  st.prevD = D;
+  st.active = st.active.filter(function (a) { a.prog = Math.min((D - a.abs) / a.e.dur, (f.now - a.born) / a.e.minMs); return a.prog < 1; });
+  return st.active;
+}
+/* the season's dates in the place's own year, turned into calendar days */
+function onCalendar(S, lp) { return Math.round(wrap(lp + MIDWINTER + (S.south ? 0.5 : 0)) * 365); }
+/* tropical cyclones: three or so a year in the late summer and autumn, coming in off the warm sea
+   with the trade winds and curving away poleward; spinning anticlockwise in the north */
+FX.hurricanes = function (f, st) {
+  const S = f.S, t = f.t / 1000;
+  const list = events(f, st, function (y) {
+    const out = [];
+    for (let k = 0; k < 3; k++) if (hash(y, k + 11) < 0.8) out.push({ day: onCalendar(S, 0.56 + hash(y, k) * 0.28), dur: 9, minMs: 5000, k: k, y: y });
+    return out;
+  });
+  for (const a of list) {
+    const p = a.prog, y0 = 44 + hash(a.e.y, a.e.k + 20) * 18;
+    const cx = W + 14 - p * (W + 30), cy = y0 - p * p * 42, r = 13 * Math.sin(Math.PI * Math.min(1, p * 1.1)) + 2;
+    const spin = (S.south ? -1 : 1) * t * 2.2;
+    for (let y = Math.floor(cy - r - 2); y <= cy + r + 2; y++) for (let x = Math.floor(cx - r - 2); x <= cx + r + 2; x++) {
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const dx = x - cx, dy = (y - cy) * 1.25, d = Math.hypot(dx, dy) / r;
+      if (d > 1.1 || d < 0.1) continue;
+      const arm = Math.sin(Math.atan2(dy, dx) * 2 - d * 7 * (S.south ? -1 : 1) + spin) * 0.5 + 0.5, i = y * W + x;
+      const v = arm * (1 - d) * 1.6 + (1 - d) * 0.5;
+      if (v < 0.25) { if (d < 1) shade(f, i, 0.85); continue; }
+      if (v < 0.45 && bayer(x, y) > (v - 0.25) * 5) { shade(f, i, 0.8); continue; }
+      put(f, i, R.cloud[v > 0.9 ? 2 : v > 0.6 ? 1 : 0]);
+    }
+  }
+};
+/* winter gales: fronts sweeping in from the west across the sea, dark with rain (snow where it is cold), whitecaps under them */
+FX.gales = function (f, st) {
+  const S = f.S, t = f.t / 1000;
+  const list = events(f, st, function (y) {
+    const out = [];
+    for (let k = 0; k < 6; k++) out.push({ day: onCalendar(S, wrap(0.8 + hash(y, k + 30) * 0.38)), dur: 3, minMs: 4000, k: k, y: y });
+    return out;
+  });
+  for (const a of list) {
+    const p = a.prog, bend = hash(a.e.y, a.e.k + 40) * 20, fx0 = -20 + p * (W + 40);
+    for (let y = 0; y < H; y++) {
+      const front = fx0 + Math.sin(y * 0.06 + bend) * 10 + (y - 35) * 0.3 * S.wind;
+      for (let x = Math.floor(front - 14); x <= front + 3; x++) {
+        if (x < 0 || x >= W) continue;
+        const i = y * W + x, d = (front - x) / 14 + (vnoise(x * 0.3, y * 0.3 - t, 73) - 0.5) * 0.3;
+        if (d < 0 || d > 1) continue;
+        shade(f, i, 0.62 + d * 0.25);
+        const cold = S.cold[i] < -2 && Math.abs(sdist(f.lp, 0.04)) < 0.2;
+        if (((x * 3 + y + Math.floor(t * 16)) % 6) === 0) put(f, i, cold ? "#ffffff" : "#9fb8d0");
+        else if (S.kind[i] === 1 && hash(i, Math.floor(t * 5)) < 0.06) put(f, i, WHITE);
+      }
+    }
+  }
+};
+
+/* ------------------------------------------------------------ ambient life */
+/* merchant ships to and fro along the trade lanes, a voyage at a time; fewer in winter where the sea
+   freezes, none through sea ice, the usual numbers when held */
+const SHIP = [".s..", ".ss.", "hhhh"], SHIP_COL = { s: "#efe6d6", h: "#7a4a22" };
+function sprite(f, rows, cols, x0, y0, flipX, landOk) {
+  for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) {
+    const ch = rows[r][flipX ? rows[r].length - 1 - c : c];
+    if (ch === ".") continue;
+    const x = x0 + c, y = y0 + r;
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    if (!landOk && f.S.kind[y * W + x] !== 1 && f.S.kind[y * W + x] !== 2) continue;
+    put(f, y * W + x, cols[ch]);
+  }
+}
+FX.ships = function (f) {
+  const S = f.S, t = f.t / 1000;
+  /* winter at the place: fewer sail where the coldest month freezes the sea */
+  S.lanes.forEach(function (lane, li) {
+    const len = lane.length;
+    for (let k = 0; k < 3; k++) {
+      const speed = 4 + hash(li, k) * 2, pos = t * speed + hash(li, k + 9) * len * 2, voyage = Math.floor(pos / (2 * len));
+      let s = pos % (2 * len);
+      const back = s >= len; if (back) s = 2 * len - s - 1;
+      const p = lane[Math.max(0, Math.min(len - 1, Math.floor(s)))], i = p[1] * W + p[0];
+      if (p[0] < -3 || p[0] >= W || p[1] < 0 || p[1] >= H) continue;
+      const iCl = Math.max(0, Math.min(N - 1, i)), coldSea = S.cold[iCl] < -4;
+      const traffic = f.lp == null ? 0.7 : coldSea ? 0.7 - 0.5 * Math.max(0, Math.cos(2 * Math.PI * f.lp)) : 0.75;
+      if (hash(li * 7 + k, voyage) > traffic) continue;
+      let iced = false;
+      if (f.lp != null) for (const q of lane) { const j = q[1] * W + q[0]; if (q[0] >= 0 && q[0] < W && q[1] >= 0 && q[1] < H && K.seaIced(S, j, f.lp)) { iced = true; break; } }
+      else for (const q of lane) { const j = q[1] * W + q[0]; if (q[0] >= 0 && q[0] < W && q[1] >= 0 && q[1] < H && K.seaIced(S, j, null)) { iced = true; break; } }
+      if (iced) continue;
+      const nx = lane[Math.min(len - 1, Math.floor(s) + 1)], dir = (nx[0] - p[0]) * (back ? -1 : 1);
+      /* a wake behind */
+      const wk = lane[Math.max(0, Math.min(len - 1, Math.floor(s) + (back ? 3 : -3)))];
+      if (wk[0] >= 0 && wk[0] < W && wk[1] >= 0 && wk[1] < H && S.kind[wk[1] * W + wk[0]] === 1 && Math.floor(t * 4) % 2) put(f, wk[1] * W + wk[0], PALE);
+      sprite(f, SHIP, SHIP_COL, p[0] - 2, p[1] - 2, dir < 0, false);
+    }
+  });
+};
+/* caravans on the roads: camels where the land is dry (desert and steppe, rain under 400 mm), ox carts
+   elsewhere; they wait out deep snow */
+const CAMEL = [".k.", "kkk", "k.k"], CAMEL_COL = { k: "#c8a060" };
+const CART = ["oll", "oww"], CART_COL = { o: "#4e2f16", l: "#d9c08a", w: "#2a1a0e" };
+const RIDER = ["m", "m"], RIDER_COL = { m: "#3a2a1a" };
+FX.caravans = function (f) {
+  const S = f.S, t = f.t / 1000;
+  S.roads.forEach(function (road, ri) {
+    const len = road.length;
+    if (!len) return;
+    for (let k = 0; k < 2; k++) {
+      const speed = 2.2 + hash(ri, k) * 1.2, pos = t * speed + hash(ri, k + 5) * len * 2;
+      let s = pos % (2 * len); const back = s >= len; if (back) s = 2 * len - s - 1;
+      for (let m = 0; m < 4; m++) {
+        const sm = Math.floor(s + (back ? m : -m) * 4);
+        if (sm < 0 || sm >= len) continue;
+        const p = road[sm], i = p[1] * W + p[0];
+        if (f.lp != null && snowMargin(S, i, f.lp) > 0.04) continue;
+        if (f.lp == null && snowShare(S, i) >= 0.5) continue;
+        const nx = road[Math.min(len - 1, sm + 1)], left = (nx[0] - p[0]) * (back ? -1 : 1) < 0, bob = Math.floor(t * 4 + m) % 2;
+        if (S.rain[i] < 400) sprite(f, CAMEL, CAMEL_COL, p[0] - 1, p[1] - 2 - (m === 0 ? 0 : bob * 0), left, true);
+        else if (m < 2) sprite(f, CART, CART_COL, p[0] - 1, p[1] - 1, left, true);
+        else sprite(f, RIDER, RIDER_COL, p[0], p[1] - 1, false, true);
+      }
+    }
+  });
+};
+/* fishing boats: off the coasts and on big lakes, out by day and home by night (at the slowest
+   speed; faster, the days blur and they stay out); none on frozen water */
+FX.fishing = function (f, opts) {
+  const S = f.S, t = f.t / 1000, hour = ((f.day % 1) + 1) % 1, ph = f.lp == null ? null : wrap(f.lp + 0.5);
+  let out = 1;
+  if (f.speed <= 1 && f.lp != null) out = hour < 0.25 || hour > 0.8 ? 0 : Math.min(1, (hour - 0.25) / 0.08, (0.8 - hour) / 0.08);
+  if (!S.fishSpots) {
+    S.fishSpots = [];
+    for (let i = 0; i < N; i++) {
+      const lake = S.kind[i] === 2 && S.toLand[i] >= 2 && hash(i, 111) < 0.03;
+      const sea = S.kind[i] === 1 && S.toLand[i] >= 2 && S.toLand[i] <= 5 && hash(i, 112) < 0.012;
+      if (lake || sea) S.fishSpots.push(i);
+    }
+  }
+  for (let k = 0; k < S.fishSpots.length; k++) {
+    const i = S.fishSpots[k], x0 = i % W, y0 = (i - x0) / W;
+    if (hash(k, 113) > out) continue;
+    let frozen = false;
+    if (S.kind[i] === 2) {
+      const lk = S.lakeK[i], fl = lk >= 0 ? iceLevel(S.lakeIce[lk], ph) : 0;
+      frozen = fl > 0 && S.lakeD[lk] <= fl;
+    } else frozen = K.seaIced(S, i, f.lp);
+    if (frozen) {
+      /* ice fishing: a hut and a hole on the frozen lake */
+      if (opts && opts.huts && S.kind[i] === 2) { put(f, i, "#7a4a22"); if (x0 + 1 < W) put(f, i + 1, "#2a3a5a"); }
+      continue;
+    }
+    const x = x0 + Math.round(Math.sin(t * 0.3 + k) * 1.5), y = y0 + (Math.floor(t * 1.5 + k) % 2 ? 0 : 0);
+    const j = y * W + x;
+    if (S.kind[j] !== S.kind[i]) continue;
+    put(f, j, "#6b4a2a"); if (x + 1 < W && S.kind[j + 1] === S.kind[i]) put(f, j + 1, "#6b4a2a");
+    if (y > 0) put(f, j - W, "#efe6d6");
+    /* the net going in now and then */
+    if (Math.sin(t * 0.9 + k * 3) > 0.7 && x + 2 < W && S.kind[j + 2] === S.kind[i]) put(f, j + 2, PALE);
+  }
+};
+
+/* ------------------------------------------------------------ panels */
+const SPEEDS = [[1, "1 day/s"], [10, "10 days/s"], [30, "1 month/s"], [91, "1 season/s"], [365, "1 yr/s"],
+  [5 * 365, "5 yr/s"], [25 * 365, "25 yr/s"], [50 * 365, "50 yr/s"], [100 * 365, "100 yr/s"]];
+function controls(holder, state, onChange) {
+  const el = document.createElement("div");
+  el.className = "ctl";
+  el.innerHTML = '<button type="button" class="play" aria-label="Pause">❚❚</button>' +
+    '<input type="range" class="date" min="0" max="364" step="1" aria-label="Date">' +
+    '<span class="dname"></span><select class="speed" aria-label="Speed"></select>' +
+    '<label class="held"><input type="checkbox"> held</label>';
+  const sel = el.querySelector(".speed");
+  SPEEDS.forEach(function (s, k) { const o = document.createElement("option"); o.value = k; o.textContent = s[1]; sel.appendChild(o); });
+  const play = el.querySelector(".play"), date = el.querySelector(".date"), dn = el.querySelector(".dname"), held = el.querySelector(".held input");
+  play.onclick = function () { state.paused = !state.paused; onChange(); };
+  date.oninput = function () { state.day = Math.floor(state.day / 365) * 365 + (+date.value); onChange(); };
+  sel.onchange = function () { state.speedK = +sel.value; onChange(); };
+  held.onchange = function () { state.held = held.checked; onChange(); };
+  holder.appendChild(el);
+  return function sync() {
+    const fast = SPEEDS[state.speedK][0] > 365;
+    play.textContent = state.paused ? "▶" : "❚❚"; play.setAttribute("aria-label", state.paused ? "Play" : "Pause");
+    date.value = Math.floor(((state.day % 365) + 365) % 365);
+    dn.textContent = fast || state.held ? "held" : dateName(state.day);
+    sel.value = state.speedK; held.checked = state.held || fast; held.disabled = fast;
+  };
+}
+function query(k) { const m = new RegExp("[?&]" + k + "=([^&]+)").exec(location.search); return m ? decodeURIComponent(m[1]) : null; }
+
+/* scenes: [{ title, note, scene, start (day of the year), draw(f, st), pair (north and south side by side) }] */
+K.run = function (SCENES, opts) {
+  const grid = document.getElementById("grid"), ONLY = query("only");
+  if (ONLY) { grid.classList.add("only"); }
+  const dayQ = query("day"), speedQ = query("speed"), heldQ = query("held");
+  const panels = [];
+  SCENES.forEach(function (sc, n) {
+    if (ONLY && n !== +ONLY - 1) return;
+    const fig = document.createElement("figure");
+    if (sc.pair) fig.className = "pair";
+    const names = sc.pair ? [sc.scene, sc.pair] : [sc.scene];
+    const views = names.map(function (nm, k) {
+      const box = document.createElement("div"); box.className = "view";
+      const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+      box.appendChild(cv);
+      if (sc.pair) { const tag = document.createElement("i"); tag.textContent = k ? "south (pole at the bottom)" : "north (pole at the top)"; box.appendChild(tag); }
+      return { S: K.scene(nm), g: cv.getContext("2d"), img: null, box: box, st: {} };
+    });
+    const row = document.createElement("div"); row.className = "views";
+    views.forEach(function (v) { row.appendChild(v.box); v.img = v.g.createImageData(W, H); v.buf = new Uint32Array(v.img.data.buffer); });
+    fig.appendChild(row);
+    const state = { day: dayQ != null ? +dayQ : sc.start || 0, speedK: speedQ != null ? +speedQ : sc.speed != null ? sc.speed : 2, held: heldQ === "1", paused: false };
+    const sync = controls(fig, state, function () { sync(); });
+    const cap = document.createElement("figcaption");
+    cap.innerHTML = "<b></b><span></span>";
+    cap.querySelector("b").textContent = (n + 1) + ". " + sc.title; cap.querySelector("span").textContent = sc.note;
+    fig.appendChild(cap); grid.appendChild(fig);
+    sync();
+    const panel = { sc: sc, views: views, state: state, sync: sync, seen: true };
+    /* only the panels in view are drawn (their calendars run on) */
+    if (window.IntersectionObserver) new IntersectionObserver(function (es) { panel.seen = es[0].isIntersecting; }).observe(fig);
+    panels.push(panel);
+  });
+  K.panels = panels;
+  /* one bar over all panels */
+  const all = document.getElementById("all");
+  if (all) {
+    const shared = { day: dayQ != null ? +dayQ : 0, speedK: speedQ != null ? +speedQ : 2, held: heldQ === "1", paused: false };
+    const syncAll = controls(all, shared, function () {
+      for (const p of panels) { p.state.day = shared.day; p.state.speedK = shared.speedK; p.state.held = shared.held; p.state.paused = shared.paused; p.sync(); }
+      syncAll();
+    });
+    syncAll();
+  }
+  let last = performance.now(), lastSync = 0;
+  function frame(now) {
+    const dt = Math.min(100, now - last); last = now;
+    for (const p of panels) {
+      const s = p.state, speed = SPEEDS[s.speedK][0];
+      if (!s.paused) s.day += speed * dt / 1000;
+      if (!p.seen) continue;
+      const heldNow = s.held || speed > 365, season = heldNow ? null : wrap(s.day / 365);
+      for (const v of p.views) {
+        v.buf.set(v.S.base);
+        const f = { S: v.S, buf: v.buf, t: now, now: now, dt: dt, day: s.day, speed: speed, season: season, lp: local(season, v.S.south), paused: s.paused };
+        p.sc.draw(f, v.st);
+        v.g.putImageData(v.img, 0, 0);
+      }
+    }
+    if (now - lastSync > 120) { lastSync = now; for (const p of panels) p.sync(); }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+};
+})();

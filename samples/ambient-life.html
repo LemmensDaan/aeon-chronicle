@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aeon — ambient life</title>
+<link rel="stylesheet" href="../css/pixelify.css">
+<link rel="stylesheet" href="seasons-kit.css">
+</head>
+<body>
+<main>
+<h1>Ambient life</h1>
+<p class="lede">Ideas for the small life between the events: ships, caravans and fishing boats, on the same pieces of map
+as <a href="seasons.html">the seasons</a>. They move on the wall clock, so they read the same at every speed, but come and
+go on the calendar: fewer ships where the sea freezes, no boats on frozen water, caravans waiting out deep snow. Each
+panel has a date, a speed and <b>held</b> (the year-round look when the years fly by). <code>?only=3</code> shows one
+panel large.</p>
+<div class="all" id="all"><b>All panels</b></div>
+<div class="grid" id="grid"></div>
+</main>
+<script src="seasons-kit.js"></script>
+<script>
+"use strict";
+const FX = SEASONS.fx;
+function now(f) { FX.seaFoam(f); FX.current(f); FX.lakeIce(f); }
+
+const SCENES = [
+  { title: "Merchant ships", scene: "trade", start: 0, note: "Ships to and fro along the trade lanes between the ports and off the edge of the map, a voyage at a time, a pale wake behind. A warm sea: the same all year.",
+    draw: function (f) { now(f); FX.ships(f); } },
+  { title: "Merchant ships on a cold sea", scene: "temperate", start: 244, note: "Fewer ships in winter where the coldest month freezes the sea, and none on a lane the sea ice has closed: the north port is iced in from about January to March. Held: the usual numbers, with the summer's open lanes.",
+    draw: function (f) { now(f); FX.seaIce(f); FX.snow(f); FX.ships(f); } },
+  { title: "Caravans, camels and carts", scene: "trade", start: 0, note: "Caravans along the roads, a beast or cart every few pixels: camels where the land is dry (desert and steppe, rain under 400 mm), an ox cart and riders elsewhere, changing on the way from the desert town to the market.",
+    draw: function (f) { now(f); FX.caravans(f); } },
+  { title: "Caravans in the north", scene: "temperate", start: 288, note: "Ox carts on the village's roads; where the snow lies deep they wait it out, so the northern road empties first in winter and fills again in spring.",
+    draw: function (f) { now(f); FX.snow(f); FX.caravans(f); } },
+  { title: "Fishing boats", scene: "trade", start: 0, speed: 0, note: "Boats off the coasts and on the big lake, rocking, a net going in now and then. Out by day and home at night at 1 day/s (this panel starts there); faster, the days blur and they stay out.",
+    draw: function (f) { now(f); FX.fishing(f); } },
+  { title: "Fishing on a lake that freezes", scene: "temperate", start: 288, note: "No boats where the ice has reached them, on the lake or the sea; they come back as it breaks up.",
+    draw: function (f) { now(f); FX.seaIce(f); FX.fishing(f); } },
+  { title: "Ice fishing", scene: "temperate", start: 288, note: "6, with a hut and a hole on the ice where a boat would be.",
+    draw: function (f) { now(f); FX.seaIce(f); FX.fishing(f, { huts: true }); } },
+  { title: "Trade coast, all together", scene: "trade", start: 0, note: "1 + 3 + 5.",
+    draw: function (f) { now(f); FX.fishing(f); FX.caravans(f); FX.ships(f); } },
+  { title: "Northern year, all together", scene: "temperate", start: 244, note: "2 + 4 + 7, with the seasons' snow, autumn woods and golden fields.",
+    draw: function (f) { now(f); FX.seaIce(f); FX.plains(f); FX.autumn(f); FX.blossom(f); FX.snow(f); FX.fishing(f, { huts: true }); FX.caravans(f); FX.ships(f); } },
+];
+SEASONS.run(SCENES);
+</script>
+</body>
+</html>

@@ -33,9 +33,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   historical pack's coastal() counts lake shores, so some of its "overseas" invasions and colonies
   start from a lake (seed 7: 3 of 4 invasions, 8 of 19 colonies); the port-only engine change
   would fix that. Ruins now stay on the map (step 4 below).
-  Playback speed is in years per second (ui.js SPEEDS: 10, 25, 50, 100, 300, 1200; default 50,
-  so the 4500 years take 90 s); the old 1x and 4x were 300 and 1200 years a second, too fast to
-  follow the animations.
+  Playback speed is in days per second since 2026-10-29 (ui.js SPEEDS: 1 day/s to 100 yr/s;
+  default 50 yr/s, so the 4500 years take 90 s). At 1 yr/s or slower the seasons show: the
+  date's share of the year goes to draw() as `season`, lake and river ice follows it (north and
+  south opposite), and great moments no longer hold the date still; faster, the map shows the
+  land as it mostly is. The list of seasonal and ambient animations still to sample is
+  `docs/SEASONS_AND_AMBIENT.md`.
 - **Map fixes (2026-10-23):** political is the first mode and the default; the roads toggle is
   gone (roads always on); sea glints fewer and briefer; elevation shades by rank among the land
   (`elevRank`), so lowlands differ, not just the ranges; realm borders only in the political

@@ -29,11 +29,21 @@ AEON.el = el;
 
 let world = null;
 let playing = false;
-/* playback speed in years per second (whole ticks are taken as the time adds up), so it is the
-   same on any screen; the slow speeds leave time for the event animations (mapfx.js) */
-let playSpeed = 50;
-const SPEEDS = [10, 25, 50, 100, 300, 1200];
+/* playback speed in days per second (whole ticks are taken as the time adds up), so it is the
+   same on any screen; the slow speeds leave time for the event animations (mapfx.js). At a year
+   a second or slower the seasons show on the map; faster, it shows the land as it mostly is. */
+const YEAR_DAYS = 365, SEASON_SPEED = YEAR_DAYS;
+let playSpeed = 50 * YEAR_DAYS;
+const SPEEDS = [[1, "1 day/s"], [10, "10 days/s"], [30, "1 month/s"], [91, "1 season/s"], [365, "1 yr/s"],
+  [5 * 365, "5 yr/s"], [25 * 365, "25 yr/s"], [50 * 365, "50 yr/s"], [100 * 365, "100 yr/s"]];
+/* playOwed: the years played since the shown tick began, so the date is playbackYear + playOwed;
+   kept over a pause, dropped when the year is set by hand */
 let playLast = 0, playOwed = 0;
+function season() { return playSpeed <= SEASON_SPEED ? ((playOwed % 1) + 1) % 1 : null; }
+/* the season north of the equator, for the status line */
+const SEASON_NAMES = ["midwinter", "late winter", "early spring", "spring", "late spring", "early summer",
+  "midsummer", "late summer", "early autumn", "autumn", "late autumn", "early winter"];
+function seasonName(f) { return SEASON_NAMES[Math.floor(((f - 0.05 + 1 / 24 + 1) % 1) * 12) % 12]; }
 /* the map animations stand still while playback is paused (mapfx.js keeps their clock) */
 let fxFrozen = false;
 /* how often great moments slow history down (mapfx.js setPace), and the realm being followed */
@@ -241,6 +251,19 @@ function visibleWorld() {
   return world;
 }
 
+/* the season in the status line, while playback is slow enough to show it */
+function addSeasonStat() {
+  dom.seasonStat = el("span", { class: "ae-stat", title: "The season north of the equator; the south has the opposite one" }, el("b"), el("i", { text: "season" }));
+  dom.status.appendChild(dom.seasonStat);
+  seasonStatus();
+}
+function seasonStatus() {
+  if (!dom.seasonStat) return;
+  const f = season(), name = f == null ? "" : seasonName(f);
+  dom.seasonStat.classList.toggle("hidden", f == null);
+  if (dom.seasonStat.firstChild.textContent !== name) dom.seasonStat.firstChild.textContent = name;
+}
+
 function updateStatus() {
   if (!world) return;
   if (onPlanet()) return planetStatus();
@@ -248,6 +271,7 @@ function updateStatus() {
   dom.status.innerHTML = "";
   dom.status.appendChild(el("span", { class: "ae-stat" },
     el("b", { text: world.pack.yearLabel(playbackYear) }), el("i", { text: "year" })));
+  addSeasonStat();
   dom.status.appendChild(el("span", { class: "ae-stat" },
     el("b", { text: String(countAliveAt(playbackYear)) }), el("i", { text: "powers" })));
   dom.status.appendChild(el("span", { class: "ae-stat" },
@@ -267,6 +291,7 @@ function planetStatus() {
   dom.status.innerHTML = "";
   const stat = function (v, t) { dom.status.appendChild(el("span", { class: "ae-stat" }, el("b", { text: v }), el("i", { text: t }))); };
   stat(planet.pack.yearLabel(y), "year");
+  addSeasonStat();
   stat(String(sk.squares.filter(function (q) { return q.peoples.length; }).length), "lands");
   stat(String(peoples), "peoples");
   stat(String(contacts), "clashes and crossings");
@@ -287,6 +312,7 @@ function countAliveAt(year) {
 function setPlaybackYear(y, how) {
   const from = playbackYear;
   playbackYear = Math.max(world.startYear, Math.min(world.endYear, y));
+  if (how !== "play") playOwed = 0;
   const fx = AEON.mapfx && !simulating && !onPlanet() && ambientOn() ? AEON.mapfx : null;
   if (fx) {
     if (how === "play") fx.collect(world, from, playbackYear);
@@ -395,7 +421,7 @@ function togglePlay() {
   playing = !playing;
   dom.playBtn.textContent = playing ? "⏸" : "▶";
   fxFrozen = !playing;
-  if (playing) { playLast = 0; playOwed = 0; loop(); } else drawMap();
+  if (playing) { playLast = 0; loop(); } else drawMap();
 }
 
 function loop(now) {
@@ -407,12 +433,13 @@ function loop(now) {
      quarter second's worth after a stall) only while no great moment holds the year still */
   if (AEON.mapfx) AEON.mapfx.advance(dt);
   if (camera) cameraStep(dt);
-  if (!(AEON.mapfx && AEON.mapfx.holding())) playOwed += Math.min(0.25, dt / 1000) * playSpeed;
+  /* at the seasonal speeds a tick lasts long enough for its animations: the days go on */
+  if (playSpeed <= SEASON_SPEED || !(AEON.mapfx && AEON.mapfx.holding())) playOwed += Math.min(0.25, dt / 1000) * playSpeed / YEAR_DAYS;
   const ticks = Math.floor(playOwed / world.timeStep);
   if (ticks > 0) {
     playOwed -= ticks * world.timeStep;
     setPlaybackYear(playbackYear + ticks * world.timeStep, "play");
-  } else drawMap();                                        /* the animations still move */
+  } else { drawMap(); seasonStatus(); }                    /* the animations still move */
   if (playbackYear >= world.endYear) { playing = false; dom.playBtn.textContent = "▶"; drawMap(); runFx(); return; }
   rafId = requestAnimationFrame(loop);
 }
@@ -498,6 +525,7 @@ function drawMap() {
       showRivers: true,
       showRoads: true,
       time: ambientOn() ? performance.now() : null,
+      season: season(),
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
     if (worldMode && AEON.worldView) AEON.worldView.draw(dom.canvas, world, simulating ? world.year : playbackYear, { highlight: worldPick, pick: dom.squarePlaque && dom.squarePlaque._si, ages: mapMode === "ages" });
@@ -564,10 +592,11 @@ function buildApp() {
     setPlaybackYear(Number(dom.scrub.value), "scrub");
   });
 
-  const speedSel = el("select", { class: "ae-select", title: "Years per second", onchange: function (e) { playSpeed = Number(e.target.value); } });
+  const speedSel = el("select", { class: "ae-select", title: "Playback speed (a year a second or slower shows the seasons)",
+    onchange: function (e) { playSpeed = Number(e.target.value); seasonStatus(); drawMap(); } });
   SPEEDS.forEach(function (v) {
-    const o = el("option", { value: String(v), text: v + " yr/s" });
-    if (v === playSpeed) o.selected = true;
+    const o = el("option", { value: String(v[0]), text: v[1] });
+    if (v[0] === playSpeed) o.selected = true;
     speedSel.appendChild(o);
   });
   /* how often history slows down so a great moment can play out */

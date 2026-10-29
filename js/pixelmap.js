@@ -493,19 +493,22 @@ function buildTerrain(world) {
   }
   /* and the inland water's: its river pixels (place along the river, fast or not, how long a
      winter freezes it), its lake pixels (how far from the shore, how long frozen, a jitter for
-     the ice's edge) and where rivers reach the sea. A cell freezes for a share of the ambient
-     winter cycle that grows with how far its coldest month falls below freezing. */
+     the ice's edge) and where rivers reach the sea. A cell freezes for a share of the year
+     that grows with how far its coldest month falls below freezing; south of the equator its
+     winter comes half a year later (a region's rows sit on the planet's, world.square). */
   const winter = function (cell) { const cc = R[cell].coldC; return cc == null || cc >= 0 ? 0 : Math.min(0.85, 0.2 - cc / 25); };
-  const river = { px: [], ph: [], fast: [], ice: [], jit: [] };
-  riverAt.forEach(function (v, i) { if (R[cellOf[i]].beyond) return; river.px.push(i); river.ph.push(v[0]); river.fast.push(v[1]); river.ice.push(winter(v[2])); river.jit.push(cellRand(i, 53)); });
-  const lakes = { px: [], d: [], ice: [], jit: [], open: [], glints: [] };
+  const sq = world.square, pl = world.planet;
+  const south = function (cell) { return sq && pl ? sq.py0 + (R[cell].y + 0.5) / sq.K >= pl.height / 2 : R[cell].y + 0.5 >= world.height / 2; };
+  const river = { px: [], ph: [], fast: [], ice: [], jit: [], south: [] };
+  riverAt.forEach(function (v, i) { if (R[cellOf[i]].beyond) return; river.px.push(i); river.ph.push(v[0]); river.fast.push(v[1]); river.ice.push(winter(v[2])); river.jit.push(cellRand(i, 53)); river.south.push(south(v[2])); });
+  const lakes = { px: [], d: [], ice: [], jit: [], open: [], glints: [], south: [] };
   for (let i = 0; i < N; i++) {
     if (!lakeD[i] || R[cellOf[i]].beyond || R[cellOf[i]].beyondBiome) continue;
     const k = lakes.px.length;
-    lakes.px.push(i); lakes.d.push(lakeD[i] + (cellRand(i, 51) - 0.5) * 1.5); lakes.ice.push(winter(cellOf[i])); lakes.jit.push(cellRand(i, 52));
+    lakes.px.push(i); lakes.d.push(lakeD[i] + (cellRand(i, 51) - 0.5) * 1.5); lakes.ice.push(winter(cellOf[i])); lakes.jit.push(cellRand(i, 52)); lakes.south.push(south(cellOf[i]));
     if (lakeD[i] >= 3) { lakes.open.push(k); if (cellRand(i, 54) < 0.006) lakes.glints.push([i, cellRand(i, 55) * 6.28, 1.5 + cellRand(i, 56) * 2]); }
   }
-  const water = { river: river, lakes: lakes, mouths: mouths.map(function (m) { return [m[0], m[1], m[2], winter(m[3])]; }) };
+  const water = { river: river, lakes: lakes, mouths: mouths.map(function (m) { return [m[0], m[1], m[2], winter(m[3]), south(m[3])]; }) };
 
   const clouds = [];
   for (let k = 0; k < Math.round(VW / 70); k++) clouds.push({ x: cellRand(k, 31) * VW, y: 10 + cellRand(k, 32) * (VH - 40), w: 26 + Math.floor(cellRand(k, 33) * 30), s: 3 + cellRand(k, 34) * 5 });
@@ -719,11 +722,11 @@ function drawRoads(c, w, d) {
    the deep sea, and dithered cloud shadows drift east across the map and wrap round. Drawn at map
    resolution (P device pixels per map pixel), clipped to the map, for a time in milliseconds. */
 const FOAM_A = "#a6dbff", FOAM_B = "#dcefff", GLINT = "#cfeaff";
-function drawAmbient(ctx, c, v, X0, now, rivers) {
+function drawAmbient(ctx, c, v, X0, now, rivers, season) {
   const P = v.P, VW = c.VW, Y0 = v.Y0, t = now / 1000, tick = Math.floor(t * 1.6);
   ctx.save();
   ctx.beginPath(); ctx.rect(X0, Y0, VW * P, c.VH * P); ctx.clip();
-  drawWater(ctx, c, v, X0, now, rivers);
+  drawWater(ctx, c, v, X0, now, rivers, season);
   ctx.fillStyle = tick % 2 ? FOAM_A : FOAM_B;
   for (let k = 0; k < c.foam.length; k++) {
     const i = c.foam[k];
@@ -746,24 +749,30 @@ function drawAmbient(ctx, c, v, X0, now, rivers) {
    down the rivers, white water flickers where they run fast, rings spread on open lake water,
    gusts ruffle it and the sun glints on it, and a fan of lighter water drifts out where a river
    meets the sea. Lakes and rivers with a cold winter ice over from the shore in a slow cycle and
-   break up again, the colder the longer; the river mouth stops while its river is frozen. On
-   the clock like the rest of the ambient layer, not the calendar: the years go by far faster.
-   rivers: false in the data modes, which paint over the rivers. */
-const WATER_LIGHT = "#5f93d8", WATER_WHITE = "#e8f4ff", WINTER_MS = 30000, PAL_ICE = P.ice, WATER_PACKED = {};
-/* how far the ice has crept out from the shore (0-10 pixels) at ph of the cycle, for a place
-   frozen share of it (centred on mid-winter, half way through) */
+   break up again, the colder the longer; the river mouth stops while its river is frozen. The
+   current, gusts and ripples are on the clock; the ice is on the calendar (season: the playback
+   date's share of the year, 0 on the first of January), and when the years go by too fast for
+   seasons (season null) the water is shown as it mostly is: frozen where winter holds more than
+   half the year. rivers: false in the data modes, which paint over the rivers. */
+const WATER_LIGHT = "#5f93d8", WATER_WHITE = "#e8f4ff", PAL_ICE = P.ice, WATER_PACKED = {};
+/* the coldest day, as a share of the year from the first of January, north of the equator */
+const MIDWINTER = 0.05;
+/* how far the ice has crept out from the shore (0-10 pixels) at ph of the year, for a place
+   frozen share of it (ph: 0.5 at mid-winter); it creeps about 90 pixels a year, 10 in 40 days */
 function iceLevel(share, ph) {
   if (!share) return 0;
-  return Math.max(0, Math.min(10, Math.min(ph - (0.5 - share / 2), 0.5 + share / 2 - ph) * WINTER_MS / 1000 * 3));
+  if (ph == null) return share >= 0.5 ? 10 : 0;
+  return Math.max(0, Math.min(10, Math.min(ph - (0.5 - share / 2), 0.5 + share / 2 - ph) * 90));
 }
 function gustNoise(x, y) {
   const x0 = Math.floor(x), y0 = Math.floor(y), sx = x - x0, sy = y - y0, tx = sx * sx * (3 - 2 * sx), ty = sy * sy * (3 - 2 * sy);
   const v = function (i, j) { return cellRand((i & 0xffff) * 65536 + (j & 0xffff), 57); };
   return (v(x0, y0) * (1 - tx) + v(x0 + 1, y0) * tx) * (1 - ty) + (v(x0, y0 + 1) * (1 - tx) + v(x0 + 1, y0 + 1) * tx) * ty;
 }
-function drawWater(ctx, c, v, X0, now, rivers) {
-  const P = v.P, VW = c.VW, VH = c.VH, Y0 = v.Y0, t = now / 1000, w = c.water, L = w.lakes, Rv = w.river;
-  const ph = (now % WINTER_MS) / WINTER_MS, thaw = ph > 0.5, ICE = PAL_ICE;
+function drawWater(ctx, c, v, X0, now, rivers, season) {
+  const P = v.P, VW = c.VW, VH = c.VH, Y0 = v.Y0, t = now / 1000, w = c.water, L = w.lakes, Rv = w.river, ICE = PAL_ICE;
+  /* where each hemisphere stands in its winter cycle */
+  const phN = season == null ? null : (((season - MIDWINTER + 0.5) % 1) + 1) % 1, phS = season == null ? null : (((season - MIDWINTER) % 1) + 1) % 1;
   /* painted at map resolution into a layer of its own and laid over the map in one go (a frozen
      lake is tens of thousands of pixels); the ice is painted after the water, over it */
   if (!w.layer) {
@@ -784,7 +793,7 @@ function drawWater(ctx, c, v, X0, now, rivers) {
     const tick = Math.floor(now / 140);
     for (let k = 0; k < Rv.px.length; k++) {
       const i = Rv.px[k];
-      if (iceLevel(Rv.ice[k], ph) > 3 + Rv.jit[k] * 4) { dot(ICE[1], i); continue; }
+      if (iceLevel(Rv.ice[k], Rv.south[k] ? phS : phN) > 3 + Rv.jit[k] * 4) { dot(ICE[1], i); continue; }
       if (Rv.fast[k] && cellRand(i, tick) < 0.35) { dot(cellRand(i, tick + 99) < 0.5 ? WATER_WHITE : FOAM_A, i); continue; }
       if (((Math.floor(Rv.ph[k] + t * (Rv.fast[k] ? 9 : 5)) % 9) + 9) % 9 === 0) dot(WATER_LIGHT, i);
     }
@@ -812,7 +821,7 @@ function drawWater(ctx, c, v, X0, now, rivers) {
 
   /* river mouths: thinner as the river freezes (it ices over from a level of 3), none while frozen */
   for (let m = 0; m < w.mouths.length; m++) {
-    const mo = w.mouths[m], n = Math.round(22 * Math.max(0, Math.min(1, 1 - (iceLevel(mo[3], ph) - 2) / 2)));
+    const mo = w.mouths[m], n = Math.round(22 * Math.max(0, Math.min(1, 1 - (iceLevel(mo[3], mo[4] ? phS : phN) - 2) / 2)));
     for (let k = 0; k < n; k++) {
       const life = (t / 3.2 + cellRand(m * 31 + k, 63)) % 1, a = mo[2] + (cellRand(m * 31 + k, 64) - 0.5) * 1.4, d = 1 + life * 15;
       const x = ((Math.round(mo[0] + Math.cos(a) * d) % VW) + VW) % VW, y = Math.round(mo[1] + Math.sin(a) * d * 0.8), j = y * VW + x;
@@ -823,8 +832,8 @@ function drawWater(ctx, c, v, X0, now, rivers) {
 
   /* the ice: creeping in from the shore, and on the way out breaking into floes */
   for (let k = 0; k < L.px.length; k++) {
-    const f = iceLevel(L.ice[k], ph), d = L.d[k];
-    if (!f || d > f || (thaw && L.jit[k] > f / 10 + 0.3)) continue;
+    const ph = L.south[k] ? phS : phN, f = iceLevel(L.ice[k], ph), d = L.d[k];
+    if (!f || d > f || (ph > 0.5 && L.jit[k] > f / 10 + 0.3)) continue;
     const i = L.px[k];
     dot(d > f - 1 ? ICE[0] : bayer(i % VW, (i / VW) | 0) < 0.3 ? ICE[2] : ICE[1], i);
   }
@@ -1091,7 +1100,7 @@ function draw(canvas, world, opts) {
   ctx.fillStyle = INK;
   ctx.fillRect(X0 - 1, v.Y0 - 1, mw + 2, mh + 2);
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
-  if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time, mode !== "population" && mode !== "elevation" && mode !== "habitability");
+  if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time, mode !== "population" && mode !== "elevation" && mode !== "habitability", opts.season);
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
   const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null;
   const cell = PPC * v.P, env = fx && {

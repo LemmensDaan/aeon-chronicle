@@ -27,7 +27,7 @@ const LIGHT = "#5f93d8", PALE = "#a6dbff", FOAM_B = "#dcefff", WHITE = "#e8f4ff"
 const R = {
   gold: ["#9c7f22", "#c29d2e", "#dfbd4a"], red: ["#7e2e1a", "#a8432a", "#cf6a32"], russet: ["#6b4424", "#8a5a30", "#a8743c"],
   bare: ["#4e4034", "#665444", "#7d6a55"], leaf: ["#4f9a36", "#6cb848", "#94d466"],
-  dormant: ["#5f6e40", "#76824c", "#8c975c"], ripe: ["#a49a38", "#c2b148", "#dac862"],
+  dormant: ["#5f6e40", "#76824c", "#8c975c"], straw: ["#857a48", "#9c9258", "#b3a86a"], ripe: ["#a49a38", "#c2b148", "#dac862"],
   wheat: ["#c2a03c", "#d8b84e", "#ead06c"], stubble: ["#ad9668", "#c4ac7c", "#d8c290"], plough: ["#5e4630", "#76583a", "#8c6a46"],
   dry: ["#98804a", "#b29a5a", "#c9b26e"], wet: ["#4f8a30", "#6aa43c", "#8ac052"],
   bloom: ["#2d7d74", "#3f9a8c", "#6cc4ae"], cloud: ["#8f9aa8", "#c5ced8", "#eef3f8"],
@@ -162,9 +162,19 @@ function build(spec) {
   }
   const roads = (spec.roads || []).map(function (r) { return trace(r, false, true).filter(function (p) { return p[0] >= 0 && p[1] >= 0 && p[0] < W && p[1] < H; }); });
   const lanes = (spec.lanes || []).map(function (r) { return trace(r, false, true); });
-  const hedge = new Uint8Array(N);
-  const field = new Int32Array(N);
-  for (let i = 0; i < N; i++) if (biome[i] === B.farm) { const fa = fieldAt(i % W, Y((i - i % W) / W)); hedge[i] = fa.edge; field[i] = fa.id; }
+  /* farmland (spec.farm "stripes": fields told apart by their crops and the way their rows run,
+     a track here and there; "hedges": the same with hedgerows between them) and orchard trees */
+  const hedge = new Uint8Array(N), field = new Int32Array(N), stripe = new Uint8Array(N), otree = new Uint8Array(N);
+  const hedges = spec.farm === "hedges";
+  for (let i = 0; i < N; i++) {
+    const x = i % W, y = (i - x) / W;
+    if (biome[i] === B.orchard) otree[i] = orchardPart(x, y);
+    if (biome[i] !== B.farm) continue;
+    const fa = fieldAt(x, Y(y));
+    field[i] = fa.id;
+    stripe[i] = (hash(fa.id, 9) < 0.5 ? Y(y) : x) % 2;
+    hedge[i] = fa.edge === 2 ? 2 : fa.edge === 1 && hedges && hash(i, 7) < 0.7 ? 1 : 0;
+  }
   const road = new Uint8Array(N);
   for (const r of roads) for (const p of r) road[p[1] * W + p[0]] = 1;
 
@@ -177,8 +187,8 @@ function build(spec) {
     else if (kind[i] === 1) col = d === 1 ? (t < 0.5 ? P.foam : P.shallow) : d <= 3 + t * 2 ? P.shallow : d <= 9 + t * 3 ? P.mid : P.deep;
     else if (kind[i] === 3) col = P.river;
     else if (b === B.mountain && h[i] > 2700) col = P.snow[lvl[i]];
-    else if (b === B.farm) col = farmBase(x, Y(y), i, lvl[i]);
-    else if (b === B.orchard) col = (x % 3 === 0 && y % 2 === 0) ? P.forest[1] : P.grassland[lvl[i]];
+    else if (b === B.farm) col = hedge[i] ? (hedge[i] === 2 ? TRACK : HEDGE[(x + y) & 1]) : farmBase(field[i], stripe[i], lvl[i]);
+    else if (b === B.orchard) col = otree[i] ? ORCHARD[otree[i] - 1] : P.grassland[Math.max(1, lvl[i])];
     else if (b === B.town) col = P.grassland[lvl[i]];
     else col = LAND_PAL[b][lvl[i]];
     if (road[i] && kind[i] === 0) col = ROAD;
@@ -192,7 +202,7 @@ function build(spec) {
   }
 
   const S = { kind: kind, biome: biome, lvl: lvl, h: h, cold: cold, warm: warm, rain: rain, sum: sum, jit: jit,
-              toLand: toLand, toSea: toSea, toLake: toLake, hedge: hedge, field: field, rivers: rivers, riverPx: riverPx, mouths: mouths,
+              toLand: toLand, toSea: toSea, toLake: toLake, hedge: hedge, field: field, stripe: stripe, otree: otree, rivers: rivers, riverPx: riverPx, mouths: mouths,
               towns: towns, roads: roads, lanes: lanes, road: road, base: base, south: !!spec.south, flip: flip,
               wind: spec.wind == null ? 1 : spec.wind, name: spec.name };
   /* lake and river ice (pixelmap.js buildTerrain): each lake pixel's distance from the shore and how long it stays frozen */
@@ -212,31 +222,31 @@ function build(spec) {
   }
   return S;
 }
-/* farmland: a patchwork of fields, each with its own crop and its own few days' lead */
-/* fields 7 by 5 pixels, each row of them shifted its own way, with hedges between them (and here
-   and there a track instead) so the farmland reads as fields, not a blob */
+/* farmland: a patchwork of fields 7 by 5 pixels, each row of them shifted its own way, each field
+   with its own crop, its own few days' lead and its rows running across or down it */
 function fieldAt(x, y) {
   const band = Math.floor(y / 5), off = Math.floor(hash(band, 5) * 7), fx = x + off, col = Math.floor(fx / 7);
   const edge = fx % 7 === 0 ? 1 : y % 5 === 0 ? (hash(band, 8) < 0.35 ? 2 : 1) : 0;
   return { id: col * 97 + band, edge: edge, cx: col * 7 + 3.5 - off, cy: band * 5 + 2.5 };
 }
 const HEDGE = ["#24512a", "#2c5e2e"], TRACK = "#8a6a40", HEDGE_BARE = ["#4e4034", "#5e4c3c"];
-function farmBase(x, y, i, l) {
-  const fa = fieldAt(x, y);
-  if (fa.edge) return fa.edge === 2 ? TRACK : HEDGE[(x + y) & 1];
-  const f = fa.id, k = hash(f, 3);
-  return k < 0.3 ? P.grassland[l] : k < 0.55 ? P.savanna[(l + 1) % 3] : k < 0.8 ? P.grassland[(l + 1) % 3] : P.forest[2];
+function farmBase(id, s, l) {
+  const k = hash(id, 3);
+  return k < 0.3 ? P.grassland[l] : k < 0.55 ? P.savanna[s ? 2 : 1] : k < 0.8 ? P.grassland[s ? 2 : 1] : P.grassland[s ? 1 : 0];
 }
+/* an orchard in rows: each tree a crown of two pixels, light and dark, its shadow under it, grass between the rows */
+const ORCHARD = ["#4f9a3c", "#2f7436", "#3a6e2a"];
+function orchardPart(x, y) { return y % 3 === 0 ? (x % 3 === 0 ? 1 : x % 3 === 1 ? 2 : 0) : y % 3 === 1 && x % 3 === 0 ? 3 : 0; }
 K.build = build;
 
 /* ------------------------------------------------------------ the pieces of map */
 function coast(y, x0) { return x0 + (vnoise(0.5, y * 0.11, 1) - 0.5) * 16 - Math.max(0, y - 50) * 2.2; }
 /* temperate: hills in the north-west, a lake, a river out to the sea in the east, a village with
    fields and an orchard; from about 55 N at the top (coldest month -14) to 45 N at the bottom (+3) */
-function temperateSpec(south) {
+function temperateSpec(south, farm) {
   const hill = function (x, y) { return x + y < 34 + vnoise(x * 0.2, y * 0.2, 6) * 10; };
   return {
-    name: "temperate", south: south, flip: south, wind: 1,
+    name: "temperate", south: south, flip: south, wind: 1, farm: farm,
     water: function (x, y) {
       const dx = (x - 46) / 17, dy = (y - 35) / 8.5;
       if (x > coast(y, 94) + (vnoise(x * 0.2, y * 0.2, 3) - 0.5) * 4) return 1;
@@ -249,7 +259,7 @@ function temperateSpec(south) {
       if (hill(x, y)) return B.mountain;
       const vx = x - 66, vy = y - 53;
       if (vx * vx + vy * vy * 1.6 < 12) return B.town;
-      if (x >= 54 && x <= 62 && y >= 56 && y <= 63) return B.orchard;
+      if (x >= 51 && x <= 62 && y >= 56 && y <= 65) return B.orchard;
       const fa = fieldAt(x, y), fx = fa.cx - 66, fy = fa.cy - 53;
       if (fx * fx + fy * fy * 1.6 < 300 && hash(fa.id, 6) < 0.85) return B.farm;
       if (vnoise(x * 0.12, y * 0.12, 4) > 0.55) return c.cold[i] < -10 ? B.taiga : B.forest;
@@ -336,7 +346,7 @@ function tradeSpec() {
 }
 const CACHE = {};
 K.scene = function (name) {
-  if (!CACHE[name]) CACHE[name] = build(name === "temperate" ? temperateSpec(false) : name === "south" ? temperateSpec(true)
+  if (!CACHE[name]) CACHE[name] = build(name === "temperate" ? temperateSpec(false) : name === "south" ? temperateSpec(true) : name === "hedges" ? temperateSpec(false, "hedges")
     : name === "tropical" ? tropicalSpec() : name === "polar" ? polarSpec() : tradeSpec());
   return CACHE[name];
 };
@@ -426,7 +436,7 @@ FX.autumn = function (f) {
   for (let i = 0; i < N; i++) {
     const b = S.biome[i];
     if ((b !== B.forest && b !== B.orchard) || S.road[i]) continue;
-    if (b === B.orchard && !((i % W) % 3 === 0 && ((i / W) | 0) % 2 === 0)) continue;
+    if (b === B.orchard && S.otree[i] !== 1 && S.otree[i] !== 2) continue;
     if (S.cold[i] < -12 || S.cold[i] > 9) continue;
     const sp = hash(i, 81);
     if (sp < 0.12) continue;                     /* the odd conifer stays green */
@@ -442,27 +452,31 @@ FX.autumn = function (f) {
     else if (q < tm.out + 0.07) put(f, i, bb < (q - tm.out) / 0.03 ? R.leaf[l] : R.bare[l]);
   }
 };
-/* blossom in spring, just before the leaves: each tree flowers for about ten days somewhere in a
-   four-week spell, so it spreads through the orchard rather than lighting up all at once; a few
-   wild cherries on the edges of the woods (unless orchardsOnly), a petal or two blowing off */
+/* blossom in the orchard in spring, just before the leaves, tree by tree: each tree in bud, in
+   full flower (white, pink on its shaded side) and going over in about two weeks, somewhere in a
+   spell of a month, its petals lying pink in the grass under it for a while after; with wild, a
+   few wild cherries flowering white on the edges of the woods too */
 FX.blossom = function (f, st, opts) {
   if (f.lp == null) return;
-  const S = f.S, t = f.t / 1000, only = opts && opts.orchardsOnly;
+  const S = f.S, wild = opts && opts.wild;
   for (let i = 0; i < N; i++) {
     const b = S.biome[i];
     if (S.cold[i] < -12 || S.cold[i] > 12 || S.kind[i] !== 0 || S.road[i]) continue;
-    const x = i % W, y = (i - x) / W, tree = b === B.orchard && x % 3 === 0 && y % 2 === 0;
-    const edge = !only && b === B.forest && S.toSea[i] > 1 && hash(i, 91) < 0.07 && isEdge(S, x, y);
-    if (!tree && !edge) continue;
-    const start = leafTiming(S, i).out - 0.08 + hash(i, 97) * 0.05, k = (f.lp - start) / 0.028;
-    if (k < 0 || k > 1) continue;
-    /* opening, full, then going over: white with a blush in the orchard, white in the woods */
-    const full = k > 0.2 && k < 0.75;
-    put(f, i, !full ? (tree ? "#e7b9c8" : "#d8d0c8") : tree && hash(i, 94) < 0.4 ? "#f6cfdc" : "#fbf3f6");
-    if (tree && k > 0.6 && hash(i, 98) < 0.3) {
-      const life = (t * 0.5 + hash(i, 96)) % 1, px = x + Math.round(life * 5 * S.wind), py = y + Math.round(life * 2);
-      if (life < 0.7 && px >= 0 && px < W && py < H && S.kind[py * W + px] === 0) put(f, py * W + px, "#f6cfdc");
+    const x = i % W, y = (i - x) / W, part = b === B.orchard ? S.otree[i] : 0;
+    const edge = wild && b === B.forest && S.toSea[i] > 1 && hash(i, 91) < 0.06 && isEdge(S, x, y);
+    if (!part && !edge) continue;
+    const tree = part ? Math.floor(x / 3) * 31 + Math.floor(y / 3) : i;
+    const start = leafTiming(S, i).out - 0.08 + hash(tree, 97) * 0.045, k = (f.lp - start) / 0.04;
+    if (edge) { if (k > 0.1 && k < 0.8) put(f, i, k < 0.25 ? "#d8d0c8" : "#fbf3f6"); continue; }
+    if (part === 3) {
+      /* fallen petals in the tree's shadow, and beside it */
+      if (k > 0.7 && k < 1.5) { put(f, i, "#f2c4d2"); if (k < 1.2 && x + 1 < W && S.biome[i + 1] === B.orchard && !S.otree[i + 1]) put(f, i + 1, "#e7b9c8"); }
+      continue;
     }
+    if (k < 0 || k > 1) continue;
+    if (k < 0.15) { if (part === 1) put(f, i, "#e7b9c8"); }
+    else if (k < 0.7) put(f, i, part === 1 ? "#fbf3f6" : "#f2c4d2");
+    else if (part === 1) put(f, i, "#f6cfdc");
   }
 };
 function isEdge(S, x, y) {
@@ -472,6 +486,8 @@ function isEdge(S, x, y) {
   }
   return false;
 }
+const PLAINS_YEAR = [[0, "dormant"], [0.18, "dormant"], [0.3, "leaf"], [0.42, "leaf"], [0.5, "own"], [0.56, "own"], [0.64, "ripe"],
+  [0.72, "ripe"], [0.84, "straw"], [0.97, "dormant"], [1.01, "dormant"]];
 /* grassland and farmland through the year: dormant in winter, a fresh green in spring, ripening gold
    in late summer (the drier the more), fields harvested to stubble and ploughed in autumn */
 function mixRamp(f, i, a, b, k, l) { put(f, i, bayer(i % W, (i / W) | 0) < k ? b[l] : a[l]); }
@@ -480,7 +496,7 @@ FX.plains = function (f) {
   const S = f.S, q = f.lp;
   for (let i = 0; i < N; i++) {
     const b = S.biome[i], l = S.lvl[i];
-    if (b !== B.grass && b !== B.farm && b !== B.steppe && b !== B.town && !(b === B.orchard && !((i % W) % 3 === 0 && ((i / W) | 0) % 2 === 0))) continue;
+    if (b !== B.grass && b !== B.farm && b !== B.steppe && b !== B.town && !(b === B.orchard && !S.otree[i])) continue;
     if (S.cold[i] > 12 || S.road[i]) continue;
     const x = i % W, y = (i - x) / W, own = LAND_PAL[b];
     /* hedges in leaf from spring to autumn, bare in winter; tracks as they are */
@@ -490,25 +506,27 @@ FX.plains = function (f) {
     }
     if (b === B.farm && hash(S.field[i], 3) >= 0.3) {
       const fj = hash(S.field[i], 4) * 0.05, crop = hash(S.field[i], 3) < 0.8 ? R.wheat : R.ripe;
-      const fl = (y % 2) ? l : Math.max(0, l - 1);   /* furrows */
-      if (q < 0.2 + fj || q >= 0.78 + fj) put(f, i, R.plough[fl]);
-      else if (q < 0.3 + fj) mixRamp(f, i, R.plough, R.leaf, (q - 0.2 - fj) / 0.1, fl);
-      else if (q < 0.42 + fj) put(f, i, R.leaf[l]);
-      else if (q < 0.52 + fj) put(f, i, P.grassland[l]);
-      else if (q < 0.6 + fj) mixRamp(f, i, P.grassland, crop, (q - 0.52 - fj) / 0.08, l);
-      else if (q < 0.65 + fj) put(f, i, crop[l]);
-      else if (q < 0.72 + fj) put(f, i, R.stubble[l]);
-      else mixRamp(f, i, R.stubble, R.plough, (q - 0.72 - fj) / 0.06, fl);
+      /* the rows: furrows dark and light when bare, the crop lighter along its rows when growing */
+      const fl = S.stripe[i] ? 2 : 0, gl = S.stripe[i] ? 2 : 1;
+      if (q < 0.2 + fj || q >= 0.8 + fj) put(f, i, R.plough[fl]);
+      else if (q < 0.3 + fj) mixRamp(f, i, R.plough, R.leaf, (q - 0.2 - fj) / 0.1, gl);
+      else if (q < 0.42 + fj) put(f, i, R.leaf[gl]);
+      else if (q < 0.52 + fj) put(f, i, P.grassland[gl]);
+      else if (q < 0.6 + fj) mixRamp(f, i, P.grassland, crop, (q - 0.52 - fj) / 0.08, gl);
+      else if (q < 0.65 + fj) put(f, i, crop[gl]);
+      else if (q < 0.72 + fj) put(f, i, R.stubble[gl]);
+      else mixRamp(f, i, R.stubble, R.plough, (q - 0.72 - fj) / 0.08, fl);
       continue;
     }
-    const dry = clamp((900 - S.rain[i]) / 500, 0.35, 1);
-    if (q < 0.2 || q >= 0.86) put(f, i, R.dormant[l]);
-    else if (q < 0.3) mixRamp(f, i, R.dormant, R.leaf, (q - 0.2) / 0.1, l);
-    else if (q < 0.44) put(f, i, R.leaf[l]);
-    else if (q < 0.52) mixRamp(f, i, R.leaf, own, (q - 0.44) / 0.08, l);
-    else if (q < 0.62) mixRamp(f, i, own, R.ripe, (q - 0.52) / 0.1 * dry, l);
-    else if (q < 0.76) mixRamp(f, i, own, R.ripe, dry, l);
-    else mixRamp(f, i, R.ripe, R.dormant, (q - 0.76) / 0.1 + (1 - dry), l);
+    /* through the year by keyframes, each step dithered into the next: autumn as slow as spring,
+       the gold fading to straw and then to the winter's dull green; the drier the grass, the more
+       of it turns gold (the rest stays green into the straw) */
+    const ripe = hash(i, 88) < clamp((900 - S.rain[i]) / 500, 0.35, 1) ? R.ripe : own;
+    let a = PLAINS_YEAR.length - 2;
+    while (a > 0 && PLAINS_YEAR[a][0] > q) a--;
+    const A = PLAINS_YEAR[a], Bk = PLAINS_YEAR[a + 1], k = (q - A[0]) / (Bk[0] - A[0]);
+    const ramp = function (r) { return r === "own" ? own : r === "ripe" ? ripe : R[r]; };
+    mixRamp(f, i, ramp(A[1]), ramp(Bk[1]), k, l);
   }
 };
 /* savanna and monsoon land (summerRain high): green in the rains, brown through the dry season; the held look is the biome's own, in between */
@@ -636,10 +654,11 @@ function events(f, st, sched) {
 function onCalendar(S, lp) { return Math.round(wrap(lp + MIDWINTER + (S.south ? 0.5 : 0)) * 365); }
 /* tropical cyclones: two or three a year in the late summer and autumn, coming in off the warm sea
    with the trade winds and curving away poleward. Drawn like the winter gales, as weather over the
-   map rather than a cloud on it: the sea and land go dark under the storm, rain streaks through it,
-   whitecaps on the sea and surf thrown up on the coast it passes. style "spiral": dark bands wind
-   in to a calm eye and turn (anticlockwise in the north); "mass": one dark mass, no eye, the rain
-   driven before the wind. */
+   map rather than a cloud on it: the land and sea go dark under the storm, whitecaps under it and
+   surf on the coast ahead. style "spin" (the default): the wind made visible, streaks of rain and
+   spray whirling round and spiralling in to a calm eye (anticlockwise in the north), faster near
+   it, a darker eyewall round the eye and the sea washing over the beaches it passes; "mass": one
+   dark mass, no eye, the rain in slanting lines as in the gales. */
 FX.hurricanes = function (f, st, opts) {
   const S = f.S, t = f.t / 1000, mass = opts && opts.style === "mass", hs = S.south ? -1 : 1;
   const list = events(f, st, function (y) {
@@ -647,30 +666,37 @@ FX.hurricanes = function (f, st, opts) {
     for (let k = 0; k < 3; k++) if (hash(y, k + 11) < 0.8) out.push({ day: onCalendar(S, 0.56 + hash(y, k) * 0.28), dur: 9, minMs: 6000, k: k, y: y });
     return out;
   });
+  const dot = function (x, y, col) { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) put(f, y * W + x, col); };
   for (const a of list) {
-    const p = a.prog, y0 = 44 + hash(a.e.y, a.e.k + 20) * 18;
-    const cx = W + 16 - p * (W + 34), cy = y0 - p * p * 42, r = 16 * Math.min(1, Math.sin(Math.PI * p) * 1.6) + 2;
-    const spin = hs * t * 1.3;
-    for (let y = Math.floor(cy - r - 3); y <= cy + r + 3; y++) for (let x = Math.floor(cx - r * 1.3 - 3); x <= cx + r * 1.3 + 3; x++) {
+    const p = a.prog, y0 = 40 + hash(a.e.y, a.e.k + 20) * 18;
+    const cx = W + 16 - p * (W + 34), cy = y0 - p * p * 34, r = 16 * Math.min(1, Math.sin(Math.PI * p) * 1.6) + 2;
+    for (let y = Math.floor(cy - r - 4); y <= cy + r + 4; y++) for (let x = Math.floor(cx - r * 1.3 - 4); x <= cx + r * 1.3 + 4; x++) {
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
       const i = y * W + x, dx = x - cx, dy = (y - cy) * 1.2;
-      const d = Math.hypot(mass ? dx / 1.3 : dx, dy) / r + (vnoise(x * 0.3 - t * 0.8, y * 0.3, 74) - 0.5) * 0.3;
+      const d = Math.hypot(mass ? dx / 1.3 : dx, dy) / r + (vnoise(x * 0.3 - t * 0.8, y * 0.3, 74) - 0.5) * (mass ? 0.3 : 0.15);
       if (d > 1) {
-        /* surf thrown up on the coast ahead of it */
+        /* surf thrown up on the coast ahead of it, and in the spinning storm the sea over the beaches */
         if (d < 1.5 && S.kind[i] === 1 && S.toLand[i] <= 2 && hash(i, Math.floor(t * 6)) < 0.5) put(f, i, WHITE);
+        else if (!mass && d < 1.3 && S.biome[i] === B.sand && hash(i, Math.floor(t * 3)) < 0.6) put(f, i, hash(i, 5) < 0.5 ? P.shallow : P.foam);
         continue;
       }
-      let band;
-      if (mass) band = 1 - d * 0.5;
-      else {
-        if (d < 0.13) { shade(f, i, 0.92); continue; }               /* the eye */
-        band = 0.5 + 0.5 * Math.sin(Math.atan2(dy, dx) * 2 - hs * d * 7 + spin);
-      }
+      if (!mass && d < 0.12) continue;                                /* the eye: calm, clear */
+      const band = mass ? 1 - d * 0.5 : d < 0.25 ? 1.25 : 1 - d * 0.55;  /* the eyewall darkest */
       shade(f, i, 0.8 - 0.36 * band * (1 - d * 0.4));
-      /* rain in slanting lines as in the gales, in the bands */
-      if (band > 0.45 && ((x * 3 + y * hs + Math.floor(t * 16)) % 6 + 6) % 6 === 0) {
-        put(f, i, "#9fb8d0");
-      } else if (S.kind[i] === 1 && band > 0.35 && hash(i, Math.floor(t * 5)) < 0.08) put(f, i, WHITE);
+      if (!mass && d < 1.3 && S.biome[i] === B.sand) put(f, i, hash(i, Math.floor(t * 3)) < 0.5 ? P.shallow : P.foam);
+      else if (mass && band > 0.45 && ((x * 3 + y * hs + Math.floor(t * 16)) % 6 + 6) % 6 === 0) put(f, i, "#9fb8d0");
+      else if (S.kind[i] === 1 && hash(i, Math.floor(t * 5)) < (mass ? 0.08 : 0.05)) put(f, i, WHITE);
+    }
+    if (mass) continue;
+    /* the wind: streaks whirling round, each drawn in from the edge and spiralling in to the eye */
+    const n = Math.round(r * 6);
+    for (let s = 0; s < n; s++) {
+      const u = (t * 0.12 + hash(s, 201)) % 1, rho = r * (1 - u * 0.84), th = hash(s, 202) * 6.283 + hs * (t * 1.8 + u * 7 + u * u * 6);
+      if (u < 0.08 && hash(s, 203) > u / 0.08) continue;
+      for (let q = 2; q >= 0; q--) {
+        const a2 = th - hs * q * 0.11 * (1.4 - u * 0.6);
+        dot(cx + Math.cos(a2) * rho, cy + Math.sin(a2) * rho / 1.2, q === 0 ? "#e6eef5" : q === 1 ? "#b9cad8" : "#8fa6bb");
+      }
     }
   }
 };
@@ -816,14 +842,12 @@ FX.caravans = function (f) {
     }
   });
 };
-/* fishing boats: off the coasts and on big lakes, out by day and home by night (at the slowest
-   speed; faster, the days blur and they stay out); before the ice reaches the shore they row in and
+/* fishing boats: off the coasts and on big lakes, out all the time (a day lasts a second at the
+   slowest speed, too short for them to come and go without flickering); before the ice reaches the shore they row in and
    are pulled up on it for the winter, and go out again once it has gone (huts: ice fishing on the
    frozen lake meanwhile) */
 FX.fishing = function (f, st, opts) {
-  const S = f.S, t = f.t / 1000, hour = ((f.day % 1) + 1) % 1;
-  let out = 1;
-  if (f.speed <= 1 && f.lp != null) out = hour < 0.25 || hour > 0.8 ? 0 : Math.min(1, (hour - 0.25) / 0.08, (0.8 - hour) / 0.08);
+  const S = f.S, t = f.t / 1000;
   if (!S.fish) {
     S.fish = [];
     for (let i = 0; i < N; i++) {
@@ -857,7 +881,6 @@ FX.fishing = function (f, st, opts) {
       if (opts && opts.huts && S.kind[i] === 2 && iced(i, f.lp)) { put(f, i, "#7a4a22"); if (b.x + 1 < W) put(f, i + 1, "#2a3a5a"); }
       continue;
     }
-    if (hash(k, 113) > out) continue;
     const sway = Math.round(Math.sin(t * 0.3 + k) * 1.5 * (1 - th));
     const x = Math.round(b.x + (b.hx - b.x) * th) + sway, y = Math.round(b.y + (b.hy - b.y) * th);
     if (x < 0 || x >= W) continue;

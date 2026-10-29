@@ -34,7 +34,7 @@ const SCENES = [
     draw: function (f) { now(f); FX.caravans(f); } },
   { title: "Caravans in the north", scene: "temperate", start: 288, note: "Ox carts on the village's roads. Revised: before snow closes their stretch of road they make for the nearest town on it (or off the map) and wait there, bunched up beside it, until it melts; the northern road empties first.",
     draw: function (f) { now(f); FX.snow(f); FX.caravans(f); } },
-  { title: "Fishing boats", scene: "trade", start: 0, speed: 0, note: "Boats off the coasts and on the big lake, rocking, a net going in now and then. Out by day and home at night at 1 day/s (this panel starts there); faster, the days blur and they stay out.",
+  { title: "Fishing boats", scene: "trade", start: 0, speed: 0, note: "Boats off the coasts and on the big lake, rocking, a net going in now and then. Revised: they stay out at every speed; at 1 day/s (where this panel starts) a day lasts a second, and going home each night made them flicker.",
     draw: function (f) { now(f); FX.fishing(f); } },
   { title: "Fishing on a lake that freezes", scene: "temperate", start: 288, note: "Revised: before the ice reaches the shore the boats row in and are pulled up on it for the winter (a brown fleck on the shore), and go out again once it has gone.",
     draw: function (f) { now(f); FX.seaIce(f); FX.fishing(f); } },

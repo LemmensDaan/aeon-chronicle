@@ -98,3 +98,37 @@ thing versus surface, not whether it can be clicked: peaks and trees are sprites
   autumn woods would barely show, since the woods are mostly their tree sprites.
 
 `samples/seasonal-sprites.html` tries this with the app's own sprites.
+
+## In the app (2026-10-30)
+
+`js/seasons.js` carries the picks into the map; `pixelmap.js` calls it. Merchant ships are the
+small cog (sample 7), and there are no ice-fishing huts.
+
+- **Ground** (`ground`, in `compose`, political and diplomacy modes only, so the biome and data
+  modes still show what the land is): snow, autumn woods, golden plains, wet and dry, farm fields,
+  sea ice. The season is quantised (two days, or an eighth of a second's worth at the faster
+  speeds) in the frame's cache key. Fields are 7×5 striped patches on temperate grassland round
+  each settlement of the shown year, wider round towns and cities. There are no surf or glints on
+  the sea ice.
+- **Sprites** (`propLook`, `roofLook`): trees, pines and peaks by the season. The prop layer is
+  cached per look from images drawn per palette. Roofs under snow.
+- **Weather** (`weather`, each frame, at map resolution, everywhere but the data modes):
+  - plankton
+  - snowfall
+  - monsoon rain with lightning
+  - hurricanes, the storm mass going over warm open sea
+  - the dust at tornadoes' feet
+
+  The tornado funnels (`sky`) are drawn over the settlements. Storms are set on the calendar per
+  year and hemisphere and play for at least six seconds.
+- **Life** (`life`, under the settlements):
+  - cogs on lanes over open sea between nearby ports (straight or round one bend)
+  - fishing boats off settlements on the water's edge (zoomed in)
+  - caravans on the roads (zoomed in)
+  - orchards on a neighbouring cell (zoomed in far enough to fit)
+  - sheaves (zoomed in further)
+
+  Ships, boats and caravans go home before the ice or snow.
+- **Held** (faster than 1 yr/s): the ground's held look (snow only where it lies more than half
+  the year, the summer sea-ice minimum, fields in their own colours). No weather. Ships, boats and
+  caravans stay where the held ice or snow lets them.

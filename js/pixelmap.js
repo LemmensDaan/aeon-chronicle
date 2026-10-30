@@ -358,6 +358,9 @@ function buildTerrain(world) {
   }
 
   const px = new Uint8ClampedArray(N * 4);
+  /* for the seasons (seasons.js): each land pixel's biome and shade as drawn (beaches and snowy
+     peaks apart), 0 on water and rivers */
+  const SE = AEON.seasons, pxB = new Uint8Array(N), pxL = new Uint8Array(N);
   const put = function (i, h) { const c = rgb(h); px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = 255; };
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
     const i = y * VW + x, e = E[i], t = bayer(x, y);
@@ -406,6 +409,8 @@ function buildTerrain(world) {
     if (beach) put(i, P.sand[lvl]);
     else if (biome === "mountain" && e > 0.86) put(i, P.snow[lvl]);
     else put(i, (P[biome] || P.grassland)[lvl]);
+    pxL[i] = lvl;
+    if (SE) pxB[i] = beach ? SE.BEACH : biome === "mountain" && e > 0.86 ? SE.PEAK_SNOW : SE.code(biome);
   }
 
   const terrain = document.createElement("canvas");
@@ -439,7 +444,7 @@ function buildTerrain(world) {
     g.fillRect(px0, py0, s, s);
     for (let j = 0; j < s; j++) for (let k = 0; k < s; k++) {
       const yy = py0 + j, i = yy * VW + (px0 + k) % VW;
-      if (yy >= 0 && yy < VH && land[i] && !riverAt.has(i)) riverAt.set(i, [ph, fast, cell]);
+      if (yy >= 0 && yy < VH && land[i] && !riverAt.has(i)) { riverAt.set(i, [ph, fast, cell]); pxB[i] = 0; }
     }
   };
   for (const r of R) {
@@ -468,12 +473,13 @@ function buildTerrain(world) {
     const k = cellRand(r.id, 1);
     const jx = Math.floor(cellRand(r.id, 2) * 3) - 1, jy = Math.floor(cellRand(r.id, 3) * 3) - 1;
     const x = r.x * PPC + jx, y = r.y * PPC + jy;
-    /* [sprite, cell x, cell y, sort key, jitter x, jitter y] */
-    if (r.biome === "mountain" && k < 0.4) props.push([PEAK, r.x, r.y, y, jx, jy]);
-    else if ((r.biome === "forest" || r.biome === "jungle") && k < 0.55) props.push([r.biome === "jungle" ? PALM : TREE, r.x, r.y, y, jx, jy]);
-    else if (r.biome === "taiga" && k < 0.5) props.push([PINE, r.x, r.y, y, jx, jy]);
+    /* [sprite, cell x, cell y, sort key, jitter x, jitter y, kind, map pixel it stands on] */
+    const at = (r.y * PPC + 2 + jy) * VW + r.x * PPC + 2 + jx;
+    if (r.biome === "mountain" && k < 0.4) props.push([PEAK, r.x, r.y, y, jx, jy, "peak", at]);
+    else if ((r.biome === "forest" || r.biome === "jungle") && k < 0.55) props.push(r.biome === "jungle" ? [PALM, r.x, r.y, y, jx, jy, "palm", at] : [TREE, r.x, r.y, y, jx, jy, "tree", at]);
+    else if (r.biome === "taiga" && k < 0.5) props.push([PINE, r.x, r.y, y, jx, jy, "pine", at]);
     /* the odd lone tree out on open land */
-    else if ((r.biome === "grassland" || r.biome === "savanna") && k < 0.05) props.push([TREE, r.x, r.y, y, jx, jy]);
+    else if ((r.biome === "grassland" || r.biome === "savanna") && k < 0.05) props.push([TREE, r.x, r.y, y, jx, jy, "tree", at]);
   }
   props.sort(function (a, b) { return a[3] - b[3]; });
 
@@ -517,7 +523,7 @@ function buildTerrain(world) {
   frame.width = VW; frame.height = VH;
   return {
     W: W, H: H, VW: VW, VH: VH, land: land, cellOf: cellOf, terrain: terrain, props: props, propLayer: null,
-    foam: foam, glints: glints, clouds: clouds, water: water, lake: lake,
+    foam: foam, glints: glints, clouds: clouds, water: water, lake: lake, pxB: pxB, pxL: pxL,
     terrainPx: g.getImageData(0, 0, VW, VH).data,
     frame: frame, fctx: frame.getContext("2d"), fimg: frame.getContext("2d").createImageData(VW, VH), key: null,
   };
@@ -538,13 +544,17 @@ function elevBand(r) {
 /* contest (from mapfx.js), when given: regions changing hands, { rid: { from, to, phase } }. They
    keep the old owner's borders while their 2-pixel blocks, border pixels too (most such land is a
    single cell, which is mostly border), flicker between the two colours. */
-function compose(c, w, mode, roads, contest, focus, provOf) {
-  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0) + "|" + (mode === "diplomacy" ? focus : "") + "|" + (provOf || "");
+/* sea: { season, key } for the seasons on the ground (seasons.js), in the realm modes only */
+function compose(c, w, mode, roads, contest, focus, provOf, sea) {
+  const seasonal = sea && AEON.seasons && (mode === "political" || mode === "diplomacy");
+  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0) + "|" + (mode === "diplomacy" ? focus : "") + "|" + (provOf || "") + "|" + (seasonal ? sea.key : "");
   if (c.key === key && !contest) return c.frame;
   c.key = contest ? null : key;
   const VW = c.VW, VH = c.VH, R = w.regions, land = c.land, cellOf = c.cellOf;
   const d = c.fimg.data;
   d.set(c.terrainPx);
+  if (seasonal) AEON.seasons.ground(c, w, d, sea.season);
+  else if (c.sea) c.sea.hasIce = false;
 
   if (mode === "population" || mode === "elevation" || mode === "habitability") {
     const ramp = RAMPS[mode].map(rgb), n = ramp.length;
@@ -727,13 +737,15 @@ function drawAmbient(ctx, c, v, X0, now, rivers, season) {
   ctx.save();
   ctx.beginPath(); ctx.rect(X0, Y0, VW * P, c.VH * P); ctx.clip();
   drawWater(ctx, c, v, X0, now, rivers, season);
+  /* none on the sea ice (seasons.js) */
+  const iced = c.sea && c.sea.hasIce ? c.sea.iced : null;
   ctx.fillStyle = tick % 2 ? FOAM_A : FOAM_B;
   for (let k = 0; k < c.foam.length; k++) {
     const i = c.foam[k];
-    if ((i * 7 + tick) % 3 === 0) ctx.fillRect(X0 + (i % VW) * P, Y0 + ((i / VW) | 0) * P, P, P);
+    if ((i * 7 + tick) % 3 === 0 && !(iced && iced[i])) ctx.fillRect(X0 + (i % VW) * P, Y0 + ((i / VW) | 0) * P, P, P);
   }
   ctx.fillStyle = GLINT;
-  for (const g of c.glints) if (Math.sin(t * g[2] + g[1]) > 0.97) ctx.fillRect(X0 + (g[0] % VW) * P, Y0 + ((g[0] / VW) | 0) * P, P, P);
+  for (const g of c.glints) if (Math.sin(t * g[2] + g[1]) > 0.97 && !(iced && iced[g[0]])) ctx.fillRect(X0 + (g[0] % VW) * P, Y0 + ((g[0] / VW) | 0) * P, P, P);
   ctx.fillStyle = "rgba(10, 14, 40, .2)";
   for (const cl of c.clouds) {
     const cx = ((cl.x + t * cl.s) % (VW + 80)) - 40;
@@ -846,30 +858,33 @@ function drawWater(ctx, c, v, X0, now, rivers, season) {
 /* Peaks and woods, drawn in screen space at the settlements' scale (u device pixels per sprite
    pixel), so they grow with the zoom as gently as the settlements do instead of with the land.
    At low zoom they are cached as one layer the size of the map; zoomed in, only the ones in view
-   are drawn. */
-function drawScenery(ctx, c, v, u, X0) {
-  const cell = PPC * v.P, cw = ctx.canvas.width, ch = ctx.canvas.height;
-  const at = function (p) {
-    return [Math.round((p[1] + 0.5) * cell + p[4] * u * 1.5 - p[0].w * u / 2), Math.round((p[2] + 0.5) * cell + p[5] * u * 1.5 - p[0].h * u + u * 2)];
+   are drawn. With the seasons (seasons.js, sea: { season, key }) the trees turn and go bare and the
+   snow lies on the peaks and branches; drawn from images cached per look. */
+function drawScenery(ctx, c, v, u, X0, w, sea) {
+  const cell = PPC * v.P, SE = sea && AEON.seasons;
+  const at = function (p, sp) {
+    return [Math.round((p[1] + 0.5) * cell + p[4] * u * 1.5 - sp.w * u / 2), Math.round((p[2] + 0.5) * cell + p[5] * u * 1.5 - sp.h * u + u * 2)];
+  };
+  const paint = function (g, p, ox, oy) {
+    const lk = SE ? SE.propLook(c, w, p[6], p[7], sea.season) : null, sp = lk ? lk[0] : p[0], q = at(p, sp), x = ox + q[0], y = oy + q[1];
+    if (x < -sp.w * u || y < -sp.h * u || x > g.canvas.width || y > g.canvas.height) return;
+    if (SE) g.drawImage(SE.image(sp, lk && lk[1], u), x, y);
+    else blit(g, sp, x, y, u);
   };
   const mw = c.VW * v.P, mh = c.VH * v.P;
   if (mw <= 4096) {
-    const key = u + "|" + v.P;
+    const key = u + "|" + v.P + "|" + (SE ? sea.key : "");
     if (!c.propLayer || c.propLayer.key !== key) {
-      const layer = document.createElement("canvas");
+      const layer = c.propLayer && c.propLayer.canvas.width === mw && c.propLayer.canvas.height === mh ? c.propLayer.canvas : document.createElement("canvas");
       layer.width = mw; layer.height = mh;
       const g = layer.getContext("2d");
-      for (const p of c.props) { const q = at(p); blit(g, p[0], q[0], q[1], u); }
+      for (const p of c.props) paint(g, p, 0, 0);
       c.propLayer = { key: key, canvas: layer };
     }
     ctx.drawImage(c.propLayer.canvas, X0, v.Y0);
     return;
   }
-  for (const p of c.props) {
-    const q = at(p), x = X0 + q[0], y = v.Y0 + q[1];
-    if (x < -p[0].w * u || y < -p[0].h * u || x > cw || y > ch) continue;
-    blit(ctx, p[0], x, y, u);
-  }
+  for (const p of c.props) paint(ctx, p, X0, v.Y0);
 }
 
 /* ------------------------------------------------------------ view */
@@ -951,12 +966,15 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   /* everything is placed once on the first tile and drawn on each visible copy */
   const drawn = [];
   const sx = function (gx) { return tiles[0] + gx * cell; }, sy = function (gy) { return v.Y0 + gy * cell; };
-  drawScenery(ctx, c, v, u, tiles[0]);
+  const sea = opts.sea || null;
+  drawScenery(ctx, c, v, u, tiles[0], w, sea);
 
   /* settlements: capitals always; towns and villages appear as the map is zoomed in */
   const capitals = {};
   for (const id in w.polities) { const p = w.polities[id]; if (!p.ended && p.capital != null) capitals[p.capital] = p; }
   const minTier = pc >= 4 ? 1 : pc >= 2 ? 2 : 3;
+  /* the ships, boats and caravans, the orchards and the sheaves (seasons.js), under the settlements */
+  if (sea && opts.time != null) AEON.seasons.life(ctx, c, w, v, tiles[0], u, { season: sea.season, speed: opts.speed, time: opts.time }, roadLinks(w), minTier, pc);
   const sites = [];
   for (let k = 0; k < R.length; k++) {
     const s = R[k].settlement, cap = capitals[k];
@@ -994,7 +1012,10 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
     const town = st.cap && AEON.mapfx && AEON.mapfx.asTown(st.r.id), tier = town ? (st.r.settlement ? st.r.settlement.tier : 2) : st.tier;
     const capital = st.cap && !town, plain = capital ? PALACE : tier >= 3 ? CITY : tier === 2 ? TOWN : VILLAGE;
     const owner = capital ? st.cap : w.polities[st.r.owner];
-    const roofs = owner && owner.color ? { f: owner.color, F: darker(owner.color) } : null;
+    let roofs = owner && owner.color ? { f: owner.color, F: darker(owner.color) } : null;
+    /* snow on the roofs where it lies */
+    const snowy = sea ? AEON.seasons.roofLook(c, w, st.r.id, sea.season) : null;
+    if (snowy) roofs = Object.assign({}, roofs, snowy);
     const cx = sx(st.r.x + 0.5), cy = sy(st.r.y + 0.5);
     /* by the water, if it fits; else the plain sprite (a wonder may stand where the quay would) */
     const tries = [];
@@ -1091,7 +1112,13 @@ function draw(canvas, world, opts) {
   canvas._aeonView = v;
 
   const fxOn = AEON.mapfx && AEON.mapfx.live(), mode = opts.mode || "political";
-  const c = getCache(world), frame = compose(c, world, mode, !!opts.showRoads, fxOn && (mode === "political" || mode === "diplomacy") ? AEON.mapfx.contested() : null, opts.focus || null, opts.provincesOf != null ? opts.provincesOf : null);
+  /* the seasons (seasons.js): on the ground in the realm modes, on the sprites and in the weather
+     everywhere but the data modes; the season quantised for the caches */
+  const dataMode = mode === "population" || mode === "elevation" || mode === "habitability";
+  const SE = AEON.seasons && !dataMode && opts.season !== undefined ? AEON.seasons : null;
+  const sea = SE ? { season: opts.season, ground: SE.key(opts, 2), key: SE.key(opts, 1) } : null;
+  opts = Object.assign({}, opts, { sea: sea });
+  const c = getCache(world), frame = compose(c, world, mode, !!opts.showRoads, fxOn && (mode === "political" || mode === "diplomacy") ? AEON.mapfx.contested() : null, opts.focus || null, opts.provincesOf != null ? opts.provincesOf : null, sea && { season: sea.season, key: sea.ground });
   ctx.fillStyle = DESK; ctx.fillRect(0, 0, pw, ph);
   const mw = c.VW * v.P, mh = c.VH * v.P;
   const X0 = Math.round(v.ox * v.dpr);
@@ -1100,7 +1127,9 @@ function draw(canvas, world, opts) {
   ctx.fillStyle = INK;
   ctx.fillRect(X0 - 1, v.Y0 - 1, mw + 2, mh + 2);
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
-  if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time, mode !== "population" && mode !== "elevation" && mode !== "habitability", opts.season);
+  if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time, !dataMode, opts.season);
+  /* the weather: snowfall, the monsoon's rain, plankton blooms, hurricanes, the dust of tornadoes */
+  if (sea && opts.time != null) SE.weather(ctx, c, world, v, X0, { season: opts.season, day: opts.day, speed: opts.speed, time: opts.time });
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
   const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null;
   const cell = PPC * v.P, env = fx && {
@@ -1112,6 +1141,7 @@ function draw(canvas, world, opts) {
   if (fx) fx.draw(ctx, env, "under");
   drawOverlay(ctx, world, c, v, opts, [X0]);
   if (fx) fx.draw(ctx, env, "over");
+  if (sea && opts.time != null) SE.sky(ctx, c, world, v, X0, spriteUnit(v), { time: opts.time });
 }
 
 function hitTest(canvas, world, px, py, opts) {
@@ -1123,6 +1153,7 @@ function hitTest(canvas, world, px, py, opts) {
   return gy * W + gx;
 }
 
+if (AEON.seasons) AEON.seasons.setup({ PEAK: PEAK, PINE: PINE, TREE: TREE, PALM: PALM, ROWBOAT: ROWBOAT, ROOF: ROOF });
 AEON.render = { draw: draw, modes: MODES, hitTest: hitTest, pixelScale: pixelScale, cacheOf: getCache, wonderSprite: wonderSprite, blit: blit };
 AEON.pixelFont = { draw: text, width: textWidth, fold: fold };
 

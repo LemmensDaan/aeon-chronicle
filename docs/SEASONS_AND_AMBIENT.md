@@ -59,3 +59,33 @@ can feed them: frozen rivers that armies cross, campaigns in summer, sailing in 
   held state.
 - Put north and south side by side once, to check the opposite seasons.
 - Name each panel so Daan can pick them by number.
+
+## Picks so far (Daan, 2026-10-29 to 10-30)
+
+From `samples/seasons.html` and `samples/ambient-life.html` (three rounds):
+
+- **In:** snow cover with snowfall; autumn woods; golden plains (grassland as slow into winter as
+  out of it; farmland as striped fields, hedgerows still open); wet and dry season with the rains
+  and the revised lightning; phytoplankton blooms; sea ice; the north/south and mixed panels.
+- **In, still to settle:** spring blossom (the orchard), the farmland's look, hurricanes (the
+  storm mass reads better than the spiral; still not quite a hurricane).
+- **Unsure:** winter gales (would players read them as gales?).
+- **Ambient:** merchant ships and caravans in; before the ice or snow they make for the nearest
+  harbour or town and wait there; fishing boats stay out (no day and night: it flickered at 1 day/s)
+  and are pulled up on the shore before the ice.
+
+## Sprites and the land
+
+The map has two layers (`pixelmap.js`): the **land**, painted at map resolution and growing fully
+with the zoom (biomes, water, roads, ice), and **sprites**, drawn at the settlements' scale
+(`spriteUnit`) and growing only with its square root (settlements, peaks, trees, ships). The rule is
+thing versus surface, not whether it can be clicked: peaks and trees are sprites too.
+
+- **Surfaces stay land:** ground colour through the year, snow on the ground, ice, fields (the
+  patchwork has to tile and follow the farmland's outline).
+- **Things are sprites:** trees, orchard trees, peaks, ships, fishing boats, caravans, sheaves.
+- **The seasons work on both:** the ground changes colour, and the sprites change palette or frame
+  (trees gold, red, bare and snowy; peaks whiter down their slopes; roofs under snow). Land-only
+  autumn woods would barely show, since the woods are mostly their tree sprites.
+
+`samples/seasonal-sprites.html` tries this with the app's own sprites.

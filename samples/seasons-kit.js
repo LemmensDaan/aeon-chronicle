@@ -238,6 +238,7 @@ function farmBase(id, s, l) {
 const ORCHARD = ["#4f9a3c", "#2f7436", "#3a6e2a"];
 function orchardPart(x, y) { return y % 3 === 0 ? (x % 3 === 0 ? 1 : x % 3 === 1 ? 2 : 0) : y % 3 === 1 && x % 3 === 0 ? 3 : 0; }
 K.build = build;
+K.fieldAt = fieldAt;
 
 /* ------------------------------------------------------------ the pieces of map */
 function coast(y, x0) { return x0 + (vnoise(0.5, y * 0.11, 1) - 0.5) * 16 - Math.max(0, y - 50) * 2.2; }
@@ -770,8 +771,8 @@ function sprite(f, rows, cols, x0, y0, flipX, landOk) {
     put(f, y * W + x, cols[ch]);
   }
 }
-FX.ships = function (f) {
-  const S = f.S, t = f.t / 1000;
+FX.ships = function (f, st, opts) {
+  const S = f.S, t = f.t / 1000, out = opts && opts.places;
   if (!S.laneHomes) S.laneHomes = S.lanes.map(function (l) { return homes(S, l, true); });
   S.lanes.forEach(function (lane, li) {
     const len = lane.length, hs = S.laneHomes[li], sea = lane.filter(function (q) { return inMap(q) && S.kind[q[1] * W + q[0]] === 1; });
@@ -796,6 +797,11 @@ FX.ships = function (f) {
       }
       const p = lane[Math.max(0, Math.min(len - 1, Math.round(at)))];
       if (!inMap(p)) continue;
+      if (out) {
+        const nx = lane[Math.max(0, Math.min(len - 1, Math.round(at) + dir))], wk = lane[Math.max(0, Math.min(len - 1, Math.round(at) - dir * 3))];
+        out.push({ x: p[0], y: p[1], moored: moored, left: nx[0] - p[0] < 0 || (nx[0] === p[0] && dir < 0), wake: wk, n: li * 3 + m });
+        continue;
+      }
       if (moored) { sprite(f, MOORED, MOORED_COL, p[0] - 2, p[1] - 2, false, false); continue; }
       const wk = lane[Math.max(0, Math.min(len - 1, Math.round(at) - dir * 3))];
       if (inMap(wk) && S.kind[wk[1] * W + wk[0]] === 1 && Math.floor(t * 4) % 2) put(f, wk[1] * W + wk[0], PALE);
@@ -811,8 +817,8 @@ const CAMEL = [".k.", "kkk", "k.k"], CAMEL_COL = { k: "#c8a060" };
 const CART = ["oll", "oww"], CART_COL = { o: "#4e2f16", l: "#d9c08a", w: "#2a1a0e" };
 const RIDER = ["m", "m"], RIDER_COL = { m: "#3a2a1a" };
 function snowed(S, i, lp) { return lp == null ? snowShare(S, i) >= 0.5 : snowMargin(S, i, lp) > 0.04; }
-FX.caravans = function (f) {
-  const S = f.S, t = f.t / 1000;
+FX.caravans = function (f, st, opts) {
+  const S = f.S, t = f.t / 1000, out = opts && opts.places;
   if (!S.roadHomes) S.roadHomes = S.roads.map(function (r) { return homes(S, r, false); });
   S.roads.forEach(function (road, ri) {
     const len = road.length, hs = S.roadHomes[ri];
@@ -835,6 +841,7 @@ FX.caravans = function (f) {
         if (!inMap(p)) continue;
         const i = p[1] * W + p[0], nx = road[Math.max(0, Math.min(len - 1, sm + dir))];
         const left = nx[0] - p[0] < 0, ox = parked ? (m % 2) * 3 - 1 : 0, oy = parked ? Math.floor(m / 2) * 2 + 1 : 0;
+        if (out) { out.push({ x: p[0] + ox, y: p[1] + oy, left: left, kind: S.rain[i] < 400 ? "camel" : m < 2 ? "cart" : "rider", parked: parked, m: m, n: ri * 2 + c }); continue; }
         if (S.rain[i] < 400) sprite(f, CAMEL, CAMEL_COL, p[0] - 1 + ox, p[1] - 2 + oy, left, true);
         else if (m < 2) sprite(f, CART, CART_COL, p[0] - 1 + ox, p[1] - 1 + oy, left, true);
         else sprite(f, RIDER, RIDER_COL, p[0] + ox, p[1] - 1 + oy, false, true);
@@ -847,7 +854,7 @@ FX.caravans = function (f) {
    are pulled up on it for the winter, and go out again once it has gone (huts: ice fishing on the
    frozen lake meanwhile) */
 FX.fishing = function (f, st, opts) {
-  const S = f.S, t = f.t / 1000;
+  const S = f.S, t = f.t / 1000, out = opts && opts.places;
   if (!S.fish) {
     S.fish = [];
     for (let i = 0; i < N; i++) {
@@ -874,6 +881,12 @@ FX.fishing = function (f, st, opts) {
     const b = S.fish[k], i = b.i;
     /* the ice comes from the shore, so they watch the water just off it */
     const th = threat(function (lp) { return iced(b.off, lp) || iced(i, lp); }, f.lp, f);
+    if (out) {
+      const hut = opts.huts && S.kind[i] === 2 && iced(i, f.lp);
+      if (th > 0.97) out.push({ x: b.hx, y: b.hy, beached: true, hut: hut ? [b.x, b.y] : null, n: k });
+      else out.push({ x: b.x + (b.hx - b.x) * th + Math.sin(t * 0.3 + k) * 1.5 * (1 - th), y: b.y + (b.hy - b.y) * th, rowing: th > 0, left: b.hx < b.x && th > 0, net: th === 0 && Math.sin(t * 0.9 + k * 3) > 0.7, n: k });
+      continue;
+    }
     if (th > 0.97) {
       /* pulled up on the shore, keel up */
       put(f, b.hy * W + b.hx, "#4e2f16");
@@ -890,6 +903,8 @@ FX.fishing = function (f, st, opts) {
     if (th === 0 && Math.sin(t * 0.9 + k * 3) > 0.7 && x + 2 < W && S.kind[j + 2] === S.kind[i]) put(f, j + 2, PALE);
   }
 };
+
+K.snowShare = snowShare; K.snowMargin = snowMargin; K.leafTiming = leafTiming; K.wetness = wetness; K.sdist = sdist; K.wrap = wrap;
 
 /* ------------------------------------------------------------ panels */
 const SPEEDS = [[1, "1 day/s"], [10, "10 days/s"], [30, "1 month/s"], [91, "1 season/s"], [365, "1 yr/s"],
@@ -932,10 +947,14 @@ K.run = function (SCENES, opts) {
     const names = sc.pair ? [sc.scene, sc.pair] : [sc.scene];
     const views = names.map(function (nm, k) {
       const box = document.createElement("div"); box.className = "view";
-      const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+      /* with sprites the land is drawn at 3 device pixels a map pixel and the sprites over it at 2,
+         about as the app has them zoomed in a little (spriteUnit) */
+      const cv = document.createElement("canvas"), SC = sc.sprites ? 3 : 1; cv.width = W * SC; cv.height = H * SC;
       box.appendChild(cv);
       if (sc.pair) { const tag = document.createElement("i"); tag.textContent = k ? "south (pole at the bottom)" : "north (pole at the top)"; box.appendChild(tag); }
-      return { S: K.scene(nm), g: cv.getContext("2d"), img: null, box: box, st: {} };
+      const layer = SC > 1 ? document.createElement("canvas") : cv;
+      layer.width = W; layer.height = H;
+      return { S: K.scene(nm), g: layer.getContext("2d"), out: cv.getContext("2d"), SC: SC, img: null, box: box, st: {} };
     });
     const row = document.createElement("div"); row.className = "views";
     views.forEach(function (v) { row.appendChild(v.box); v.img = v.g.createImageData(W, H); v.buf = new Uint32Array(v.img.data.buffer); });
@@ -976,6 +995,11 @@ K.run = function (SCENES, opts) {
         const f = { S: v.S, buf: v.buf, t: now, now: now, dt: dt, day: s.day, speed: speed, season: season, lp: local(season, v.S.south), paused: s.paused };
         p.sc.draw(f, v.st);
         v.g.putImageData(v.img, 0, 0);
+        if (v.SC > 1) {
+          v.out.imageSmoothingEnabled = false;
+          v.out.drawImage(v.g.canvas, 0, 0, W * v.SC, H * v.SC);
+          p.sc.sprites(f, v.out, v.SC, v.st);
+        }
       }
     }
     if (now - lastSync > 120) { lastSync = now; for (const p of panels) p.sync(); }

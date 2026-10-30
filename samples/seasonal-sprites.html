@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aeon — seasonal sprites</title>
+<link rel="stylesheet" href="../css/pixelify.css">
+<link rel="stylesheet" href="seasons-kit.css">
+</head>
+<body>
+<main>
+<h1>Seasonal sprites</h1>
+<p class="lede">The seasons on the sprites as well as the land. The land is drawn as in <a href="seasons.html">the
+seasons</a> (3 screen pixels a map pixel), and over it the app's own sprites at the settlements' scale (2 screen pixels
+a sprite pixel, as <code>spriteUnit</code> gives a little zoomed in): peaks, trees, pines and palms one per map cell
+where the app puts them, the village and the ports. The trees turn and go bare, the snow lies on the peaks, the pines,
+the bare branches and the roofs, the orchard is a sprite in rows, the fields get sheaves after the harvest, and the
+ships, boats and caravans are sprites that go home before the ice or snow. Each panel has a date, a speed and
+<b>held</b> (the look when the years go faster than one a second). <code>?only=4</code> shows one panel large.</p>
+<div class="all" id="all"><b>All panels</b></div>
+<div class="grid" id="grid"></div>
+</main>
+<script src="seasons-kit.js"></script>
+<script>
+"use strict";
+const K = SEASONS, FX = K.fx, B = K.B, W = K.W, H = K.H, hash = K.hash;
+const U = 2;                                   /* screen pixels a sprite pixel */
+const INK = "#2a1a0e", SNOW = "#f1f6fc", SNOW_SH = "#c3cddb", PALE = "#a6dbff";
+
+/* ------------------------------------------------------------ sprites, drawn from a cache per palette */
+let spriteId = 0;
+function sprite(rows, pal) { return { rows: rows, pal: pal, w: rows[0].length, h: rows.length, id: spriteId++ }; }
+const CACHE = new Map();
+function image(sp, over, flip) {
+  const key = sp.id + "|" + (over ? over.id : "") + (flip ? "f" : "");
+  let c = CACHE.get(key);
+  if (!c) {
+    c = document.createElement("canvas"); c.width = sp.w * U; c.height = sp.h * U;
+    const g = c.getContext("2d");
+    for (let j = 0; j < sp.h; j++) for (let i = 0; i < sp.w; i++) {
+      const ch = sp.rows[j][flip ? sp.w - 1 - i : i];
+      if (ch === ".") continue;
+      g.fillStyle = (over && over[ch]) || sp.pal[ch];
+      g.fillRect(i * U, j * U, U, U);
+    }
+    CACHE.set(key, c);
+  }
+  return c;
+}
+/* palette swaps: each gets an id for the cache */
+let overId = 0;
+function over(o) { o.id = "o" + overId++; return o; }
+/* a sprite standing on map point (mx, my), as pixelmap.js drawScenery places them */
+function stand(g, sp, mx, my, o, flip) {
+  g.drawImage(image(sp, o, flip), Math.round(mx * 3 + 1.5 - sp.w * U / 2), Math.round(my * 3 + 1.5 - sp.h * U + U));
+}
+
+/* the app's own (js/pixelmap.js, js/mapfx.js) */
+const PEAK = sprite(["....k....", "...kwk...", "..kwwlk..", "..kwlldk.", ".kllddddk", "klllddddk", "kkkkkkkkk"],
+  { k: "#2a2420", w: "#ffffff", l: "#a39482", d: "#6b5d4f" });
+const PINE = sprite(["..k..", ".kgk.", ".kgk.", "kgggk", ".kbk."], { k: "#14301f", g: "#2f6e45", b: "#5a3d22" });
+const TREE = sprite([".kkk.", "kgglk", "kgggk", ".kbk."], { k: "#13361b", g: "#3a8f42", l: "#6cc160", b: "#5a3d22" });
+const PALM = sprite(["kg.gk", ".ggg.", "..b..", "..b.."], { k: "#14451f", g: "#2fa055", b: "#7a5a2e" });
+const ROOF = { k: INK, w: "#efe6d6", g: "#b7b1a4", b: "#7a4a22", B: "#4e2f16", h: "#a8743c", f: "#3a6ea5", F: "#244a73", y: "#e0b84f", c: "#efe6d6", d: "#c9bc9a" };
+const VILLAGE = sprite(["...k...", "..kfk..", ".kffFk.", "kfffFFk", ".kwkwk.", ".kkkkk."], ROOF);
+/* TOWN as pixelmap.js composes it: LOW5 and LOW7 behind the STOCKADE */
+const TOWN = sprite(["......kkk..", ".kkk.kffFk.", "kffFkfffFFk", "kwkwkwkwkwk", "khbhkkkhbhk", "khbhkBkhbhk", "kkkkkkkkkkk"], ROOF);
+const ROWBOAT = sprite(["k...k", "kbbbk", ".kkk."], ROOF);
+const SAIL = sprite(["......k......", "....kkkkk....", "...kfffffk...", "...kfFFffk...", "...kfffffk...", "....kkkkk....",
+  "k.....k.....k", "kbbbbbbbbbbbk", ".kbbbbbbbbbk.", "..kkkkkkkkk.."], { k: INK, f: "#b5452e", F: "#7a2a1a", b: "#7a4a22" });
+
+/* new ones */
+const TREE_THIN = sprite([".k.k.", "kg.lk", ".gkg.", ".kbk."], TREE.pal);
+const TREE_BARE = sprite(["b.b.b", ".bbb.", "..b..", ".kbk."], { k: "#13361b", b: "#5a4030" });
+const TREE_BARE_SNOW = sprite(["w.w.w", ".bwb.", "..b..", ".kbk."], { k: "#13361b", b: "#5a4030", w: SNOW });
+const TREE_BUD = sprite(["g.g.g", ".bgb.", "..b..", ".kbk."], { k: "#13361b", b: "#5a4030", g: "#7cc050" });
+const PINE_SNOW = sprite(["..w..", ".kwk.", ".kgk.", "kwgwk", ".kbk."], { k: "#14301f", g: "#2f6e45", b: "#5a3d22", w: SNOW });
+const PINE_DEEP = sprite(["..w..", ".kwk.", ".wgw.", "kwwwk", ".kbk."], { k: "#14301f", g: "#2f6e45", b: "#5a3d22", w: SNOW });
+const OTREE = sprite([".kkk.", "kglgk", ".kgk.", "..b.."], { k: "#13361b", g: "#3a8f42", l: "#6cc160", b: "#5a3d22" });
+const OTREE_BARE = sprite(["b.b.b", ".bbb.", "..b..", "..b.."], { b: "#5a4030" });
+const OTREE_BUD = sprite(["p.p.p", ".bpb.", "..b..", "..b.."], { b: "#5a4030", p: "#e7a9bc" });
+const OTREE_SNOW = sprite(["w.w.w", ".bwb.", "..b..", "..b.."], { b: "#5a4030", w: SNOW });
+const STOOK = sprite([".k.", "kyk", "kyk"], { k: "#7a5a22", y: "#e0c060" });
+/* a small trading cog (sail up / furled in harbour), a fishing boat with its sail, and the boats
+   pulled up keel up; an ice-fishing hut */
+const COG = sprite(["...k...", "..kcc..", "..kccd.", "..kcdd.", "k..k..k", "kbbbbbk", ".kkkkk."], ROOF);
+const COG_MOORED = sprite(["...k...", "...k...", "..kck..", "...k...", "k..k..k", "kbbbbbk", ".kkkkk."], ROOF);
+const FISHER = sprite(["..k..", "..kc.", "..kcc", "kbbbk", ".kkk."], ROOF);
+const KEEL_UP = sprite([".kkk.", "kbbbk"], ROOF);
+const HUT = sprite(["..k..", ".kbk.", "kbbbk", "kbkbk"], ROOF);
+const CAMEL = sprite(["..k....", ".kck..k", "kccckkc", "kcccck.", ".k..k.."], { k: INK, c: "#c8a060" });
+const CART = sprite(["kkkk....", "kllk.kk.", "kllkkook", ".kk.kook", ".kwk.k.k"], { k: INK, l: "#d9c08a", o: "#7a4a22", w: "#4e2f16" });
+const RIDER = sprite([".m..", ".m..", "kook", "kook", "k..k"], { k: INK, m: "#3a5a8a", o: "#6b5a4a" });
+
+/* palettes */
+const FRESH = over({ g: "#5aa83c", l: "#a6dc7a" });
+const AUTUMN = {
+  gold: [over({ l: "#e0bd4a" }), over({ k: "#5a3f12", g: "#c29d2e", l: "#e8c860" })],
+  red: [over({ l: "#d9763a" }), over({ k: "#4a1a10", g: "#a8432a", l: "#d9763a" })],
+  russet: [over({ l: "#b07a44" }), over({ k: "#3a2412", g: "#8a5a30", l: "#b07a44" })],
+};
+const DRY = over({ k: "#3a3010", g: "#8a7a3a", l: "#b5a050" }), HALF_DRY = over({ g: "#6a8a3a", l: "#a0b858" });
+const BLOSSOM = over({ k: "#9a7a72", g: "#fbf3f6", l: "#f2c4d2" }), OVER = over({ g: "#8ac46a", l: "#f6cfdc" }), APPLES = over({ l: "#c8402a" });
+const ROOF_DUST = over({ F: "#e3eaf2" }), ROOF_SNOW = over({ f: SNOW, F: SNOW_SH });
+/* the peak whiter down its slope, a row at a time */
+const PEAK_SNOW = [null];
+for (let n = 1; n <= 5; n++) {
+  const rows = PEAK.rows.map(function (r, j) { return j < 2 + n ? r.replace(/l/g, "w").replace(/d/g, "s") : r; });
+  PEAK_SNOW.push(sprite(rows, Object.assign({ s: SNOW_SH }, PEAK.pal)));
+}
+
+/* ------------------------------------------------------------ where the sprites stand */
+const PPC = 4;
+function scenery(S) {
+  if (S.props) return S.props;
+  const props = [];
+  for (let cy = 0; cy * PPC < H; cy++) for (let cx = 0; cx * PPC < W; cx++) {
+    const px = Math.min(W - 1, cx * PPC + 2), py = Math.min(H - 1, cy * PPC + 2), i = py * W + px, b = S.biome[i];
+    if (S.kind[i] !== 0 || S.road[i]) continue;
+    const k = hash(cx * 977 + cy, 1), x = px + Math.floor(hash(cx * 977 + cy, 2) * 3) - 1, y = py + Math.floor(hash(cx * 977 + cy, 3) * 3) - 1;
+    if (b === B.mountain && k < 0.4) props.push({ kind: "peak", x: x, y: y, i: i });
+    else if (b === B.forest && k < 0.55) props.push({ kind: "tree", x: x, y: y, i: i, sp: hash(cx * 977 + cy, 4) });
+    else if (b === B.jungle && k < 0.55) props.push({ kind: "palm", x: x, y: y, i: i });
+    else if (b === B.taiga && k < 0.5) props.push({ kind: "pine", x: x, y: y, i: i });
+    else if ((b === B.grass || b === B.savanna || b === B.steppe) && k < 0.05) props.push({ kind: "tree", x: x, y: y, i: i, sp: hash(cx * 977 + cy, 4) });
+  }
+  /* the orchard in rows, a tree every 4 by 3 map pixels; sheaves on the cornfields */
+  for (let i = 0; i < W * H; i++) {
+    const x = i % W, y = (i - x) / W;
+    if (S.biome[i] === B.orchard && x % 4 === 1 && y % 3 === 1) props.push({ kind: "otree", x: x, y: y, i: i, tree: hash(x, y * 3) });
+    if (S.biome[i] === B.farm && !S.hedge[i] && hash(S.field[i], 3) >= 0.3 && hash(S.field[i], 3) < 0.8 && x % 3 === 1 && y % 2 === 1 && hash(i, 301) < 0.45)
+      props.push({ kind: "stook", x: x, y: y, i: i });
+  }
+  for (const t of S.towns) props.push({ kind: t.port ? "town" : "village", x: t.x, y: t.y, i: t.y * W + t.x });
+  props.sort(function (a, b) { return a.y - b.y; });
+  return (S.props = props);
+}
+/* snow lying at a pixel: how deep into its season (above 0: lying), as the land's snow */
+function snowAt(f, i) { return f.lp == null ? (K.snowShare(f.S, i) >= 0.5 ? 0.1 : -1) : K.snowMargin(f.S, i, f.lp); }
+
+/* each sprite's look on the day */
+function treeLook(f, p) {
+  const S = f.S, i = p.i, q = f.lp, cold = S.cold[i];
+  if (q == null) return cold > 9 && S.sum[i] > 0.55 ? [TREE, HALF_DRY] : [TREE, null];
+  if (cold > 9) {
+    if (S.sum[i] <= 0.55) return [TREE, null];
+    const w = K.wetness(q);
+    return [TREE, w < 0.33 ? DRY : w < 0.7 ? HALF_DRY : null];
+  }
+  if (cold < -12) return snowAt(f, i) > 0 ? [PINE_SNOW, null] : [TREE, null];
+  const tm = K.leafTiming(S, i), sp = p.sp < 0.45 ? "gold" : p.sp < 0.8 ? "red" : "russet";
+  if (q >= tm.turn) {
+    const k = (q - tm.turn) / 0.14;
+    if (k < 0.2) return [TREE, AUTUMN[sp][0]];
+    if (k < 0.6) return [TREE, AUTUMN[sp][1]];
+    if (k < 0.85) return [TREE_THIN, AUTUMN[sp][1]];
+    return [snowAt(f, i) > 0 ? TREE_BARE_SNOW : TREE_BARE, null];
+  }
+  if (q < tm.out) return [snowAt(f, i) > 0 ? TREE_BARE_SNOW : TREE_BARE, null];
+  if (q < tm.out + 0.02) return [TREE_BUD, null];
+  if (q < tm.out + 0.07) return [TREE, FRESH];
+  return [TREE, null];
+}
+function orchardLook(f, p) {
+  const S = f.S, q = f.lp, i = p.i;
+  if (q == null) return [OTREE, null];
+  const tm = K.leafTiming(S, i), start = tm.out - 0.08 + p.tree * 0.045, k = (q - start) / 0.04, bare = snowAt(f, i) > 0 ? OTREE_SNOW : OTREE_BARE;
+  if (q >= tm.turn) {
+    const a = (q - tm.turn) / 0.14;
+    return a < 0.6 ? [OTREE, AUTUMN.gold[a < 0.2 ? 0 : 1]] : [bare, null];
+  }
+  if (k < 0) return [bare, null];
+  if (k < 0.15) return [OTREE_BUD, null];
+  if (k < 0.7) return [OTREE, BLOSSOM];
+  if (k < 1) return [OTREE, OVER, true];
+  if (q > 0.56) return [OTREE, APPLES];
+  return [OTREE, null];
+}
+function peakLook(f, p) {
+  const m = snowAt(f, p.i);
+  if (m <= 0) return PEAK;
+  return PEAK_SNOW[Math.max(1, Math.min(5, 1 + Math.floor(m / 0.03)))];
+}
+function roofLook(f, p) {
+  const m = snowAt(f, p.i);
+  return m <= 0 ? null : m < 0.02 ? ROOF_DUST : ROOF_SNOW;
+}
+
+/* the scenery, seasonal or (as now) not */
+function drawScenery(f, g, seasonal) {
+  for (const p of scenery(f.S)) {
+    if (p.kind === "peak") stand(g, seasonal ? peakLook(f, p) : PEAK, p.x, p.y, null);
+    else if (p.kind === "pine") stand(g, seasonal ? (snowAt(f, p.i) > 0.05 ? PINE_DEEP : snowAt(f, p.i) > 0 ? PINE_SNOW : PINE) : PINE, p.x, p.y, null);
+    else if (p.kind === "palm") stand(g, PALM, p.x, p.y, null);
+    else if (p.kind === "tree") { const l = seasonal ? treeLook(f, p) : [TREE, null]; stand(g, l[0], p.x, p.y, l[1]); }
+    else if (p.kind === "otree") {
+      const l = seasonal ? orchardLook(f, p) : [OTREE, null];
+      if (l[2]) { g.fillStyle = "#f2c4d2"; g.fillRect(p.x * 3 - 2, p.y * 3 + 4, U, U); g.fillRect(p.x * 3 + 3, p.y * 3 + 5, U, U); }   /* petals under it */
+      stand(g, l[0], p.x, p.y, l[1]);
+    } else if (p.kind === "stook") {
+      if (!seasonal || f.lp == null) continue;
+      const fj = hash(f.S.field[p.i], 4) * 0.05;
+      if (f.lp >= 0.65 + fj && f.lp < 0.72 + fj) stand(g, STOOK, p.x, p.y, null);
+    } else stand(g, p.kind === "town" ? TOWN : VILLAGE, p.x, p.y, seasonal ? roofLook(f, p) : null);
+  }
+}
+/* the orchard's ground is plain grass under its tree sprites (the land's own tree pixels go):
+   each takes the colour the grass beside it has today */
+function orchardGround(f) {
+  const S = f.S;
+  for (let i = 1; i < W * H - 1; i++) if (S.biome[i] === B.orchard && S.otree[i]) f.buf[i] = f.buf[S.otree[i - 1] ? i + 1 : i - 1];
+}
+function ships(f, g, big) {
+  const out = [];
+  FX.ships(f, null, { places: out });
+  for (const s of out) {
+    if (!s.moored && s.wake && Math.floor(f.t / 250) % 2) { g.fillStyle = PALE; g.fillRect(s.wake[0] * 3, s.wake[1] * 3 + 1, U, U); }
+    if (big) stand(g, SAIL, s.x, s.y + 1, null, s.left);
+    else stand(g, s.moored ? COG_MOORED : COG, s.x, s.y + 1, null, s.left);
+  }
+}
+function boats(f, g, huts) {
+  const out = [];
+  FX.fishing(f, null, { places: out, huts: huts });
+  for (const b of out) {
+    if (b.beached) { stand(g, KEEL_UP, b.x, b.y, null); if (b.hut) { stand(g, HUT, b.hut[0], b.hut[1], null); g.fillStyle = "#2a3a5a"; g.fillRect(b.hut[0] * 3 + 6, b.hut[1] * 3 + 2, U, U); } continue; }
+    stand(g, b.rowing ? ROWBOAT : FISHER, b.x, b.y + 1, null, b.left);
+    if (b.net) { g.fillStyle = PALE; g.fillRect(Math.round(b.x * 3) + 8, b.y * 3 + 3, U, U); g.fillRect(Math.round(b.x * 3) + 11, b.y * 3 + 4, U, U); }
+  }
+}
+function caravans(f, g) {
+  const out = [];
+  FX.caravans(f, null, { places: out });
+  out.sort(function (a, b) { return a.y - b.y; });
+  for (const c of out) stand(g, c.kind === "camel" ? CAMEL : c.kind === "cart" ? CART : RIDER, c.x, c.y + 1, null, c.left);
+}
+
+/* the land, as on the seasons page */
+function water(f) { FX.seaFoam(f); FX.current(f); FX.lakeIce(f); }
+function ground(f) { water(f); FX.plains(f); FX.autumn(f); orchardGround(f); FX.snow(f); }
+
+const SCENES = [
+  { title: "As now: the ground changes, the sprites don't", scene: "temperate", start: 288, note: "For comparison: the land goes through the year (fields, grass, woods' ground, snow, lake ice) but the trees, pines, peaks and roofs stay as they are. The woods show mostly as their tree sprites, so autumn and winter barely show there.",
+    draw: function (f) { ground(f); }, sprites: function (f, g) { drawScenery(f, g, false); } },
+  { title: "Trees through the year", scene: "temperate", start: 244, note: "Each broadleaf tree turns on its own day, the colder the earlier: a gold, red or russet edge first, then all of it, then thinning, then bare (snow on its branches when it lies), in bud and a fresh green in spring. Held: green.",
+    draw: function (f) { ground(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
+  { title: "Snow on the sprites", scene: "temperate", start: 300, note: "Where the snow lies on the ground it lies on the sprites too: the peaks whiten a row further down as the winter deepens, the pines and bare trees get snow on their branches, the roofs a dusting and then white. With the snowfall. Held: only where snow lies more than half the year.",
+    draw: function (f) { ground(f); FX.snowfall(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
+  { title: "The orchard as sprites", scene: "temperate", start: 60, speed: 1, note: "The village orchard as rows of small fruit trees: bare, in bud, in blossom tree by tree (white with pink), petals in the grass as it goes over, in leaf, red with apples in late summer, gold, bare, snowy. Starts at 10 days/s. Held: in leaf.",
+    draw: function (f) { ground(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
+  { title: "Sheaves on the fields", scene: "temperate", start: 200, note: "The cornfields (striped land, as on the seasons page) get sheaves standing in rows for the weeks between the harvest and the plough, each field on its own days. Held: none.",
+    draw: function (f) { ground(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
+  { title: "Savanna trees, wet and dry", scene: "tropical", start: 121, note: "The lone trees on the savanna (and the land under them) green in the rains, olive and then brown through the dry season; palms stay green. With the rains. Held: in between.",
+    draw: function (f) { water(f); FX.wetDry(f); FX.monsoonRain(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
+  { title: "Merchant ships as sprites", scene: "trade", start: 0, note: "A small trading cog on the lanes, a pale wake behind: smaller than the fleets' ships, so trade does not look like a navy.",
+    draw: function (f) { water(f); }, sprites: function (f, g) { drawScenery(f, g, true); ships(f, g); } },
+  { title: "Merchant ships as the fleet's ship", scene: "trade", start: 0, note: "7 with the fleets' own sail ship (mapfx.js) instead, in a realm's colour, for comparison: bigger and grander.",
+    draw: function (f) { water(f); }, sprites: function (f, g) { drawScenery(f, g, true); ships(f, g, true); } },
+  { title: "Merchant ships on a cold sea", scene: "temperate", start: 330, speed: 1, note: "Before the sea ice closes a lane its cogs make for the nearest harbour (or sail off the map) and lie there with their sails furled until it opens. Starts at 10 days/s.",
+    draw: function (f) { ground(f); FX.seaIce(f); }, sprites: function (f, g) { drawScenery(f, g, true); ships(f, g); } },
+  { title: "Fishing boats as sprites", scene: "trade", start: 0, note: "Small boats with a sail off the coast and on the lake, rocking, a net going out now and then.",
+    draw: function (f) { water(f); }, sprites: function (f, g) { drawScenery(f, g, true); boats(f, g); } },
+  { title: "Fishing on a lake that freezes", scene: "temperate", start: 320, speed: 1, note: "Before the ice reaches the shore they take down the sail and row in, and lie keel up on the shore through the winter; on the frozen lake, ice-fishing huts with their holes. Starts at 10 days/s.",
+    draw: function (f) { ground(f); FX.seaIce(f); }, sprites: function (f, g) { drawScenery(f, g, true); boats(f, g, true); } },
+  { title: "Caravans as sprites", scene: "trade", start: 0, note: "Camels where the land is dry (desert and steppe), an ox cart and a rider on a mule elsewhere, changing on the road from the desert town to the market.",
+    draw: function (f) { water(f); }, sprites: function (f, g) { drawScenery(f, g, true); caravans(f, g); } },
+  { title: "Caravans in the north", scene: "temperate", start: 300, speed: 1, note: "Ox carts and riders make for the nearest town before the snow closes their stretch of road, and wait there until it melts. Starts at 10 days/s.",
+    draw: function (f) { ground(f); }, sprites: function (f, g) { drawScenery(f, g, true); caravans(f, g); } },
+  { title: "Northern year, all together", scene: "temperate", start: 244, note: "2 + 3 + 4 + 5 + 9 + 11 + 13.",
+    draw: function (f) { ground(f); FX.seaIce(f); FX.snowfall(f); }, sprites: function (f, g) { drawScenery(f, g, true); caravans(f, g); boats(f, g, true); ships(f, g); } },
+  { title: "Trade coast, all together", scene: "trade", start: 0, note: "7 + 10 + 12.",
+    draw: function (f) { water(f); FX.plains(f); }, sprites: function (f, g) { drawScenery(f, g, true); caravans(f, g); boats(f, g); ships(f, g); } },
+  { title: "North and south", scene: "temperate", pair: "south", start: 0, note: "2 + 3 + 4 in both hemispheres, the south mirrored so its pole is at the bottom: one date, opposite seasons on the sprites too.",
+    draw: function (f) { ground(f); FX.snowfall(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
+];
+SEASONS.run(SCENES);
+</script>
+</body>
+</html>

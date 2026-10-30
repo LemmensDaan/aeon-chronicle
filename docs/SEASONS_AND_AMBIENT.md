@@ -73,7 +73,8 @@ From `samples/seasons.html` and `samples/ambient-life.html` (three rounds):
   style "mass": dark, rain driven before it, lightning: big strikes flashing the whole storm with a forked bolt and small short bolts between them,
   whitecaps, surf on the coast and the sea washing over the beaches). Tornadoes seen from the side, no cloud and no fill: the funnel only particles
   whirling up it, dust and debris at its foot; dust-coloured over land, the gales' rain colours over
-  water: sea, lakes and rivers (a waterspout).
+  water: sea, lakes and rivers (a waterspout); changing over, the new colours climb the funnel
+  from its foot to its top in about a second and a half.
 - **Set aside for later:** winter gales. Well made (fronts sweeping in from the west, dark with
   rain or snow, whitecaps under them; `FX.gales` in `samples/seasons-kit.js`), but would players
   read them as gales?

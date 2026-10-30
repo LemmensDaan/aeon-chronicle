@@ -8,6 +8,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
 
 ## Where we are (2026-10-23) — start here
 
+- **Next direction (2026-10-30): region chapters, `docs/REGION_CHAPTERS.md`.** The world keeps the
+  4500-year epic; a region plays a chosen 30-80-year chapter, run live with monthly ticks, at 10
+  days/s (seasons and kingdoms both alive). Decisions and build order are in the doc. Tried and
+  dropped first: a separate season clock (breaks weather-dependent invasions) and easing playback
+  into the seasons around great moments (history still too slow per year).
+
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a
   repo; that is out of date.)

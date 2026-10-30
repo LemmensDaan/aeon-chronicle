@@ -69,9 +69,10 @@ From `samples/seasons.html` and `samples/ambient-life.html` (three rounds):
   and the revised lightning; phytoplankton blooms; sea ice; the north/south and mixed panels.
 - **Settled 2026-10-30:** the orchard as sprites (`samples/seasonal-sprites.html`), farmland as
   striped fields without hedgerows, sheaves on the fields after the harvest (sprites).
-- **Storms, still open:** the top-down hurricanes (spiral, storm mass) are out; what stays is their
-  sea washing over the coast as a storm passes. Next try: storms seen from the side, like the
-  sprites (`samples/seasonal-sprites.html`).
+- **Storms, still open:** hurricanes stay top-down (the whirling version: dark under it, streaks
+  spiralling in to a calm eye, the sea washing over the coast); seen from the side they looked
+  wrong. Tornadoes are seen from the side, a twisting funnel with dust and debris at its foot, but
+  with no cloud and no fill: the funnel made only of particles whirling up it (dust or rain colours).
 - **Set aside for later:** winter gales. Well made (fronts sweeping in from the west, dark with
   rain or snow, whitecaps under them; `FX.gales` in `samples/seasons-kit.js`), but would players
   read them as gales?

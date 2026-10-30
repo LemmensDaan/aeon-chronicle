@@ -235,110 +235,32 @@ function caravans(f, g) {
   for (const c of out) stand(g, c.kind === "camel" ? CAMEL : c.kind === "cart" ? CART : RIDER, c.x, c.y + 1, null, c.left);
 }
 
-/* ------------------------------------------------------------ storms seen from the side */
-/* A storm stands up off the map like the sprites, drawn on the sprites' 2-pixel grid: a lumpy
-   cloud with a pale top and a dark underside, churning, its foot on the map point the kit gives. */
-function cloud(g, gx, baseY, half, thick, t, seed) {
-  /* puffs along the base and a few piled up in the middle, each swelling and drifting a little */
-  const puffs = [], n = 7;
-  for (let k = 0; k < n; k++) {
-    const r = half * (0.26 + 0.14 * K.hash(seed, k)) * (1 + 0.07 * Math.sin(t * 0.9 + k * 2));
-    puffs.push([gx + (k / (n - 1) - 0.5) * 2 * half * 0.8 + Math.sin(t * 0.4 + k) * U, baseY - r * 0.5, r]);
-  }
-  for (let k = 0; k < 3; k++) {
-    const r = thick * (0.45 + 0.15 * K.hash(seed, k + 9)) * (1 + 0.06 * Math.sin(t * 0.7 + k * 3));
-    puffs.push([gx + (k - 1) * half * 0.35 + Math.sin(t * 0.5 + k) * U, baseY - thick * 0.55 - k % 2 * thick * 0.2, r]);
-  }
-  const inside = function (x, y) {
-    if (y > baseY + U) return false;
-    for (const p of puffs) { const dx = x - p[0], dy = y - p[1]; if (dx * dx + dy * dy < p[2] * p[2]) return true; }
-    return false;
-  };
-  const x0 = Math.floor((gx - half * 1.3) / U) * U, y0 = Math.floor((baseY - thick * 1.4) / U) * U;
-  for (let y = y0; y <= baseY + U; y += U) for (let x = x0; x <= gx + half * 1.3; x += U) {
-    if (!inside(x, y)) continue;
-    const up = !inside(x, y - U), up2 = !inside(x, y - 2 * U), up3 = !inside(x, y - 3 * U), down = !inside(x, y + U), side = !inside(x - U, y) || !inside(x + U, y);
-    g.fillStyle = up || side ? "#2a2e36" : down ? "#4e5866" : up2 ? "#e3eaf2" : up3 ? "#c5ced8" : !inside(x - 2 * U, y - 2 * U) ? "#a7b2bf" : y > baseY - thick * 0.3 ? "#5f6a77" : "#77828f";
-    g.fillRect(x, y, U, U);
-  }
-}
-/* rain falling from the cloud's base to the ground, slanting with the wind, in lines as in the gales */
-function rain(g, gx, baseY, groundY, half, t, slant, dense) {
-  const rows = Math.max(1, Math.round((groundY - baseY) / U)), cw = Math.round(half / U), tick = Math.floor(t * 14);
-  g.fillStyle = "rgba(40, 50, 64, 0.22)";
-  g.fillRect(Math.round(gx - half + slant * rows * U * 0.5), baseY + U, half * 2, groundY - baseY);
-  g.fillStyle = "#9fb8d0";
-  for (let j = 1; j <= rows; j++) for (let c = -cw; c <= cw; c++) {
-    if ((((c + j - tick) % dense) + dense) % dense !== 0) continue;
-    if (K.hash(c * 7 + j, tick >> 2) < 0.25) continue;
-    g.fillRect(Math.round(gx + c * U + slant * j * U), Math.round(baseY + j * U), U, U);
-  }
-}
-function bolt(g, x, y0, y1, seed) {
-  g.fillStyle = "#fff8d0";
-  let bx = x;
-  for (let y = y0; y < y1; y += U) { if (K.hash(seed, y) < 0.4) bx += K.hash(seed, y + 1) < 0.5 ? -U : U; g.fillRect(bx, y, U, U); }
-  g.fillRect(bx - U, y1 - U, U * 3, U);
-}
-/* a hurricane: a towering wall of cloud with rain sheeting down under it and whipped along by the
-   wind, light bands racing across its face, now and then lightning */
-function hurricaneSide(g, h, t) {
-  const gx = h.x * 3, gy = h.y * 3, rD = h.r * 3, half = rD * 1.3, base = gy - rD * 0.95;
-  rain(g, gx, base, gy, half * 0.9, t, -0.5, 3);
-  cloud(g, gx, base, half, rD, t, h.n);
-  /* the wind across the cloud's face */
-  g.fillStyle = "#dfe7ef";
-  for (let q = 0; q < 6; q++) {
-    const yy = Math.round((base - U * (2 + q * 2)) / U) * U, run = ((t * 60 + q * 37) % (half * 2.4)) - half * 1.2;
-    for (let k = 0; k < 4; k++) g.fillRect(Math.round((gx + run - k * U) / U) * U, yy, U, U);
-  }
-  const slot = Math.floor(t / 0.7 + h.n);
-  if (K.hash(h.n, slot) < 0.35 && (t / 0.7 + h.n) % 1 < 0.12) bolt(g, Math.round((gx + (K.hash(h.n, slot + 1) - 0.5) * half) / U) * U, base + U, gy, slot);
-}
-/* a tornado: a dark cloud with a twisting funnel down to the ground, bands running up it, debris whirling at its foot */
-function tornadoSide(g, o, t) {
-  const gx = o.x * 3, gy = o.y * 3, rows = 26, base = gy - rows * U, life = Math.sin(Math.PI * Math.min(1, o.p * 1.15));
-  cloud(g, gx, base - U, 26, 18, t, o.n);
-  const reach = Math.round(rows * Math.min(1, life * 1.6));          /* the funnel comes down, and lifts at the end */
-  for (let j = 0; j < reach; j++) {
-    const up = 1 - j / rows, w = Math.max(1, Math.round(1 + up * up * 5)), off = Math.sin(j * 0.22 + t * 3) * (1 + up * 2);
-    for (let c = -w; c <= w; c++) {
-      g.fillStyle = Math.abs(c) === w ? "#3e3a36" : (((j + Math.floor(t * 18)) % 3) === 0 ? "#a39c90" : "#6e6a64");
-      g.fillRect(Math.round(gx + (c + off) * U), base + j * U, U, U);
+/* ------------------------------------------------------------ tornadoes, seen from the side */
+/* No cloud and no fill: the funnel is only what the wind carries, particles whirling round its
+   twisting axis and rising up it, wider towards the top and thinning out there; the ones on the
+   near side lighter than those behind. pal: [near, far] colours; the dust at its foot is the kit's. */
+const DUST = ["#e6d4ac", "#5a3e24"], RAIN = ["#c9d8e6", "#5f7488"];
+function tornado(g, o, t, pal) {
+  const gx = o.x * 3, gy = o.y * 3, rows = 26, life = Math.sin(Math.PI * Math.min(1, o.p * 1.15));
+  const reach = rows * Math.min(1, life * 1.6);                      /* it reaches down, and lifts at the end */
+  for (let q = 0; q < 200; q++) {
+    const rise = (K.hash(q, o.n * 7 + 1) + t * 0.35 * (0.6 + K.hash(q, 2) * 0.8)) % 1;
+    /* height above the ground: the funnel hangs from the top and reaches down as far as reach */
+    const h = rows - reach + rise * reach, top = h / rows;
+    if (top > 0.8 && K.hash(q, 3) < (top - 0.8) / 0.2) continue;   /* thinning out at the top */
+    const w = 1 + top * top * 5, off = Math.sin((rows - h) * 0.22 + t * 3) * (1 + top * 2), a = K.hash(q, 4) * 6.283 + t * (8 - top * 4);
+    /* each a short streak along its way round */
+    g.fillStyle = Math.sin(a) > 0 ? pal[0] : pal[1];
+    for (let k = 0; k < 2; k++) {
+      const b = a - k * 0.4;
+      g.fillRect(Math.round((gx + (off + Math.cos(b) * w) * U) / U) * U, Math.round((gy - h * U + Math.sin(b) * U * 0.5) / U) * U, U, U);
     }
   }
   if (reach < rows * 0.9) return;
-  g.fillStyle = "#6b4a2a";
+  /* debris thrown round at its foot */
   for (let q = 0; q < 10; q++) {
     const a = K.hash(q, o.n) * 6.283 + t * 6, rr = 4 + K.hash(q, o.n + 1) * 7;
-    g.fillRect(Math.round(gx + Math.cos(a) * rr * U), Math.round(gy - U * 2 - Math.abs(Math.sin(a)) * rr * U * 0.6), U, U);
-  }
-}
-
-/* the tornado in the gale's style: no solid cloud, the storm a dark wash over the map as the gales
-   are, and the funnel the same wash, darker at its edges, the gale's pale rain lines twisting up it */
-function tornadoGale(g, o, t) {
-  const gx = o.x * 3, gy = o.y * 3, rows = 26, base = gy - rows * U, life = Math.sin(Math.PI * Math.min(1, o.p * 1.15)), tick = Math.floor(t * 16);
-  /* the cloud: a dark wash with a ragged edge, rain lines falling out of it */
-  for (let y = base - 22; y <= base + U; y += U) for (let x = Math.round((gx - 54) / U) * U; x <= gx + 40; x += U) {
-    const d = Math.hypot((x - gx + 8) / 50, (y - base + 8) / 16) + (K.vnoise(x * 0.08 - t * 0.6, y * 0.1, 82) - 0.5) * 0.5;
-    if (d > 1) continue;
-    g.fillStyle = "rgba(24, 30, 40, " + (0.62 - d * 0.3).toFixed(2) + ")"; g.fillRect(x, y, U, U);
-    if ((((x / U) * 3 + y / U + tick) % 6) === 0) { g.fillStyle = "#9fb8d0"; g.fillRect(x, y, U, U); }
-  }
-  const reach = Math.round(rows * Math.min(1, life * 1.6));
-  for (let j = 0; j < reach; j++) {
-    const up = 1 - j / rows, w = Math.max(1, Math.round(1 + up * up * 5)), off = Math.sin(j * 0.22 + t * 3) * (1 + up * 2);
-    for (let c = -w; c <= w; c++) {
-      const x = Math.round(gx + (c + off) * U), y = base + j * U;
-      g.fillStyle = Math.abs(c) === w ? "rgba(20, 24, 32, 0.9)" : "rgba(24, 30, 40, 0.62)"; g.fillRect(x, y, U, U);
-      if ((((c * 2 + j + tick) % 5) + 5) % 5 === 0 && Math.abs(c) < w) { g.fillStyle = "#9fb8d0"; g.fillRect(x, y, U, U); }
-    }
-  }
-  if (reach < rows * 0.9) return;
-  for (let q = 0; q < 10; q++) {
-    const a = K.hash(q, o.n) * 6.283 + t * 6, rr = 4 + K.hash(q, o.n + 1) * 7;
-    g.fillStyle = q % 3 ? "#4e3a24" : "#9fb8d0";
+    g.fillStyle = q % 3 ? "#4e3a24" : pal[0];
     g.fillRect(Math.round(gx + Math.cos(a) * rr * U), Math.round(gy - U * 2 - Math.abs(Math.sin(a)) * rr * U * 0.6), U, U);
   }
 }
@@ -380,15 +302,14 @@ const SCENES = [
     draw: function (f) { water(f); FX.plains(f); }, sprites: function (f, g) { drawScenery(f, g, true); caravans(f, g); boats(f, g); ships(f, g); } },
   { title: "North and south", scene: "temperate", pair: "south", start: 0, note: "2 + 3 + 4 in both hemispheres, the south mirrored so its pole is at the bottom: one date, opposite seasons on the sprites too.",
     draw: function (f) { ground(f); FX.snowfall(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
-  { title: "Hurricanes from the side", scene: "tropical", start: 225, note: "The storm stands up off the map like the sprites: a towering wall of cloud, pale on top and dark underneath, churning, light bands of wind racing across its face, rain sheeting down under it slanting with the wind, now and then lightning. Under it the land and sea go darker and the sea washes over the beaches and the coast ahead (kept from the top-down storms). Two or three a year in late summer and autumn, in off the sea and curving poleward; at least seven seconds each. None when held.",
-    draw: function (f, st) { water(f); FX.wetDry(f); FX.sideHurricanes(f, st, { places: (st.storms = []) }); },
-    sprites: function (f, g, sc, st) { drawScenery(f, g, true); for (const h of st.storms || []) hurricaneSide(g, h, f.t / 1000); } },
-  { title: "Tornadoes from the side", scene: "temperate", start: 110, speed: 1, note: "A dark cloud with a twisting funnel that reaches down to the ground and lifts again at the end, bands running up it, dust and debris whirling at its foot as it wanders east over the open land. Four or so a year in spring and early summer, at least six seconds each. Starts at 10 days/s. None when held.",
+  { title: "Hurricanes, top-down", scene: "tropical", start: 225, note: "Back to the top-down storm (the last version from the seasons page): the land and sea dark under it, streaks of rain and spray whirling round and spiralling in to a calm eye (anticlockwise in the north) round a darker eyewall, whitecaps under it, surf on the coast ahead and the sea washing over the beaches it passes. Two or three a year in late summer and autumn, at least six seconds each. None when held.",
+    draw: function (f, st) { water(f); FX.wetDry(f); FX.hurricanes(f, st); }, sprites: function (f, g) { drawScenery(f, g, true); } },
+  { title: "Tornadoes, a funnel of dust", scene: "temperate", start: 110, speed: 1, note: "No cloud and no fill: the funnel is only the dust the wind carries, whirling round its twisting axis and rising up it, wider and thinning out towards the top, lighter on the near side; dust and debris at its foot as it wanders east over the open land. Four or so a year in spring and early summer, at least six seconds each. Starts at 10 days/s. None when held.",
     draw: function (f, st) { ground(f); FX.tornadoes(f, st, { places: (st.twisters = []) }); },
-    sprites: function (f, g, sc, st) { drawScenery(f, g, true); for (const o of st.twisters || []) tornadoSide(g, o, f.t / 1000); } },
-  { title: "Tornadoes in the gale's style", scene: "temperate", start: 110, speed: 1, note: "18 drawn as the winter gales are: no solid cloud, the storm a dark wash over the map with rain in slanting lines on its trailing side and whitecaps on water, the funnel the same dark wash, darker at its edges, the gale's pale rain lines twisting up it; dust and debris at its foot. Starts at 10 days/s. None when held.",
-    draw: function (f, st) { ground(f); FX.tornadoes(f, st, { places: (st.twisters = []), gale: true }); },
-    sprites: function (f, g, sc, st) { drawScenery(f, g, true); for (const o of st.twisters || []) tornadoGale(g, o, f.t / 1000); } },
+    sprites: function (f, g, sc, st) { drawScenery(f, g, true); for (const o of st.twisters || []) tornado(g, o, f.t / 1000, DUST); } },
+  { title: "Tornadoes, a funnel of rain", scene: "temperate", start: 110, speed: 1, note: "18 with the funnel in the winter gales' rain colours, pale blue-grey in front, dark behind; the same dust at its foot.",
+    draw: function (f, st) { ground(f); FX.tornadoes(f, st, { places: (st.twisters = []) }); },
+    sprites: function (f, g, sc, st) { drawScenery(f, g, true); for (const o of st.twisters || []) tornado(g, o, f.t / 1000, RAIN); } },
 ];
 SEASONS.run(SCENES);
 </script>

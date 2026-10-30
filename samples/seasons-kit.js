@@ -701,36 +701,7 @@ FX.hurricanes = function (f, st, opts) {
     }
   }
 };
-/* Storms seen from the side (samples/seasonal-sprites.html): the kit says where they are (places)
-   and draws what they do to the land and sea under them; the page draws the storm itself, standing
-   up off the map like the sprites. Hurricanes keep the season and track of FX.hurricanes: the land
-   and sea go a little darker under the cloud, whitecaps under it, surf on the coast ahead and the
-   sea washing over the beaches it passes. */
-FX.sideHurricanes = function (f, st, opts) {
-  const S = f.S, t = f.t / 1000, out = opts && opts.places;
-  const list = events(f, st, function (y) {
-    const o = [];
-    for (let k = 0; k < 3; k++) if (hash(y, k + 11) < 0.8) o.push({ day: onCalendar(S, 0.56 + hash(y, k) * 0.28), dur: 9, minMs: 7000, k: k, y: y });
-    return o;
-  });
-  for (const a of list) {
-    const p = a.prog, y0 = 40 + hash(a.e.y, a.e.k + 20) * 18;
-    const cx = W + 16 - p * (W + 34), cy = y0 - p * p * 34, r = 16 * Math.min(1, Math.sin(Math.PI * p) * 1.6) + 2;
-    if (out) out.push({ x: cx, y: cy, r: r, p: p, n: a.e.y * 3 + a.e.k });
-    for (let y = Math.floor(cy - r * 1.5); y <= cy + r * 1.5; y++) for (let x = Math.floor(cx - r * 2); x <= cx + r * 2; x++) {
-      if (x < 0 || y < 0 || x >= W || y >= H) continue;
-      const i = y * W + x, d = Math.hypot((x - cx) / 1.3, (y - cy) * 1.2) / r + (vnoise(x * 0.3 - t * 0.8, y * 0.3, 74) - 0.5) * 0.2;
-      if (d > 1.5) continue;
-      if (S.kind[i] === 1 && S.toLand[i] <= 2 && hash(i, Math.floor(t * 6)) < 0.5) put(f, i, WHITE);
-      else if (S.biome[i] === B.sand && d < 1.3 && hash(i, Math.floor(t * 3)) < 0.6) put(f, i, hash(i, 5) < 0.5 ? P.shallow : P.foam);
-      else if (d < 1) {
-        shade(f, i, 0.8 + d * 0.15);
-        if (S.kind[i] === 1 && hash(i, Math.floor(t * 5)) < 0.06) put(f, i, WHITE);
-      }
-    }
-  }
-};
-/* tornadoes: a few in spring and early summer over the open land, each a day or so (at least five
+/* tornadoes (drawn from the side on samples/seasonal-sprites.html, from places): a few in spring and early summer over the open land, each a day or so (at least five
    seconds) wandering east across it, dust and debris whirling at its foot */
 FX.tornadoes = function (f, st, opts) {
   const S = f.S, t = f.t / 1000, out = opts && opts.places;
@@ -743,19 +714,6 @@ FX.tornadoes = function (f, st, opts) {
     const p = a.prog, x0 = 30 + hash(a.e.y, a.e.k + 60) * 30, y0 = 42 + hash(a.e.y, a.e.k + 61) * 22;
     const x = x0 + p * 40, y = y0 - p * 10 + Math.sin(p * 9 + a.e.k) * 2.5;
     if (out) out.push({ x: x, y: y, p: p, n: a.e.y * 4 + a.e.k });
-    /* gale: the storm it hangs from darkens the land as the winter gales do, rain in slanting
-       lines on its trailing (west) side, whitecaps on water under it */
-    if (opts && opts.gale) {
-      const life = Math.sin(Math.PI * Math.min(1, p * 1.1)), rr = 12 * life + 3;
-      for (let yy = Math.floor(y - rr); yy <= y + rr; yy++) for (let xx = Math.floor(x - rr * 1.6); xx <= x + rr; xx++) {
-        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
-        const i = yy * W + xx, d = Math.hypot((xx - x + rr * 0.3) / 1.4, yy - y) / rr + (vnoise(xx * 0.3 - t, yy * 0.3, 75) - 0.5) * 0.35;
-        if (d > 1) continue;
-        shade(f, i, 0.62 + d * 0.25);
-        if (xx < x - 2 && ((xx * 3 + yy + Math.floor(t * 16)) % 6) === 0) put(f, i, "#9fb8d0");
-        else if (S.kind[i] !== 0 && hash(i, Math.floor(t * 5)) < 0.06) put(f, i, WHITE);
-      }
-    }
     /* dust at its foot, over land; spray over water */
     for (let q = 0; q < 26; q++) {
       const ang = hash(q, 70) * 6.283 + t * 5, rr = 1 + hash(q, 71) * 3.5, px = Math.round(x + Math.cos(ang) * rr * 1.4), py = Math.round(y + Math.sin(ang) * rr * 0.6);

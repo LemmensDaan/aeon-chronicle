@@ -321,6 +321,70 @@ function storyOf(world, sk, byId, c) {
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+/* A region's chapters (docs/REGION_CHAPTERS.md): the stretches of its history worth watching,
+   picked from the sketch. A moment is a clash or crossing into the square (or one of its own
+   that went abroad and stayed), a dark age, a new age reached, or the century its power rose
+   most. A chapter is CHAPTER years from LEAD years before its moment; moments close together
+   share one, up to CHAPTER_MAX years. The best MAX_CHAPTERS are kept, in order of time. */
+const CHAPTER = 50, LEAD = 15, CHAPTER_MAX = 80, MAX_CHAPTERS = 6;
+const SCORE = { invasion: 4, migration: 3, colonisation: 3, raid: 2 };
+const OUTCOME = { conquest: 1.5, partial: 1.2, colony: 1.2, settled: 1.2, foothold: 1, raided: 1, repelled: 0.8 };
+const chapterCache = new WeakMap();
+AEON.chaptersOf = function (world, si) {
+  const sk = world.sketch, q = sk && sk.squares[si];
+  if (!q || !q.peoples.length || !sk.curves) return [];
+  let cache = chapterCache.get(sk);
+  if (!cache) chapterCache.set(sk, cache = {});
+  if (cache[si]) return cache[si];
+  const pack = world.pack, ages = pack.ages || [], start = pack.startYear, end = pack.endYear;
+  const byId = {};
+  sk.peoples.forEach((p) => { byId[p.id] = p; });
+  const adj = (id) => (byId[id] ? byId[id].adjective : "foreign"), name = (id) => (byId[id] ? byId[id].name : "a people");
+  const moments = [];
+  for (const c of sk.contacts) {
+    if (c.kind === "trade") continue;
+    if (c.kind === "dark-age") {
+      if (c.to === q.id) moments.push({ year: c.year, score: c.outcome === "fell-back" ? 3 : 1.5, title: "The dark age", contact: c });
+      continue;
+    }
+    const into = c.to === q.id, out = c.from === q.id && c.to !== q.id;
+    if (!into && !(out && c.outcome !== "repelled")) continue;
+    const a = adj(c.by);
+    const title = into
+      ? { invasion: "The " + a + " invasion", migration: "The " + a + " migration", colonisation: "The " + a + " colonists", raid: "The " + a + " sea-raids" }[c.kind]
+      : { invasion: "The " + a + " war abroad", migration: "The " + a + " herders move on", colonisation: "The " + a + " fleets sail", raid: "The " + a + " raiders sail" }[c.kind];
+    moments.push({ year: c.year, score: (SCORE[c.kind] || 2) * (OUTCOME[c.outcome] || 1) * (into ? 1 : 0.7), title: title, contact: c });
+  }
+  /* a new age reached (in the century the curve says, taken at its middle) */
+  (q.ageYears || []).forEach((y, k) => {
+    if (k >= 1 && y != null && ages[k]) moments.push({ year: y + STEP / 2, score: 2, title: "The coming of the " + ages[k].name.replace(/^the /i, "") });
+  });
+  /* the century its power rose most: the rise of its leading people */
+  const pw = sk.curves[si].power;
+  let best = 0, bt = -1;
+  for (let t = 1; t < pw.length; t++) if (pw[t] - pw[t - 1] > best) { best = pw[t] - pw[t - 1]; bt = t; }
+  if (bt >= 0) {
+    const y = sk.years[bt] + STEP / 2;
+    const lead = q.peoples.map((id) => byId[id]).filter((p) => p && (p.arrived == null || p.arrived <= y)).sort((x, z) => z.cells - x.cells)[0];
+    if (lead) moments.push({ year: y, score: 2.5, title: "The rise of " + name(lead.id) });
+  }
+  moments.sort((x, z) => x.year - z.year);
+  const out = [];
+  for (const m of moments) {
+    const last = out[out.length - 1], from = Math.max(start, m.year - LEAD);
+    if (last && m.year <= last.to && Math.min(end, m.year + CHAPTER - LEAD) - last.from <= CHAPTER_MAX) {
+      last.to = Math.max(last.to, Math.min(end, m.year + CHAPTER - LEAD));
+      last.moments.push(m); last.score += m.score;
+      if (m.score > last.top.score) { last.top = m; last.title = m.title; last.year = m.year; }
+      continue;
+    }
+    out.push({ from: from, to: Math.min(end, from + CHAPTER), year: m.year, title: m.title, score: m.score, top: m, moments: [m] });
+  }
+  const kept = out.slice().sort((x, z) => z.score - x.score).slice(0, MAX_CHAPTERS).sort((x, z) => x.from - z.from);
+  return (cache[si] = kept.map((c) => ({ from: c.from, to: c.to, year: c.year, title: c.title,
+    contacts: c.moments.map((m) => m.contact).filter(Boolean), also: c.moments.filter((m) => m !== c.top).map((m) => m.title) })));
+};
+
 /* the land decides the people: archetypes whose home ground fills the area, sea-going ones on
    long coasts, river ones on a river seat; anything else stays possible */
 function pickArchetype(rng, archetypes, seat, area) {

@@ -26,8 +26,9 @@ So the two levels get one job each:
    world after that point is a forecast that is redone. This also leaves room for interactivity.
 3. **Tribes have influence, not borders.** A tribe has a sphere that fades with distance and can
    overlap its neighbours' and a kingdom's land. Kingdoms and up keep hard borders.
-4. **10 days a second is the speed the chapter is designed for.** Replaying slower and faster must
-   still work (see "Speed and replay").
+4. **10 days a second is the speed the chapter is designed for**, but live play must offer 1, 2, 5
+   and 10 days/s so the best playable speed can be found (2 and 5 days/s added to the speed list
+   2026-10-30). Replaying slower and faster must still work (see "Speed and replay").
 5. **Peoples start where history has brought them**, not from zero: tribes, chiefdoms,
    city-states, kingdoms and empires side by side, as the sketch's development says.
 6. **Wars are shown as they unfold** (the levy gathering, the march, the camp, the siege, the
@@ -160,8 +161,10 @@ events.
 
 Each step is checked on seed 7 at 10 days/s before the next.
 
-1. **Chapters on the world level.** Pick them from the sketch, list them on the timeline and in
-   the region panel. The region still runs today's history, cut to the chapter's window. This
+1. **Chapters on the world level** — **done 2026-10-30**. `AEON.chaptersOf(world, si)` in sketch.js
+   picks them; the square's plaque lists them, world-timeline rows they are about get a ▶. The
+   region still runs today's whole history, and playback, the slider and the jumps keep to the
+   chapter's window ("Whole history" in the header leaves it; links carry `&chapter=k`). This
    shows quickly whether 30-80 years at 10 days/s is the right length.
 2. **Start from the sketch at a date.** Peoples with tiers and land sized by power, towns and roads
    to match, foreign frontiers, a backstory.

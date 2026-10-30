@@ -34,7 +34,7 @@ let playing = false;
    a second or slower the seasons show on the map; faster, it shows the land as it mostly is. */
 const YEAR_DAYS = 365, SEASON_SPEED = YEAR_DAYS;
 let playSpeed = 50 * YEAR_DAYS;
-const SPEEDS = [[1, "1 day/s"], [10, "10 days/s"], [30, "1 month/s"], [91, "1 season/s"], [365, "1 yr/s"],
+const SPEEDS = [[1, "1 day/s"], [2, "2 days/s"], [5, "5 days/s"], [10, "10 days/s"], [30, "1 month/s"], [91, "1 season/s"], [365, "1 yr/s"],
   [5 * 365, "5 yr/s"], [25 * 365, "25 yr/s"], [50 * 365, "50 yr/s"], [100 * 365, "100 yr/s"]];
 /* playOwed: the years played since the shown tick began, so the date is playbackYear + playOwed;
    kept over a pause, dropped when the year is set by hand */
@@ -60,6 +60,12 @@ let worldPick = null, worldLine = null;
    sketch and no history of its own; opening a square makes its region and plays its history.
    Opened regions are kept for the session. */
 let planet = null, regionCache = {};
+/* the chapter a region plays (docs/REGION_CHAPTERS.md), null for its whole history: one of
+   AEON.chaptersOf(planet, si), its years snapped to the region's ticks; playback, the slider
+   and the jumps keep within it */
+let chapter = null;
+function firstYear() { return chapter ? chapter.from : world.startYear; }
+function lastYear() { return chapter ? chapter.to : world.endYear; }
 function onPlanet() { return !!planet && world === planet; }
 const PLANET_MODES = ["world", "ages", "biome", "elevation", "habitability"];
 /* the modes drawn from the world sketch */
@@ -145,11 +151,11 @@ function start(packId, seed) {
   const hash = location.hash;
   dom.setup.classList.add("hidden");
   dom.app.classList.remove("hidden");
-  const ym = /year=(-?\d+)/.exec(hash), rm = /region=(\d+),(\d+)/.exec(hash), mm = /mode=([a-z]+)/.exec(hash);
+  const ym = /year=(-?\d+)/.exec(hash), rm = /region=(\d+),(\d+)/.exec(hash), mm = /mode=([a-z]+)/.exec(hash), cm = /chapter=(\d+)/.exec(hash);
   showPlanet(ym ? Number(ym[1]) : null, mm ? mm[1] : null);
   if (rm && planet.sketch) {
     const si = planet.sketch.squares.findIndex(function (q) { return q.id === rm[1] + "," + rm[2]; });
-    if (si >= 0 && planet.sketch.squares[si].peoples.length) openRegion(si, mm ? mm[1] : null);
+    if (si >= 0 && planet.sketch.squares[si].peoples.length) openRegion(si, mm ? mm[1] : null, cm ? Number(cm[1]) : null, ym ? Number(ym[1]) : null);
   }
 }
 
@@ -157,7 +163,7 @@ function start(packId, seed) {
 function writeHash() {
   if (!planet) return;
   let h = "#pack=" + planet.packId + "&seed=" + encodeURIComponent(planet.seed);
-  if (!onPlanet() && world.square) h += "&region=" + world.square.id;
+  if (!onPlanet() && world.square) h += "&region=" + world.square.id + (chapter ? "&chapter=" + chapter.index : "");
   h += "&mode=" + mapMode + "&year=" + playbackYear;
   history.replaceState(null, "", h);
 }
@@ -165,6 +171,7 @@ function writeHash() {
 /* the planet: its sketch in the World mode, and the world timeline in the sidebar */
 function showPlanet(year, mode) {
   stopRegion();
+  chapter = null;
   world = planet; AEON.world = planet;
   view = { zoom: 1, panX: 0, panY: 0 };
   selectedRegion = null; hoverRegion = null;
@@ -174,16 +181,20 @@ function showPlanet(year, mode) {
   setPlaybackYear(year != null ? year : playbackYear || planet.startYear);
 }
 
-/* a region: made and played the first time, kept after */
-function openRegion(si, mode) {
-  const year = playbackYear;
+/* a region: made and played the first time, kept after; k: the chapter to play (its index in
+   AEON.chaptersOf), else the whole history; year: where to start within it (a link) */
+function openRegion(si, mode, k, year) {
   stopRegion();
+  const ch = k != null && AEON.chaptersOf ? AEON.chaptersOf(planet, si)[k] : null;
   let rw = regionCache[si];
   if (!rw) {
     try { rw = regionCache[si] = AEON.createRegion(planet, si); }
     catch (e) { console.error(e); alert("The region could not be made: " + e.message); return; }
   }
   world = rw; AEON.world = rw;
+  const st = rw.timeStep, snap = function (y, up) { return rw.startYear + (up ? Math.ceil : Math.floor)((y - rw.startYear) / st) * st; };
+  chapter = ch ? { index: k, title: ch.title, from: snap(ch.from), to: snap(ch.to, true) } : null;
+  year = chapter ? (year != null && year >= chapter.from && year <= chapter.to ? year : chapter.from) : year != null ? year : playbackYear;
   view = { zoom: 1, panX: 0, panY: 0 };
   selectedRegion = null; hoverRegion = null;
   mapMode = mode && REGION_MODES.indexOf(mode) >= 0 ? mode : "political";
@@ -311,7 +322,7 @@ function countAliveAt(year) {
    moment straight away (mapfx.js) */
 function setPlaybackYear(y, how) {
   const from = playbackYear;
-  playbackYear = Math.max(world.startYear, Math.min(world.endYear, y));
+  playbackYear = Math.max(firstYear(), Math.min(lastYear(), y));
   if (how !== "play") playOwed = 0;
   const fx = AEON.mapfx && !simulating && !onPlanet() && ambientOn() ? AEON.mapfx : null;
   if (fx) {
@@ -376,7 +387,7 @@ function jumpMoment(dir) {
   let y = null;
   if (dir > 0) { for (const v of ys) if (v > playbackYear) { y = v; break; } }
   else for (let i = ys.length - 1; i >= 0; i--) if (ys[i] < playbackYear) { y = ys[i]; break; }
-  if (y == null) return;
+  if (y == null || y < firstYear() || y > lastYear()) return;
   playing = false; dom.playBtn.textContent = "▶";
   setPlaybackYear(y);
 }
@@ -440,7 +451,7 @@ function loop(now) {
     playOwed -= ticks * world.timeStep;
     setPlaybackYear(playbackYear + ticks * world.timeStep, "play");
   } else { drawMap(); seasonStatus(); }                    /* the animations still move */
-  if (playbackYear >= world.endYear) { playing = false; dom.playBtn.textContent = "▶"; drawMap(); runFx(); return; }
+  if (playbackYear >= lastYear()) { playing = false; dom.playBtn.textContent = "▶"; drawMap(); runFx(); return; }
   rafId = requestAnimationFrame(loop);
 }
 
@@ -580,8 +591,8 @@ function buildApp() {
 
   dom.playBtn = el("button", { class: "ae-btn round", text: "▶", onclick: togglePlay });
   dom.scrub = el("input", { class: "ae-scrub", type: "range",
-    min: String(world.startYear), max: String(world.endYear), step: String(world.timeStep),
-    value: String(world.startYear) });
+    min: String(firstYear()), max: String(lastYear()), step: String(world.timeStep),
+    value: String(firstYear()) });
   dom.scrub.addEventListener("input", function () {
     playing = false; dom.playBtn.textContent = "▶";
     scrubbing = true;
@@ -621,9 +632,9 @@ function buildApp() {
     el("button", { class: "ae-btn", text: "‹", title: "Previous great moment", onclick: function () { jumpMoment(-1); } }),
     el("button", { class: "ae-btn", text: "›", title: "Next great moment", onclick: function () { jumpMoment(1); } }),
     el("button", { class: "ae-btn", text: "⏮", title: "Back to the beginning",
-      onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(world.startYear); } }),
+      onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(firstYear()); } }),
     el("button", { class: "ae-btn", text: "⏭", title: "Jump to the end",
-      onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(world.endYear); } }));
+      onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(lastYear()); } }));
 
   dom.chronicleHost = el("div", { class: "ae-chronicle" });
   /* on the planet the sidebar holds the world timeline instead of a chronicle */
@@ -634,6 +645,8 @@ function buildApp() {
       onSetYear: function (y) { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(y); },
       onHighlight: function (c) { worldPick = c; drawMap(); },
       onFocus: focusContact,
+      chapterFor: chapterOfContact,
+      onChapter: function (si, k) { openRegion(si, null, k); },
     }, el);
   }
 
@@ -643,11 +656,14 @@ function buildApp() {
       AEON.pixelLabel ? AEON.pixelLabel("Aeon", "#8a3a22", 3) : el("span", { text: "AEON" })),
     el("div", { class: "ae-worldname" },
       el("b", { text: world.pack.name }),
-      el("span", { text: "seed " + world.seed + (onPlanet() ? " · the world" : " · region " + world.square.id) })),
+      el("span", { text: "seed " + world.seed + (onPlanet() ? " · the world" : " · region " + world.square.id) +
+        (chapter ? " · " + chapter.title + ", " + world.pack.yearLabel(chapter.from) + " to " + world.pack.yearLabel(chapter.to) : "") })),
     dom.status,
     el("div", { class: "ae-header-actions" },
       onPlanet() ? null : el("button", { class: "ae-btn", text: "Back to the world", title: "The whole planet and its timeline; this region is kept",
         onclick: function () { showPlanet(playbackYear, "world"); } }),
+      chapter ? el("button", { class: "ae-btn", text: "Whole history", title: "Leave the chapter and play on through the region's whole history",
+        onclick: function () { openRegion(world.square.index, mapMode, null, playbackYear); } }) : null,
       onPlanet() ? null : dom.statsBtn = el("button", { class: "ae-btn", text: "Statistics", title: "How the region's people and land were shared out",
         onclick: function () { toggleStats(); } }),
       onPlanet() ? null : el("button", { class: "ae-btn", text: "Export", onclick: exportChronicle }),
@@ -848,14 +864,37 @@ function pickSquare(rid) {
   const P = dom.squarePlaque, si = AEON.worldView ? AEON.worldView.squareAt(planet, rid) : null;
   if (si == null || !planet.sketch.squares[si].peoples.length) { P.classList.add("hidden"); P._si = null; drawMap(); return; }
   const q = planet.sketch.squares[si], kept = regionCache[si] && regionCache[si]._played;
+  const chs = AEON.chaptersOf ? AEON.chaptersOf(planet, si) : [], pk = planet.pack;
   P._si = si;
   P.replaceChildren(
     el("b", { text: "Square " + q.id }),
     el("span", { text: AEON.worldView.squareLine(planet, si, playbackYear) }),
-    el("button", { class: "ae-btn primary", text: kept ? "Open this region" : "Open this region (plays its history)", onclick: function () { openRegion(si); } }),
-    el("button", { class: "ae-btn", text: "✕", title: "Close", onclick: function () { P.classList.add("hidden"); P._si = null; drawMap(); } }));
+    el("button", { class: "ae-btn" + (chs.length ? "" : " primary"), text: kept ? "Whole history" : "Whole history (plays it first)", onclick: function () { openRegion(si); } }),
+    el("button", { class: "ae-btn", text: "✕", title: "Close", onclick: function () { P.classList.add("hidden"); P._si = null; drawMap(); } }),
+    chs.length ? el("div", { class: "wv-chapters" },
+      el("i", { text: "Chapters" + (kept ? "" : " (the region's history is played first)") }),
+      chs.map(function (c, k) {
+        return el("button", { class: "ae-btn wv-chapter", title: c.also.length ? "Also: " + c.also.join("; ") : c.title, onclick: function () { openRegion(si, null, k); } },
+          el("b", { text: pk.yearLabel(c.from) + " to " + pk.yearLabel(c.to) }), " " + c.title);
+      })) : null);
   P.classList.remove("hidden");
   drawMap();
+}
+
+/* the chapter a world-timeline contact opens: the square it came into (else the one it left) and
+   the chapter's index there, or null */
+let chapterMap = null;
+function chapterOfContact(c) {
+  if (!AEON.chaptersOf) return null;
+  if (!chapterMap || chapterMap.sk !== planet.sketch) {
+    chapterMap = { sk: planet.sketch, of: new Map() };
+    planet.sketch.squares.forEach(function (q, si) {
+      AEON.chaptersOf(planet, si).forEach(function (ch, k) {
+        for (const x of ch.contacts) if (!chapterMap.of.has(x) || x.to === q.id) chapterMap.of.set(x, { si: si, k: k, title: ch.title });
+      });
+    });
+  }
+  return chapterMap.of.get(c) || null;
 }
 
 let tipEl = null;

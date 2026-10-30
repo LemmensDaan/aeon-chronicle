@@ -13,6 +13,13 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   days/s (seasons and kingdoms both alive). Decisions and build order are in the doc. Tried and
   dropped first: a separate season clock (breaks weather-dependent invasions) and easing playback
   into the seasons around great moments (history still too slow per year).
+  **Step 1 done (2026-10-30, view only, histories unchanged):** sketch.js `AEON.chaptersOf(world,
+  si)`: moments from the sketch (contacts into the square or its own that stayed abroad, dark
+  ages, ages reached, the century of its biggest power rise), a 50-year window from 15 years
+  before, close moments merged up to 80 years, the best 6 per square. ui.js `chapter`,
+  `firstYear()`/`lastYear()` bound playback; plaque list, timeline ▶ (`chapterOfContact`), header
+  "Whole history", `&chapter=k` in links. Speeds 2 and 5 days/s added. Seed 7: 16 squares, 6
+  chapters each. Ages reached fill many slots (score 2); tune if they crowd out wars.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

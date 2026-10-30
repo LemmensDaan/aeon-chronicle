@@ -259,7 +259,8 @@ function fillLegend(L, world, el, ages) {
   });
 }
 
-/* the world timeline: every contact of the sketch, those after the shown year dimmed */
+/* the world timeline: every contact of the sketch, those after the shown year dimmed; a contact
+   a region's chapter is about has a button that plays it (opts.chapterFor, opts.onChapter) */
 function Timeline(host, world, opts, el) {
   const sk = world.sketch, pack = world.pack;
   const root = el("div", { class: "wv-line" + (opts.side ? " wv-side" : "") });
@@ -280,12 +281,15 @@ function Timeline(host, world, opts, el) {
     for (const c of sk.contacts) {
       if (c.kind === "trade" && !showTrade) continue;
       const sw = el("i", { class: "wv-dot" }); sw.style.background = KIND[c.kind].color;
+      const ch = opts.chapterFor ? opts.chapterFor(c) : null;
       const row = el("div", { class: "wv-row" + (c.kind === "trade" || c.kind === "dark-age" ? " minor" : ""),
         onclick: function () { opts.onSetYear(c.year); if (opts.onFocus) opts.onFocus(c); },
         onmouseenter: function () { opts.onHighlight(c); },
         onmouseleave: function () { opts.onHighlight(null); } },
         sw, el("span", { class: "wv-year", text: pack.yearLabel(c.year) }),
-        el("span", { class: "wv-text", text: c.text.replace("In " + pack.yearLabel(c.year) + " ", "").replace(/^./, function (m) { return m.toUpperCase(); }) }));
+        el("span", { class: "wv-text", text: c.text.replace("In " + pack.yearLabel(c.year) + " ", "").replace(/^./, function (m) { return m.toUpperCase(); }) }),
+        ch ? el("button", { class: "wv-play", text: "▶", title: "Play the chapter: " + ch.title,
+          onclick: function (e) { e.stopPropagation(); opts.onChapter(ch.si, ch.k); } }) : null);
       row._year = c.year;
       rows.push(row); list.appendChild(row);
     }

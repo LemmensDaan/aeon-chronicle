@@ -181,8 +181,10 @@ function showPlanet(year, mode) {
   setPlaybackYear(year != null ? year : playbackYear || planet.startYear);
 }
 
-/* a region: made and played the first time, kept after; k: the chapter to play (its index in
-   AEON.chaptersOf), else the whole history; year: where to start within it (a link) */
+/* a region: made the first time and kept after; its history is played as far as is needed (to the
+   chapter's end, or the end of the record), so a chapter starts from the engine's own history up
+   to its date. k: the chapter to play (its index in AEON.chaptersOf), else the whole history;
+   year: where to start within it (a link) */
 function openRegion(si, mode, k, year) {
   stopRegion();
   const ch = k != null && AEON.chaptersOf ? AEON.chaptersOf(planet, si)[k] : null;
@@ -199,8 +201,8 @@ function openRegion(si, mode, k, year) {
   selectedRegion = null; hoverRegion = null;
   mapMode = mode && REGION_MODES.indexOf(mode) >= 0 ? mode : "political";
   buildApp();
-  if (rw._played) { buildChronicle(); setPlaybackYear(year); }
-  else { playbackYear = year; simulateAll(); }
+  if (rw.year >= lastYear()) { buildChronicle(); setPlaybackYear(year); }
+  else { playbackYear = year; simulateAll(lastYear()); }
 }
 
 /* leave whatever is running in the shown world */
@@ -212,15 +214,20 @@ function stopRegion() {
   hideTip();
 }
 
-function simulateAll() {
+/* play the shown world's history on to a year (the end of the record if none), in slices of a
+   frame or so; the map is redrawn only now and then, since drawing it costs far more than the
+   history itself (a region's 4500 years take about two seconds) */
+const SIM_SLICE = 100, SIM_DRAW = 500;
+function simulateAll(to) {
   simulating = true;
-  const total = Math.round((world.endYear - world.startYear) / world.timeStep);
-  let done = Math.round((world.year - world.startYear) / world.timeStep);
+  const target = Math.min(to != null ? to : world.endYear, world.endYear);
+  const total = Math.max(1, Math.round((target - world.year) / world.timeStep));
+  let done = 0, drawn = 0;
   dom.progress.classList.remove("hidden");
 
   function chunk() {
     const t0 = performance.now();
-    while (performance.now() - t0 < 22 && world.year < world.endYear) {
+    while (performance.now() - t0 < SIM_SLICE && world.year < target) {
       AEON.tick(world);
       done++;
     }
@@ -229,13 +236,12 @@ function simulateAll() {
     dom.progressLabel.textContent =
       "Simulating " + world.pack.yearLabel(world.year) + " — " +
       world.chronicle.length.toLocaleString() + " events recorded";
-    drawMap();
+    if (t0 - drawn > SIM_DRAW) { drawMap(); drawn = t0; }
 
-    if (world.year < world.endYear) {
+    if (world.year < target) {
       rafId = requestAnimationFrame(chunk);
     } else {
-      AEON.finish(world);
-      world._played = true;
+      if (world.year >= world.endYear && !world._finished) { AEON.finish(world); world._finished = true; }
       dom.progress.classList.add("hidden");
       simulating = false;
       onSimulationComplete();
@@ -863,16 +869,16 @@ function wireMap() {
 function pickSquare(rid) {
   const P = dom.squarePlaque, si = AEON.worldView ? AEON.worldView.squareAt(planet, rid) : null;
   if (si == null || !planet.sketch.squares[si].peoples.length) { P.classList.add("hidden"); P._si = null; drawMap(); return; }
-  const q = planet.sketch.squares[si], kept = regionCache[si] && regionCache[si]._played;
+  const q = planet.sketch.squares[si];
   const chs = AEON.chaptersOf ? AEON.chaptersOf(planet, si) : [], pk = planet.pack;
   P._si = si;
   P.replaceChildren(
     el("b", { text: "Square " + q.id }),
     el("span", { text: AEON.worldView.squareLine(planet, si, playbackYear) }),
-    el("button", { class: "ae-btn" + (chs.length ? "" : " primary"), text: kept ? "Whole history" : "Whole history (plays it first)", onclick: function () { openRegion(si); } }),
+    el("button", { class: "ae-btn" + (chs.length ? "" : " primary"), text: "Whole history", onclick: function () { openRegion(si); } }),
     el("button", { class: "ae-btn", text: "✕", title: "Close", onclick: function () { P.classList.add("hidden"); P._si = null; drawMap(); } }),
     chs.length ? el("div", { class: "wv-chapters" },
-      el("i", { text: "Chapters" + (kept ? "" : " (the region's history is played first)") }),
+      el("i", { text: "Chapters" }),
       chs.map(function (c, k) {
         return el("button", { class: "ae-btn wv-chapter", title: c.also.length ? "Also: " + c.also.join("; ") : c.title, onclick: function () { openRegion(si, null, k); } },
           el("b", { text: pk.yearLabel(c.from) + " to " + pk.yearLabel(c.to) }), " " + c.title);

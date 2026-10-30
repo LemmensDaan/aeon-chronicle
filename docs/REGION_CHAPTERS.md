@@ -54,6 +54,9 @@ before it opens. A region can have several chapters; a played one is marked.
 
 ## 2. The starting map
 
+(Superseded by build step 2 as done: the start is the engine's own history up to the chapter's
+date, computed in a second or two. Kept for the record.)
+
 At the chapter's start the region is made as today (map, rivers, cells), then filled from the
 sketch at that date instead of from the starting peoples:
 
@@ -166,8 +169,15 @@ Each step is checked on seed 7 at 10 days/s before the next.
    region still runs today's whole history, and playback, the slider and the jumps keep to the
    chapter's window ("Whole history" in the header leaves it; links carry `&chapter=k`). This
    shows quickly whether 30-80 years at 10 days/s is the right length.
-2. **Start from the sketch at a date.** Peoples with tiers and land sized by power, towns and roads
-   to match, foreign frontiers, a backstory.
+2. **Start where history has brought the region** — **done 2026-10-30, differently than planned.**
+   Measured: a region's whole 4500 years take about 2 s to compute; the old 30 s wait was the map
+   being redrawn every frame. So a chapter starts from the engine's own history up to its date,
+   computed fast (ui.js `simulateAll(to)`: 100 ms slices, the map redrawn every 0.5 s), and only
+   as far as the chapter's end; "Whole history" plays on from there. That start is consistent by
+   construction (towns, roads, provinces, wars and treaties in progress, realm types from tribal
+   confederations to empires), every chapter of a region shares one history, and the backstory is
+   the region's own chronicle. A start made up from the sketch alone was dropped: it could not
+   match this. Tribes with spheres of influence stay step 6.
 3. **The live engine.** Monthly ticks in a worker with a head start; logs as now; scrubbing back,
    jumping forward; speed and replay as above. Same history rules, only finer.
 4. **Wars shown as they unfold.** Levy, march, camp, siege, supply, from the engine's state.

@@ -28,6 +28,11 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   league). Seed 7: 21 peace, 29 marriages, 15 leagues. region.js `tie()` tells them in the region
   chronicle (no engine effect yet). First sea trade counts as exploration ("The first X ships", "The
   X voyages"); ages reached score 1; one chapter per title. worldview.js draws ties dotted, no head.
+  **Step 2 done (2026-10-30, histories unchanged):** a region's history is computed only as far as
+  needed (the chapter's end, or 1500 for the whole history) in 100 ms slices with the map redrawn
+  every 0.5 s: the whole 4500 years take ~2 s instead of ~30 s (the drawing was the cost). A
+  chapter starts from the engine's own history at its date; `world._finished` replaces `_played`
+  (finish() only at the end of the record). See the doc's step 2 for why no sketch-made start.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

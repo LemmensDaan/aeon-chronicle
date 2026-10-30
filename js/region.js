@@ -211,6 +211,7 @@ function contact(world, c) {
     record(world, "sketch-dark-age", 4, "A dark age fell on the land. Trade dwindled, cities shrank, and much that had been known was lost.", [], null, c);
     return;
   }
+  if (TIES[c.kind]) return tie(world, c, directionTo(sk, si, index(c.from === sq.id ? c.to : c.from)), c.from === sq.id);
   if (c.from === sq.id) return depart(world, c, directionTo(sk, si, index(c.to)));
   const dir = directionTo(sk, si, index(c.from));
   const by = peopleById(sk, c.by) || { name: "Strangers", adjective: "Foreign" };
@@ -416,6 +417,29 @@ function conquered(world, cp, losers, held) {
   const names = subject.slice(0, 4).map(nameIn).join(", ") + (subject.length > 4 ? " and " + (subject.length - 4) + " more" : "");
   return p.name + " had broken the power of the land: it ruled " + held + " provinces itself" +
     (subject.length ? ", and " + names + " paid it tribute" : "") + ".";
+}
+
+/* a peace, a marriage or a trading league with another square (sketch.js runTies): told from the
+   realm on the side facing it; no realm of the other square lives here to bind, so for now it is
+   the chronicle's */
+const TIES = { peace: 1, marriage: 1, league: 1 };
+function tie(world, c, dir, ours) {
+  const sk = world.planet.sketch, land = inner(world).filter(function (r) { return r.owner; });
+  if (!land.length) return;
+  const shore = c.kind === "league" ? land.filter(function (r) { return coastal(world, r); }) : land;
+  const side = facing(world, dir, shore.length ? shore : land, 0.1), count = {};
+  for (const r of side.length ? side : land) count[r.owner] = (count[r.owner] || 0) + 1;
+  const pid = Object.keys(count).sort(function (a, b) { return count[b] - count[a]; })[0], p = world.polities[pid];
+  if (!p) return;
+  const o = peopleById(sk, ours ? c.against : c.by), other = o ? o.name : landOf(sk, ours ? c.to : c.from);
+  const text = {
+    truce: p.name + " and " + other + ", to the " + dir.word + ", swore a truce after the fighting.",
+    treaty: p.name + " made peace with " + other + ", to the " + dir.word + ", and the border between them was settled.",
+    alliance: "The ruling houses of " + p.name + " and " + other + ", to the " + dir.word + ", were joined by a marriage, and the two became allies.",
+    union: "A marriage joined the crowns of " + p.name + " and " + other + ", to the " + dir.word + ": for a time one ruler sat on both thrones.",
+    league: "The merchant towns of " + nameIn(p) + " and of " + other + ", to the " + dir.word + ", joined in a trading league.",
+  }[c.outcome];
+  if (text) record(world, "sketch-" + c.kind, c.outcome === "union" || c.kind === "league" ? 4 : 3, text, [{ kind: "polity", id: p.id }], null, c);
 }
 
 /* an expedition leaving for another square: told from the realm on the side facing it */

@@ -298,7 +298,7 @@ function planetStatus() {
   const sk = planet.sketch, y = playbackYear;
   let peoples = 0, contacts = 0;
   for (const p of sk.peoples) if (p.arrived == null || p.arrived <= y) peoples++;
-  for (const c of sk.contacts) if (c.year <= y && c.kind !== "trade" && c.kind !== "dark-age") contacts++;
+  for (const c of sk.contacts) if (c.year <= y && c.kind !== "trade" && c.kind !== "dark-age" && c.kind !== "peace" && c.kind !== "marriage" && c.kind !== "league") contacts++;
   dom.status.innerHTML = "";
   const stat = function (v, t) { dom.status.appendChild(el("span", { class: "ae-stat" }, el("b", { text: v }), el("i", { text: t }))); };
   stat(planet.pack.yearLabel(y), "year");

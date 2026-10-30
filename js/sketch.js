@@ -165,6 +165,7 @@ AEON.makeSketch = function (world) {
 
   const sketch = { cols: COLS, rows: ROWS, squares: squares, links: links, peoples: peoples };
   runSketch(world, sketch, rng);
+  runTies(world, sketch);
   Object.defineProperty(world, "sketch", { enumerable: false, configurable: true, writable: true, value: sketch });
   return sketch;
 };
@@ -299,6 +300,61 @@ function runSketch(world, sk, rng) {
   });
 }
 
+/* The sketch's peaceful ties, after its history and on a random stream of their own (seed +
+   ":sketch-ties"), so they change none of its contacts: a peace some years after a war that
+   ended short of conquest (a treaty when land was shared out, else a truce), marriages between
+   the ruling houses of neighbours at peace (now and then the crowns join: a union), and trading
+   leagues of seafaring squares with several trade partners. They are contacts like the rest
+   (peace, marriage, league), told in the world chronicle and the regions. */
+const HOSTILE = { invasion: 1, raid: 1, migration: 1, colonisation: 1 };
+function runTies(world, sk) {
+  const rng = AEON.RNG(world.seed + ":sketch-ties"), pack = world.pack, end = pack.endYear;
+  const sq = sk.squares, byId = {}, idx = {};
+  sk.peoples.forEach((p) => { byId[p.id] = p; });
+  sq.forEach((q, i) => { idx[q.id] = i; });
+  const leader = (i) => sq[i].peoples.map((id) => byId[id]).sort((a, b) => b.cells - a.cells)[0];
+  const stepAt = (y) => Math.max(0, Math.min(sk.years.length - 1, Math.floor((y - sk.years[0]) / STEP)));
+  const ageAt = (i, y) => sk.curves[i].age[stepAt(y)], powerAt = (i, y) => sk.curves[i].power[stepAt(y)];
+  const key = (a, b) => Math.min(a, b) + "|" + Math.max(a, b);
+  const ties = [], hostileYears = {};
+  for (const c of sk.contacts) if (HOSTILE[c.kind]) (hostileYears[key(idx[c.from], idx[c.to])] || (hostileYears[key(idx[c.from], idx[c.to])] = [])).push(c.year);
+  /* peace after a war that did not end in conquest */
+  for (const c of sk.contacts) {
+    if (!HOSTILE[c.kind] || c.outcome === "conquest" || !rng.chance(0.55)) continue;
+    const y = c.year + rng.int(3, 25);
+    if (y >= end) continue;
+    const treaty = c.outcome === "partial" || c.outcome === "foothold" || c.outcome === "settled" || c.outcome === "colony";
+    ties.push({ year: y, kind: "peace", from: c.from, to: c.to, by: c.by, against: c.against, via: c.via, outcome: treaty ? "treaty" : "truce", strength: 0, after: c.kind });
+  }
+  /* marriages and unions between neighbours (by land, or a short sea crossing) at peace */
+  const wed = {};
+  for (const y0 of sk.years) for (const l of sk.links) {
+    if (l.kind === "sea" && l.lane > 15) continue;
+    const a = l.a, b = l.b, k = key(a, b);
+    if (!sq[a].peoples.length || !sq[b].peoples.length || ageAt(a, y0) < 1 || ageAt(b, y0) < 1) continue;
+    if (wed[k] != null && y0 - wed[k] < 300) continue;
+    if ((hostileYears[k] || []).some((h) => h > y0 - 150 && h < y0 + STEP)) continue;
+    if (!rng.chance(0.025)) continue;
+    const pa = powerAt(a, y0) || 1, pb = powerAt(b, y0) || 1;
+    const union = ageAt(a, y0) >= 2 && ageAt(b, y0) >= 2 && Math.max(pa, pb) / Math.min(pa, pb) < 1.5 && rng.chance(0.25);
+    const [x, z] = rng.chance(0.5) ? [a, b] : [b, a];
+    wed[k] = y0;
+    ties.push({ year: y0 + rng.int(0, STEP - 1), kind: "marriage", from: sq[x].id, to: sq[z].id, by: leader(x).id, against: leader(z).id, via: l.kind, outcome: union ? "union" : "alliance", strength: 0 });
+  }
+  /* trading leagues: a seafaring square past its second age with several trade partners */
+  const leagued = {};
+  for (const y0 of sk.years) for (let i = 0; i < sq.length; i++) {
+    if (leagued[i] || !sq[i].peoples.length || ageAt(i, y0) < 2 || !sq[i].coast) continue;
+    const partners = sk.contacts.filter((c) => c.kind === "trade" && c.via === "sea" && c.year < y0 + STEP && (c.from === sq[i].id || c.to === sq[i].id));
+    if (partners.length < 2 || !rng.chance(0.04 * partners.length)) continue;
+    const t = partners[partners.length - 1], other = t.from === sq[i].id ? t.to : t.from;
+    leagued[i] = true;
+    ties.push({ year: Math.max(y0, t.year) + rng.int(0, 40), kind: "league", from: sq[i].id, to: other, by: leader(i).id, against: leader(idx[other]).id, via: "sea", outcome: "league", strength: 0 });
+  }
+  for (const c of ties) if (c.year < end) { c.text = storyOf(world, sk, byId, c); sk.contacts.push(c); }
+  sk.contacts.sort((x, y) => x.year - y.year);
+}
+
 /* one line for the world chronicle */
 function storyOf(world, sk, byId, c) {
   const P = (id) => (id && byId[id] ? byId[id] : null);
@@ -315,6 +371,9 @@ function storyOf(world, sk, byId, c) {
     case "colonisation": return at + adj(by) + " fleets crossed the open sea to " + land(c.to) + ({ foothold: " and held a strip of its coast.", colony: " and founded colonies there.", conquest: " and conquered it." }[c.outcome] || ".");
     case "raid": return at + adj(by) + " sea-raiders struck " + land(c.to) + ({ repelled: ", and were beaten off.", raided: " and sailed home with plunder.", foothold: " and stayed on its shore." }[c.outcome] || ".");
     case "invasion": return at + people(by) + " invaded " + land(c.to) + ({ repelled: ", and " + people(against) + " threw them back.", raided: " and plundered its borderlands.", partial: " and took part of it.", conquest: " and conquered it." }[c.outcome] || ".");
+    case "peace": return at + people(by) + " and " + people(against) + (c.outcome === "treaty" ? " made peace, and settled who held what." : " swore a truce.");
+    case "marriage": return at + (c.outcome === "union" ? "a marriage joined the crowns of " + people(by) + " and " + people(against) + "." : "the ruling houses of " + people(by) + " and " + people(against) + " were joined by a marriage.");
+    case "league": return at + "the " + adj(by) + " merchants and the " + adj(against) + " formed a trading league.";
   }
   return at + people(by) + " met " + land(c.to) + ".";
 }
@@ -325,10 +384,12 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
    picked from the sketch. A moment is a clash or crossing into the square (or one of its own
    that went abroad and stayed), a dark age, a new age reached, or the century its power rose
    most. A chapter is CHAPTER years from LEAD years before its moment; moments close together
-   share one, up to CHAPTER_MAX years. The best MAX_CHAPTERS are kept, in order of time. */
+   share one, up to CHAPTER_MAX years. The best MAX_CHAPTERS are kept, in order of time. The
+   peaceful ties (runTies) and the first ships over the sea count as much as the smaller wars;
+   an age reached counts least. */
 const CHAPTER = 50, LEAD = 15, CHAPTER_MAX = 80, MAX_CHAPTERS = 6;
-const SCORE = { invasion: 4, migration: 3, colonisation: 3, raid: 2 };
-const OUTCOME = { conquest: 1.5, partial: 1.2, colony: 1.2, settled: 1.2, foothold: 1, raided: 1, repelled: 0.8 };
+const SCORE = { invasion: 4, colonisation: 3.5, migration: 3, raid: 2, peace: 2.5, marriage: 2.5, league: 3 };
+const OUTCOME = { conquest: 1.5, partial: 1.2, colony: 1.2, settled: 1.2, foothold: 1, raided: 1, repelled: 0.8, treaty: 1.2, union: 1.4 };
 const chapterCache = new WeakMap();
 AEON.chaptersOf = function (world, si) {
   const sk = world.sketch, q = sk && sk.squares[si];
@@ -342,22 +403,29 @@ AEON.chaptersOf = function (world, si) {
   const adj = (id) => (byId[id] ? byId[id].adjective : "foreign"), name = (id) => (byId[id] ? byId[id].name : "a people");
   const moments = [];
   for (const c of sk.contacts) {
-    if (c.kind === "trade") continue;
     if (c.kind === "dark-age") {
       if (c.to === q.id) moments.push({ year: c.year, score: c.outcome === "fell-back" ? 3 : 1.5, title: "The dark age", contact: c });
       continue;
     }
     const into = c.to === q.id, out = c.from === q.id && c.to !== q.id;
     if (!into && !(out && c.outcome !== "repelled")) continue;
-    const a = adj(c.by);
-    const title = into
+    const a = adj(c.by), other = adj(into ? c.by : c.against);
+    /* trade: only the first ships over the sea count, as exploration */
+    if (c.kind === "trade") {
+      if (c.via === "sea") moments.push({ year: c.year, score: into ? 1.8 : 2, title: into ? "The first " + a + " ships" : "The " + a + " voyages", contact: c });
+      continue;
+    }
+    const tie = { peace: c.outcome === "treaty" ? "The " + other + " treaty" : "The " + other + " truce",
+                  marriage: c.outcome === "union" ? "The union with the " + other + " crown" : "The " + other + " marriage",
+                  league: "The " + a + " trading league" }[c.kind];
+    const title = tie || (into
       ? { invasion: "The " + a + " invasion", migration: "The " + a + " migration", colonisation: "The " + a + " colonists", raid: "The " + a + " sea-raids" }[c.kind]
-      : { invasion: "The " + a + " war abroad", migration: "The " + a + " herders move on", colonisation: "The " + a + " fleets sail", raid: "The " + a + " raiders sail" }[c.kind];
-    moments.push({ year: c.year, score: (SCORE[c.kind] || 2) * (OUTCOME[c.outcome] || 1) * (into ? 1 : 0.7), title: title, contact: c });
+      : { invasion: "The " + a + " war abroad", migration: "The " + a + " herders move on", colonisation: "The " + a + " fleets sail", raid: "The " + a + " raiders sail" }[c.kind]);
+    moments.push({ year: c.year, score: (SCORE[c.kind] || 2) * (OUTCOME[c.outcome] || 1) * (into || tie ? 1 : 0.7), title: title, contact: c });
   }
   /* a new age reached (in the century the curve says, taken at its middle) */
   (q.ageYears || []).forEach((y, k) => {
-    if (k >= 1 && y != null && ages[k]) moments.push({ year: y + STEP / 2, score: 2, title: "The coming of the " + ages[k].name.replace(/^the /i, "") });
+    if (k >= 1 && y != null && ages[k]) moments.push({ year: y + STEP / 2, score: 1, title: "The coming of the " + ages[k].name.replace(/^the /i, "") });
   });
   /* the century its power rose most: the rise of its leading people */
   const pw = sk.curves[si].power;
@@ -380,7 +448,14 @@ AEON.chaptersOf = function (world, si) {
     }
     out.push({ from: from, to: Math.min(end, from + CHAPTER), year: m.year, title: m.title, score: m.score, top: m, moments: [m] });
   }
-  const kept = out.slice().sort((x, z) => z.score - x.score).slice(0, MAX_CHAPTERS).sort((x, z) => x.from - z.from);
+  /* the best, one of each title */
+  const kept = [], titles = {};
+  for (const c of out.slice().sort((x, z) => z.score - x.score)) {
+    if (kept.length >= MAX_CHAPTERS) break;
+    if (titles[c.title]) continue;
+    titles[c.title] = true; kept.push(c);
+  }
+  kept.sort((x, z) => x.from - z.from);
   return (cache[si] = kept.map((c) => ({ from: c.from, to: c.to, year: c.year, title: c.title,
     contacts: c.moments.map((m) => m.contact).filter(Boolean), also: c.moments.filter((m) => m !== c.top).map((m) => m.title) })));
 };

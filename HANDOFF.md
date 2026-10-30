@@ -19,7 +19,15 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   before, close moments merged up to 80 years, the best 6 per square. ui.js `chapter`,
   `firstYear()`/`lastYear()` bound playback; plaque list, timeline ▶ (`chapterOfContact`), header
   "Whole history", `&chapter=k` in links. Speeds 2 and 5 days/s added. Seed 7: 16 squares, 6
-  chapters each. Ages reached fill many slots (score 2); tune if they crowd out wars.
+  chapters each.
+  **Chapter tuning (2026-10-30, changes the world sketch's contact list and every region's
+  chronicle, not its land):** Daan wants exploration/colonisation, peace treaties, marriages and
+  trade republics to count as much as wars. sketch.js `runTies` (own RNG, seed + ":sketch-ties", so
+  the old contacts stay as they were) adds contacts `peace` (truce / treaty after a war short of
+  conquest), `marriage` (alliance / union between neighbours at peace), `league` (seafaring trading
+  league). Seed 7: 21 peace, 29 marriages, 15 leagues. region.js `tie()` tells them in the region
+  chronicle (no engine effect yet). First sea trade counts as exploration ("The first X ships", "The
+  X voyages"); ages reached score 1; one chapter per title. worldview.js draws ties dotted, no head.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

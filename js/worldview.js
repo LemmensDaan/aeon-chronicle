@@ -21,7 +21,12 @@ const KIND = {
   raid:         { color: "#6a1a3a", label: "raid" },
   colonisation: { color: "#1f4f8f", label: "colonisation" },
   "dark-age":   { color: "#3a2614", label: "dark age" },
+  peace:        { color: "#4f6f95", label: "peace" },
+  marriage:     { color: "#a8457a", label: "marriage" },
+  league:       { color: "#8a7414", label: "league" },
 };
+/* the peaceful ties (sketch.js runTies): drawn as dotted lines without a head, not counted as clashes */
+const TIE = { peace: true, marriage: true, league: true };
 const RECENT = 300;             /* years a contact's arrow stays strong */
 
 function ageColor(k) { return AGE_COLORS[Math.max(0, Math.min(AGE_COLORS.length - 1, k))]; }
@@ -143,7 +148,7 @@ function draw(canvas, world, year, opts) {
     const bend = Math.min(40, len * 0.18), mx = (x1 + x2) / 2 - dy / len * bend, my = (y1 + y2) / 2 + dx / len * bend;
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = KIND[c.kind].color; ctx.lineWidth = width;
-    ctx.setLineDash(c.kind === "trade" ? [3, 3] : c.kind === "raid" ? [7, 4] : []);
+    ctx.setLineDash(c.kind === "trade" ? [3, 3] : c.kind === "raid" ? [7, 4] : TIE[c.kind] ? [1, 3] : []);
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(mx, my, x2, y2); ctx.stroke();
     ctx.setLineDash([]);
     if (head) {
@@ -163,11 +168,11 @@ function draw(canvas, world, year, opts) {
     if (c === pick || agesMode) continue;
     if (c.kind === "trade") { if (opts.trade !== false) line(c, 0.55, 1.2, false); continue; }
     const age = year - c.year, recent = age < RECENT;
-    line(c, recent ? 0.95 : 0.28, recent ? 2.5 : 1.3, true);
+    line(c, recent ? 0.95 : 0.28, recent ? (TIE[c.kind] ? 2 : 2.5) : 1.3, !TIE[c.kind]);
   }
   if (pick && !agesMode) {
     if (pick.kind === "dark-age") dark[pick.to] = true;
-    else line(pick, 1, 4, pick.kind !== "trade");
+    else line(pick, 1, 4, pick.kind !== "trade" && !TIE[pick.kind]);
   }
 
   /* the peoples' seats: first peoples as ink diamonds, newcomers in their contact's colour */
@@ -253,7 +258,7 @@ function fillLegend(L, world, el, ages) {
     return;
   }
   L.appendChild(el("b", { text: "Contacts" }));
-  ["trade", "migration", "invasion", "raid", "colonisation"].forEach(function (kd) {
+  ["trade", "migration", "invasion", "raid", "colonisation", "peace", "marriage", "league"].forEach(function (kd) {
     const i = el("i", { class: "ae-legend-chip" }); i.style.background = KIND[kd].color;
     L.appendChild(i); L.appendChild(el("span", { text: KIND[kd].label }));
   });
@@ -268,7 +273,7 @@ function Timeline(host, world, opts, el) {
   const list = el("div", { class: "wv-list" });
   const tradeBtn = el("button", { class: "ae-btn wv-chip", text: "trade", title: "Show first trade contacts too",
     onclick: function () { showTrade = !showTrade; tradeBtn.classList.toggle("on", showTrade); fill(); if (opts.onTrade) opts.onTrade(showTrade); } });
-  const hostile = sk.contacts.filter(function (c) { return c.kind !== "trade" && c.kind !== "dark-age"; }).length;
+  const hostile = sk.contacts.filter(function (c) { return c.kind !== "trade" && c.kind !== "dark-age" && !TIE[c.kind]; }).length;
   root.appendChild(el("div", { class: "wv-head" },
     el("b", { text: "World timeline" }),
     el("span", { class: "wv-count", text: hostile + " clashes and crossings" }),

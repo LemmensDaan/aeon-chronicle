@@ -743,6 +743,19 @@ FX.tornadoes = function (f, st, opts) {
     const p = a.prog, x0 = 30 + hash(a.e.y, a.e.k + 60) * 30, y0 = 42 + hash(a.e.y, a.e.k + 61) * 22;
     const x = x0 + p * 40, y = y0 - p * 10 + Math.sin(p * 9 + a.e.k) * 2.5;
     if (out) out.push({ x: x, y: y, p: p, n: a.e.y * 4 + a.e.k });
+    /* gale: the storm it hangs from darkens the land as the winter gales do, rain in slanting
+       lines on its trailing (west) side, whitecaps on water under it */
+    if (opts && opts.gale) {
+      const life = Math.sin(Math.PI * Math.min(1, p * 1.1)), rr = 12 * life + 3;
+      for (let yy = Math.floor(y - rr); yy <= y + rr; yy++) for (let xx = Math.floor(x - rr * 1.6); xx <= x + rr; xx++) {
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const i = yy * W + xx, d = Math.hypot((xx - x + rr * 0.3) / 1.4, yy - y) / rr + (vnoise(xx * 0.3 - t, yy * 0.3, 75) - 0.5) * 0.35;
+        if (d > 1) continue;
+        shade(f, i, 0.62 + d * 0.25);
+        if (xx < x - 2 && ((xx * 3 + yy + Math.floor(t * 16)) % 6) === 0) put(f, i, "#9fb8d0");
+        else if (S.kind[i] !== 0 && hash(i, Math.floor(t * 5)) < 0.06) put(f, i, WHITE);
+      }
+    }
     /* dust at its foot, over land; spray over water */
     for (let q = 0; q < 26; q++) {
       const ang = hash(q, 70) * 6.283 + t * 5, rr = 1 + hash(q, 71) * 3.5, px = Math.round(x + Math.cos(ang) * rr * 1.4), py = Math.round(y + Math.sin(ang) * rr * 0.6);

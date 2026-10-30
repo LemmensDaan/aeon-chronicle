@@ -658,7 +658,7 @@ function onCalendar(S, lp) { return Math.round(wrap(lp + MIDWINTER + (S.south ? 
    map rather than a cloud on it: the land and sea go dark under the storm, whitecaps under it and
    surf on the coast ahead. style "spin" (the default): the wind made visible, streaks of rain and
    spray whirling round and spiralling in to a calm eye (anticlockwise in the north), faster near
-   it, a darker eyewall round the eye and the sea washing over the beaches it passes; "mass": one
+   it, a darker eyewall round the eye and the sea washing over the beaches it passes; "mass" (the pick, 2026-10-30): the same surf and beaches, under one
    dark mass, no eye, the rain in slanting lines as in the gales. */
 FX.hurricanes = function (f, st, opts) {
   const S = f.S, t = f.t / 1000, mass = opts && opts.style === "mass", hs = S.south ? -1 : 1;
@@ -678,13 +678,13 @@ FX.hurricanes = function (f, st, opts) {
       if (d > 1) {
         /* surf thrown up on the coast ahead of it, and in the spinning storm the sea over the beaches */
         if (d < 1.5 && S.kind[i] === 1 && S.toLand[i] <= 2 && hash(i, Math.floor(t * 6)) < 0.5) put(f, i, WHITE);
-        else if (!mass && d < 1.3 && S.biome[i] === B.sand && hash(i, Math.floor(t * 3)) < 0.6) put(f, i, hash(i, 5) < 0.5 ? P.shallow : P.foam);
+        else if (d < 1.3 && S.biome[i] === B.sand && hash(i, Math.floor(t * 3)) < 0.6) put(f, i, hash(i, 5) < 0.5 ? P.shallow : P.foam);
         continue;
       }
       if (!mass && d < 0.12) continue;                                /* the eye: calm, clear */
       const band = mass ? 1 - d * 0.5 : d < 0.25 ? 1.25 : 1 - d * 0.55;  /* the eyewall darkest */
       shade(f, i, 0.8 - 0.36 * band * (1 - d * 0.4));
-      if (!mass && d < 1.3 && S.biome[i] === B.sand) put(f, i, hash(i, Math.floor(t * 3)) < 0.5 ? P.shallow : P.foam);
+      if (d < 1.3 && S.biome[i] === B.sand) put(f, i, hash(i, Math.floor(t * 3)) < 0.5 ? P.shallow : P.foam);
       else if (mass && band > 0.45 && ((x * 3 + y * hs + Math.floor(t * 16)) % 6 + 6) % 6 === 0) put(f, i, "#9fb8d0");
       else if (S.kind[i] === 1 && hash(i, Math.floor(t * 5)) < (mass ? 0.08 : 0.05)) put(f, i, WHITE);
     }

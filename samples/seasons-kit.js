@@ -707,6 +707,17 @@ FX.hurricanes = function (f, st, opts) {
       const g = [x, y - 1];
       dot(g[0] - 1, g[1] + 1, "#fff3a0"); dot(g[0] + 1, g[1] + 1, "#fff3a0"); dot(g[0], g[1] + 1, "#ffffff"); dot(g[0], g[1] + 2, "#fff3a0");
     }
+    /* and between the big strikes, small ones: short bolts here and there in the storm, each lighting
+       up only the storm round it */
+    if (mass && r > 6) for (let q = 0; q < 3; q++) {
+      const sl = t / 0.3 + hash(n, q + 100), si = Math.floor(sl);
+      if (sl % 1 > 0.12 || hash(n * 13 + q, si) > 0.5) continue;
+      let x = Math.round(cx + (hash(q, si + 5) - 0.5) * r * 1.8), y = Math.round(cy + (hash(q, si + 6) - 0.6) * r * 1.2);
+      for (let yy = y - 3; yy <= y + 9; yy++) for (let xx = x - 4; xx <= x + 4; xx++)
+        if (xx >= 0 && yy >= 0 && xx < W && yy < H && Math.hypot(xx - x, (yy - y - 3) * 0.8) < 4.5) shade(f, yy * W + xx, 1.25);
+      const len = 4 + Math.floor(hash(q, si + 7) * 4);
+      for (let s = 0; s < len; s++, y++) { if (hash(q * 11 + s, si) < 0.5) x += hash(q * 3 + s, si) < 0.5 ? -1 : 1; dot(x, y, s === len - 1 ? "#fff3a0" : "#ffffff"); }
+    }
     if (mass) continue;
     /* the wind: streaks whirling round, each drawn in from the edge and spiralling in to the eye */
     const ns = Math.round(r * 6);

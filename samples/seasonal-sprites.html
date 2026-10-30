@@ -236,7 +236,14 @@ function caravans(f, g) {
 }
 
 /* ------------------------------------------------------------ tornadoes, seen from the side */
-/* the funnel's colours: dust over land, the gales' rain colours over water (Daan, 2026-10-30) */
+/* the funnel's colours: dust over land, the gales' rain colours over water, sea, lake or river
+   (Daan, 2026-10-30); a river is a pixel or two wide, so any water within a pixel of its foot counts */
+function overWater(S, o) {
+  const x0 = Math.round(o.x), y0 = Math.round(o.y);
+  for (let y = y0 - 1; y <= y0 + 1; y++) for (let x = x0 - 1; x <= x0 + 1; x++)
+    if (x >= 0 && y >= 0 && x < W && y < H && S.kind[y * W + x] !== 0) return true;
+  return false;
+}
 /* No cloud and no fill: the funnel is only what the wind carries, particles whirling round its
    twisting axis and rising up it, wider towards the top and thinning out there; the ones on the
    near side lighter than those behind. pal: [near, far] colours; the dust at its foot is the kit's. */
@@ -303,13 +310,13 @@ const SCENES = [
     draw: function (f) { water(f); FX.plains(f); }, sprites: function (f, g) { drawScenery(f, g, true); caravans(f, g); boats(f, g); ships(f, g); } },
   { title: "North and south", scene: "temperate", pair: "south", start: 0, note: "2 + 3 + 4 in both hemispheres, the south mirrored so its pole is at the bottom: one date, opposite seasons on the sprites too.",
     draw: function (f) { ground(f); FX.snowfall(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
-  { title: "Hurricanes, the storm going over", scene: "tropical", start: 225, note: "The big storm going over, top-down: one dark mass moving in off the sea and curving away poleward, rain driven before it in slanting lines, lightning (the whole storm flashing pale, a forked bolt with a yellow glow, struck again), whitecaps under it, surf on the coast ahead and the sea washing over the beaches it passes. Two or three a year in late summer and autumn, at least six seconds each. None when held.",
+  { title: "Hurricanes, the storm going over", scene: "tropical", start: 225, note: "The big storm going over, top-down: one dark mass moving in off the sea and curving away poleward, rain driven before it in slanting lines, lightning (big strikes: the whole storm flashing pale, a long forked bolt with a yellow glow, struck again; and between them small short bolts here and there, each lighting the storm round it), whitecaps under it, surf on the coast ahead and the sea washing over the beaches it passes. Two or three a year in late summer and autumn, at least six seconds each. None when held.",
     draw: function (f, st) { water(f); FX.wetDry(f); FX.hurricanes(f, st, { style: "mass" }); }, sprites: function (f, g) { drawScenery(f, g, true); } },
-  { title: "Tornadoes", scene: "temperate", start: 110, speed: 1, note: "Seen from the side, no cloud and no fill: the funnel only particles whirling round its twisting axis and rising up it, wider and thinning out towards the top, lighter on the near side, dust and debris at its foot. Dust-coloured over land; over water (a waterspout) in the winter gales' rain colours, with spray at its foot. Four or so a year in spring and early summer, wandering east, at least six seconds each. Starts at 10 days/s. None when held.",
+  { title: "Tornadoes", scene: "temperate", start: 110, speed: 1, note: "Seen from the side, no cloud and no fill: the funnel only particles whirling round its twisting axis and rising up it, wider and thinning out towards the top, lighter on the near side, dust and debris at its foot. Dust-coloured over land; over water, the sea, a lake or a river (a waterspout), in the winter gales' rain colours, with spray at its foot. Four or so a year in spring and early summer, wandering east, at least six seconds each. Starts at 10 days/s. None when held.",
     draw: function (f, st) { ground(f); FX.tornadoes(f, st, { places: (st.twisters = []) }); },
     sprites: function (f, g, sc, st) {
       drawScenery(f, g, true);
-      for (const o of st.twisters || []) { const x = Math.round(o.x), y = Math.round(o.y), i = y * W + x; tornado(g, o, f.t / 1000, x >= 0 && x < W && y >= 0 && y < H && f.S.kind[i] !== 0 && f.S.kind[i] !== 3 ? RAIN : DUST); }
+      for (const o of st.twisters || []) tornado(g, o, f.t / 1000, overWater(f.S, o) ? RAIN : DUST);
     } },
 ];
 SEASONS.run(SCENES);

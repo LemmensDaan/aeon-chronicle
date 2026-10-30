@@ -311,8 +311,17 @@ function ground(c, w, d, season) {
 
 /* ------------------------------------------------------------ storms: rare, set on the calendar, drawn on the wall clock */
 /* a storm starts on its date but plays for at least minMs, so it can be seen even when the days fly
-   by; while the calendar stands still (paused) it waits */
+   by; while the calendar stands still (paused) it waits. The faster the days go, the more years'
+   storms that minimum would put on the map at once (at 1 yr/s a tornado's six seconds are six
+   springs), so only a share of them is kept: about one at a time, on average, and never more than two */
 function events(st, o, sched) {
+  const raw = sched;
+  sched = function (y) {
+    const list = raw(y);
+    if (!list.length) return list;
+    const keep = 1 / Math.max(1, list.length * (o.speed || 1) / 365 * list[0].minMs / 1000);
+    return keep >= 1 ? list : list.filter(function (e) { return hash(y * 31 + e.k, 77) < keep; });
+  };
   st.active = st.active || [];
   const D = o.day, prev = st.prevD == null ? D : st.prevD, now = o.time;
   if (st.prevT != null && D === prev) for (const a of st.active) a.born += now - st.prevT;
@@ -321,12 +330,12 @@ function events(st, o, sched) {
     st.active = [];
     for (let y = Math.floor(D / 365) - 1; y <= Math.floor(D / 365); y++) for (const e of sched(y)) {
       const abs = y * 365 + e.day;
-      if (abs <= D && D < abs + e.dur) st.active.push({ e: e, abs: abs, born: now - (D - abs) / e.dur * e.minMs });
+      if (abs <= D && D < abs + e.dur && st.active.length < 2) st.active.push({ e: e, abs: abs, born: now - (D - abs) / e.dur * e.minMs });
     }
   } else {
     for (let y = Math.floor(prev / 365); y <= Math.floor(D / 365); y++) for (const e of sched(y)) {
       const abs = y * 365 + e.day;
-      if (prev < abs && abs <= D) st.active.push({ e: e, abs: abs, born: now });
+      if (prev < abs && abs <= D && st.active.length < 2) st.active.push({ e: e, abs: abs, born: now });
     }
   }
   st.prevD = D;

@@ -67,9 +67,14 @@ From `samples/seasons.html` and `samples/ambient-life.html` (three rounds):
 - **In:** snow cover with snowfall; autumn woods; golden plains (grassland as slow into winter as
   out of it; farmland as striped fields, hedgerows still open); wet and dry season with the rains
   and the revised lightning; phytoplankton blooms; sea ice; the north/south and mixed panels.
-- **In, still to settle:** spring blossom (the orchard), the farmland's look, hurricanes (the
-  storm mass reads better than the spiral; still not quite a hurricane).
-- **Unsure:** winter gales (would players read them as gales?).
+- **Settled 2026-10-30:** the orchard as sprites (`samples/seasonal-sprites.html`), farmland as
+  striped fields without hedgerows, sheaves on the fields after the harvest (sprites).
+- **Storms, still open:** the top-down hurricanes (spiral, storm mass) are out; what stays is their
+  sea washing over the coast as a storm passes. Next try: storms seen from the side, like the
+  sprites (`samples/seasonal-sprites.html`).
+- **Set aside for later:** winter gales. Well made (fronts sweeping in from the west, dark with
+  rain or snow, whitecaps under them; `FX.gales` in `samples/seasons-kit.js`), but would players
+  read them as gales?
 - **Ambient:** merchant ships and caravans in; before the ice or snow they make for the nearest
   harbour or town and wait there; fishing boats stay out (no day and night: it flickered at 1 day/s)
   and are pulled up on the shore before the ice.

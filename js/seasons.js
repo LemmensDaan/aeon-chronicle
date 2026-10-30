@@ -183,16 +183,34 @@ function farmBase(id, s, l) {
   const k = hash(id, 3);
   return k < 0.3 ? P.grassland[l] : k < 0.55 ? P.savanna[s ? 2 : 1] : k < 0.8 ? P.grassland[s ? 2 : 1] : P.grassland[s ? 1 : 0];
 }
+/* the shown year: viewAt() hands out one object for every year, so the caches kept on it say
+   which year (and which owners and settlements) they were made for */
+function stampOf(w) { return w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (w.settleLog ? w.settleLog.length : 0); }
+/* the seats of the realms living in the shown year, by region */
+function capitalsOf(w) {
+  const caps = {};
+  for (const id in w.polities) { const p = w.polities[id]; if (p.ended == null && p.capital != null) caps[p.capital] = true; }
+  return caps;
+}
+/* a settlement's kind for its fields and trade: 1 village, 2 town, 3 city, 4 capital */
+function kindOf(r, caps) { return caps[r.id] ? 4 : Math.min(3, r.settlement.tier || 1); }
+
 const FIELDS = new WeakMap();
-/* temperate grassland round each settlement standing in the shown year (wider round the bigger
-   ones); fid: the field's id per pixel (0 none), and where the sheaves stand on the cornfields */
+/* the fields round a village, a town, a city and a capital: how far out they reach, and how many
+   of them lie fallow or are woods and pasture left out */
+const FIELD_RAD = [0, 4.5, 7, 10, 12], FIELD_GAP = [0, 0.35, 0.25, 0.15, 0.1];
+/* temperate grassland round each settlement standing in the shown year (wider and fuller round
+   the bigger ones); fid: the field's id per pixel (0 none), and where the sheaves stand on the
+   cornfields */
 function fieldsOf(c, w) {
+  const st = stampOf(w);
   let F = FIELDS.get(w);
-  if (F) return F;
+  if (F && F.stamp === st) return F;
   const S = c.sea, RG = w.regions, VW = c.VW, VH = c.VH, fid = new Int32Array(VW * VH), track = new Uint8Array(VW * VH), stooks = [];
+  const caps = capitalsOf(w);
   for (const r of RG) {
     if (!r.settlement || r.owner == null || r.barren) continue;
-    const rad = 4 + Math.min(3, r.settlement.tier || 1) * 2.5, cx = r.x * PPC + PPC / 2, cy = r.y * PPC + PPC / 2;
+    const kd = kindOf(r, caps), rad = FIELD_RAD[kd], cx = r.x * PPC + PPC / 2, cy = r.y * PPC + PPC / 2;
     for (let y = Math.max(0, Math.floor(cy - rad - 5)); y <= Math.min(VH - 1, cy + rad + 5); y++)
       for (let xx = Math.floor(cx - rad - 7); xx <= cx + rad + 7; xx++) {
         const x = ((xx % VW) + VW) % VW, i = y * VW + x, b = c.pxB[i];
@@ -200,12 +218,12 @@ function fieldsOf(c, w) {
         const rr = RG[c.cellOf[i]];
         if ((rr.rainMm || 0) < 300 || (b === SAVANNA && (rr.summerRain || 0) >= 0.55 && S.cold[i] >= 8)) continue;
         const fa = fieldAt(xx, y), dx = fa.cx - cx, dy = fa.cy - cy;
-        if (dx * dx + dy * dy * 1.6 >= rad * rad || hash(fa.id, 6) >= 0.85) continue;
+        if (dx * dx + dy * dy * 1.6 >= rad * rad || hash(fa.id, 6) >= 1 - FIELD_GAP[kd]) continue;
         fid[i] = fa.id; track[i] = fa.edge === 2 ? 1 : 0;
         if (!track[i] && hash(fa.id, 3) >= 0.3 && hash(fa.id, 3) < 0.8 && x % 3 === 1 && y % 2 === 1 && hash(i, 301) < 0.45) stooks.push(i);
       }
   }
-  F = { fid: fid, track: track, stooks: stooks };
+  F = { stamp: st, fid: fid, track: track, stooks: stooks };
   FIELDS.set(w, F);
   return F;
 }
@@ -684,17 +702,36 @@ function line(c, x0, y0, x1, y1, out) {
 function dxw(a, b, VW) { let d = b - a; if (d > VW / 2) d -= VW; if (d < -VW / 2) d += VW; return d; }
 const sea = function (c, p) { const i = p[1] * c.VW + p[0]; return !c.land[i] && !c.lake[i]; };
 
-/* the year's trade: lanes over open sea between ports (settlements on the coast), each to its
-   nearest two it can sail to straight or round one bend; the boats round the settlements by the
-   sea or a lake; the caravans' roads */
+/* which realms trade with each other in the shown year: a realm with itself, and realms bound as
+   lord and vassal, by alliance, by marriage or by a trade treaty; never two at war */
+function tradeTies(w) {
+  const y = w.year, bound = {}, war = {}, key = function (a, b) { return a < b ? a + "|" + b : b + "|" + a; };
+  for (const t of w.treaties || []) {
+    if (t.start > y || (t.end != null && t.end <= y)) continue;
+    if (t.kind === "war") war[key(t.a, t.b)] = true;
+    else if (t.kind === "tribute" || t.kind === "alliance" || t.kind === "marriage" || t.kind === "trade") bound[key(t.a, t.b)] = true;
+  }
+  return function (a, b) { return a === b || (!war[key(a, b)] && !!bound[key(a, b)]); };
+}
+
+/* The year's trade runs between market towns, the capitals and the cities, never between realms at
+   war (tradeTies): lanes over open sea between ports (market towns on the coast), each to its
+   nearest two it can sail to straight or round one bend; caravans along the roads from each market
+   town to the nearest other one of its realm (through the villages and towns on the way), and from
+   a realm's market town to the nearest of each realm it trades with, overland and not too far. Each
+   realm keeps as many merchants on the move as it has market towns. Also the boats round the
+   settlements by the sea or a lake. */
 const LIFE = new WeakMap();
 function lifeOf(c, w, roads) {
+  const st = stampOf(w);
   let L = LIFE.get(w);
-  if (L) return L;
+  if (L && L.stamp === st) return L;
   const S = c.sea, RG = w.regions, VW = c.VW, VH = c.VH;
+  const caps = capitalsOf(w), ties = tradeTies(w);
+  const market = function (r) { return !!(r && r.settlement && r.owner != null && !r.barren && kindOf(r, caps) >= 3); };
   const ports = [];
   for (const r of RG) {
-    if (!r.settlement || r.owner == null || r.barren) continue;
+    if (!market(r)) continue;
     const cx = r.x * PPC + 2, cy = r.y * PPC + 2;
     for (const nb of r.neighbors) {
       const q = RG[nb];
@@ -705,7 +742,7 @@ function lifeOf(c, w, roads) {
   }
   const lanes = [], linked = {};
   for (const a of ports) {
-    const near = ports.filter(function (b) { return b !== a; }).map(function (b) { return [b, Math.hypot(dxw(a.h[0], b.h[0], VW), b.h[1] - a.h[1])]; })
+    const near = ports.filter(function (b) { return b !== a && ties(a.r.owner, b.r.owner); }).map(function (b) { return [b, Math.hypot(dxw(a.h[0], b.h[0], VW), b.h[1] - a.h[1])]; })
       .filter(function (e) { return e[1] > 6 && e[1] < 140; }).sort(function (p, q) { return p[1] - q[1]; });
     let made = 0;
     for (const e of near) {
@@ -719,7 +756,7 @@ function lifeOf(c, w, roads) {
         if (!pts || !line(c, mx, my, bx, by, pts) || !pts.every(function (p) { return sea(c, p); })) continue;
         /* the pixels where the sea can freeze, for the ships to watch */
         const icy = pts.map(function (p) { return p[1] * VW + p[0]; }).filter(function (i) { return S.iceScore[i] > 0; });
-        lanes.push({ pts: pts, icy: icy });
+        lanes.push({ pts: pts, icy: icy, a: a.r, b: b.r });
         linked[kk] = true; made++;
         break;
       }
@@ -754,18 +791,85 @@ function lifeOf(c, w, roads) {
       boats.push({ i: i, x: x0, y: y0, hx: best[0], hy: best[1], off: off, n: r.id * 3 + k });
     }
   }
-  const trails = [];
-  for (const l of roads || []) {
-    const a = RG[l[0]], b = RG[l[1]];
-    const ax = a.x * PPC + PPC / 2, ay = a.y * PPC + PPC / 2, bx = ax + dxw(a.x * PPC, b.x * PPC, VW), by = b.y * PPC + PPC / 2;
-    /* the road's own line (pixelmap.js drawRoads): a slight bend half-way */
-    const len = Math.hypot(bx - ax, by - ay) || 1, bend = (cellRandLike(l[0] * 7919 + l[1]) - 0.5) * 5;
+  /* a line from cell a to cell b with the roads' slight bend half-way (pixelmap.js drawRoads) */
+  const bent = function (a, b) {
+    const A = RG[a], B = RG[b], ax = A.x * PPC + PPC / 2, ay = A.y * PPC + PPC / 2, bx = ax + dxw(A.x * PPC, B.x * PPC, VW), by = B.y * PPC + PPC / 2;
+    const len = Math.hypot(bx - ax, by - ay) || 1, bend = (cellRandLike(a * 7919 + b) - 0.5) * 5;
     const mx = (ax + bx) / 2 - (by - ay) / len * bend, my = (ay + by) / 2 + (bx - ax) / len * bend;
     const pts = line(c, ax, ay, mx, my, []);
-    if (!pts || !line(c, mx, my, bx, by, pts) || pts.length < 6) continue;
-    trails.push({ pts: pts, ids: pts.map(function (p) { return p[1] * VW + p[0]; }) });
+    return pts && line(c, mx, my, bx, by, pts);
+  };
+  const trail = function (pts, a, b) { return { pts: pts, ids: pts.map(function (p) { return p[1] * VW + p[0]; }), a: a, b: b }; };
+  const trails = [], adj = {}, segs = new Map(), joined = {};
+  for (const l of roads || []) { (adj[l[0]] || (adj[l[0]] = [])).push(l); (adj[l[1]] || (adj[l[1]] = [])).push(l); }
+  const segOf = function (l) { if (!segs.has(l)) segs.set(l, bent(l[0], l[1])); return segs.get(l); };
+  /* along the roads to the nearest other market town of the realm */
+  for (const src of RG) {
+    if (!market(src) || !adj[src.id]) continue;
+    const dist = {}, via = {}, open = [src.id];
+    dist[src.id] = 0;
+    let to = null;
+    while (open.length) {
+      let bi = 0;
+      for (let k = 1; k < open.length; k++) if (dist[open[k]] < dist[open[bi]]) bi = k;
+      const n = open.splice(bi, 1)[0];
+      if (n !== src.id && market(RG[n])) { to = n; break; }
+      for (const l of adj[n] || []) {
+        const sg = segOf(l), m = l[0] === n ? l[1] : l[0];
+        if (!sg) continue;
+        const d = dist[n] + sg.length;
+        if (dist[m] == null) open.push(m);
+        else if (d >= dist[m]) continue;
+        dist[m] = d; via[m] = l;
+      }
+    }
+    const kk = to == null ? null : Math.min(src.id, to) + "-" + Math.max(src.id, to);
+    if (to == null || joined[kk]) continue;
+    joined[kk] = true;
+    const hops = [];
+    for (let n = to; n !== src.id;) { const l = via[n]; hops.unshift(l); n = l[0] === n ? l[1] : l[0]; }
+    let pts = [], at = src.id;
+    for (const l of hops) {
+      const sg = l[0] === at ? segOf(l) : segOf(l).slice().reverse();
+      pts = pts.concat(pts.length ? sg.slice(1) : sg);
+      at = l[0] === at ? l[1] : l[0];
+    }
+    if (pts.length >= 6) trails.push(trail(pts, src, RG[to]));
   }
-  L = { lanes: lanes, boats: boats, trails: trails, orchards: orchardsOf(c, w) };
+  /* over the border to the nearest market town of each realm it trades with: overland, and no
+     further than a road would go (pixelmap.js ROAD_MAX) */
+  const marts = {};
+  for (const r of RG) if (market(r)) (marts[r.owner] || (marts[r.owner] = [])).push(r);
+  const owners = Object.keys(marts);
+  for (let i = 0; i < owners.length; i++) for (let j = i + 1; j < owners.length; j++) {
+    const A = marts[owners[i]], B = marts[owners[j]];
+    if (!ties(A[0].owner, B[0].owner)) continue;
+    let best = null, bd = 14 * 14 + 1;
+    for (const a of A) for (const b of B) {
+      const dx = dxw(a.x, b.x, w.width), dy = b.y - a.y, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = [a, b]; }
+    }
+    if (!best) continue;
+    const pts = bent(best[0].id, best[1].id);
+    if (pts && pts.length >= 6 && pts.every(function (p) { return c.land[p[1] * VW + p[0]]; })) trails.push(trail(pts, best[0], best[1]));
+  }
+  /* the merchants each realm can keep on the move, shared out over its lanes and roads */
+  const budget = {};
+  for (const r of RG) if (market(r)) budget[r.owner] = (budget[r.owner] || 0) + 1;
+  const afford = function (rt) {
+    const a = rt.a.owner, b = rt.b.owner;
+    if (!(budget[a] > 0) || !(budget[b] > 0)) return false;
+    budget[a]--; if (b !== a) budget[b]--;
+    return true;
+  };
+  const order = function (p) { return hash(Math.min(p[0].a.id, p[0].b.id) * 7 + p[1], Math.max(p[0].a.id, p[0].b.id)); };
+  const routes = lanes.map(function (l) { return [l, 0]; }).concat(trails.map(function (t) { return [t, 1]; }))
+    .sort(function (p, q) { return order(p) - order(q); }).filter(function (p) { return afford(p[0]); });
+  L = {
+    stamp: st, boats: boats, orchards: orchardsOf(c, w, market),
+    lanes: routes.filter(function (p) { return !p[1]; }).map(function (p) { return p[0]; }),
+    trails: routes.filter(function (p) { return p[1]; }).map(function (p) { return p[0]; }),
+  };
   LIFE.set(w, L);
   return L;
 }
@@ -776,11 +880,11 @@ function cellRandLike(id) {
   h = Math.imul(h ^ (h >>> 13), 3266489909);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
-/* an orchard beside each temperate settlement, on a neighbouring cell of open land */
-function orchardsOf(c, w) {
+/* an orchard beside each temperate capital and city, on a neighbouring cell of open land */
+function orchardsOf(c, w, market) {
   const S = c.sea, RG = w.regions, out = [];
   for (const r of RG) {
-    if (!r.settlement || r.owner == null || r.barren) continue;
+    if (!market(r)) continue;
     const i0 = (r.y * PPC + 2) * c.VW + r.x * PPC + 2;
     if (S.cold[i0] < -12 || S.cold[i0] > 12) continue;
     const opts = r.neighbors.filter(function (n) {
@@ -834,24 +938,22 @@ function life(ctx, c, w, v, X0, u, o, roads, minTier, pc) {
   L.lanes.forEach(function (lane, li) {
     const pts = lane.pts, len = pts.length;
     const k = lane.icy.length ? threat(function (s) { for (const i of lane.icy) if (seaIced(S, i, s)) return true; return false; }, season, o.speed) : 0;
-    for (let m = 0; m < (len > 80 ? 2 : 1); m++) {
-      const speed = 4 + hash(li, m) * 2, pos = t * speed + hash(li, m + 9) * len * 2, voyage = Math.floor(pos / (2 * len));
-      let s = pos % (2 * len);
-      const back = s >= len; if (back) s = 2 * len - s - 1;
-      if (hash(li * 7 + m, voyage) > 0.75) continue;
-      let at = s, dir = back ? -1 : 1, moored = false;
-      if (k > 0) {
-        const home = s < len / 2 ? 0 : len - 1, berth = clamp(home + (home ? -1 : 1) * (1 + m * 4), 0, len - 1);
-        at = s + (berth - s) * k; dir = berth >= s ? 1 : -1; moored = k > 0.97;
-      }
-      const j = clamp(Math.round(at), 0, len - 1), p = pts[j], nx = pts[clamp(j + dir, 0, len - 1)];
-      const left = dxw(p[0], nx[0], VW) < 0 || (nx[0] === p[0] && dir < 0);
-      if (!moored && Math.floor(t * 4) % 2) {
-        const wk = pts[clamp(j - dir * 3, 0, len - 1)];
-        ctx.fillStyle = PALE; ctx.fillRect(X0 + wk[0] * P, Y0 + wk[1] * P, P, P);
-      }
-      stand(moored ? X.COG_MOORED : X.COG, null, p[0], p[1] + 1, left);
+    const speed = 4 + hash(li, 0) * 2, pos = t * speed + hash(li, 9) * len * 2, voyage = Math.floor(pos / (2 * len));
+    let s = pos % (2 * len);
+    const back = s >= len; if (back) s = 2 * len - s - 1;
+    if (hash(li * 7, voyage) > 0.75) return;
+    let at = s, dir = back ? -1 : 1, moored = false;
+    if (k > 0) {
+      const home = s < len / 2 ? 0 : len - 1, berth = clamp(home + (home ? -1 : 1), 0, len - 1);
+      at = s + (berth - s) * k; dir = berth >= s ? 1 : -1; moored = k > 0.97;
     }
+    const j = clamp(Math.round(at), 0, len - 1), p = pts[j], nx = pts[clamp(j + dir, 0, len - 1)];
+    const left = dxw(p[0], nx[0], VW) < 0 || (nx[0] === p[0] && dir < 0);
+    if (!moored && Math.floor(t * 4) % 2) {
+      const wk = pts[clamp(j - dir * 3, 0, len - 1)];
+      ctx.fillStyle = PALE; ctx.fillRect(X0 + wk[0] * P, Y0 + wk[1] * P, P, P);
+    }
+    stand(moored ? X.COG_MOORED : X.COG, null, p[0], p[1] + 1, left);
   });
   if (pc < 2) return;
 
@@ -882,7 +984,6 @@ function life(ctx, c, w, v, X0, u, o, roads, minTier, pc) {
   const crowd = [];
   L.trails.forEach(function (tr, ri) {
     const pts = tr.pts, len = pts.length;
-    if (hash(ri, 140) > 0.6) return;
     const k = threat(function (s) { for (let q = 0; q < len; q += 2) if (snowed(tr.ids[q], s)) return true; return false; }, season, o.speed);
     const speed = 2.2 + hash(ri, 141) * 1.2, pos = t * speed + hash(ri, 142) * len * 2;
     let s = pos % (2 * len); const back = s >= len; if (back) s = 2 * len - s - 1;

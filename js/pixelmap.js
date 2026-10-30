@@ -662,9 +662,12 @@ const ROAD = [96, 68, 38], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
    reads them too: a river settlement a road crosses gets a bridge) */
 const ROAD_LINKS = new WeakMap();
 function roadLinks(w) {
+  /* viewAt() hands out one object for every year: the links say which year they were made for */
+  const stamp = w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (w.settleLog ? w.settleLog.length : 0);
   let out = ROAD_LINKS.get(w);
-  if (out) return out;
+  if (out && out.stamp === stamp) return out;
   out = [];
+  out.stamp = stamp;
   const R = w.regions, W = w.width, by = {};
   for (let k = 0; k < R.length; k++) {
     const r = R[k];

@@ -122,10 +122,15 @@ small cog (sample 7), and there are no ice-fishing huts.
   The tornado funnels (`sky`) are drawn over the settlements. Storms are set on the calendar per
   year and hemisphere and play for at least six seconds.
 - **Life** (`life`, under the settlements):
-  - cogs on lanes over open sea between nearby ports (straight or round one bend)
+  - merchants only between market towns (capitals and cities), within a realm or between realms
+    bound as lord and vassal, by alliance, marriage or a trade treaty, never at war; each realm
+    keeps as many on the move as it has market towns (Daan, 2026-10-30):
+    - cogs on lanes over open sea between nearby ports (straight or round one bend)
+    - caravans along the roads to the realm's nearest other market town (through the villages and
+      towns on the way), and overland to the nearest market town of a partner realm (zoomed in)
   - fishing boats off settlements on the water's edge (zoomed in)
-  - caravans on the roads (zoomed in)
-  - orchards on a neighbouring cell (zoomed in far enough to fit)
+  - orchards on a neighbouring cell of capitals and cities (zoomed in far enough to fit)
+  - farm fields round every settlement, wider and fuller from village to town, city and capital
   - sheaves (zoomed in further)
 
   Ships, boats and caravans go home before the ice or snow.

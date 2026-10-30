@@ -358,7 +358,8 @@ K.scene = function (name) {
 function put(f, i, col) { f.buf[i] = pack(col); }
 function shade(f, i, k) {
   const p = f.buf[i];
-  f.buf[i] = ((255 << 24) | (Math.round(((p >> 16) & 255) * k) << 16) | (Math.round(((p >> 8) & 255) * k) << 8) | Math.round((p & 255) * k)) >>> 0;
+  const c = function (v) { return Math.min(255, Math.round(v * k)); };
+  f.buf[i] = ((255 << 24) | (c((p >> 16) & 255) << 16) | (c((p >> 8) & 255) << 8) | c(p & 255)) >>> 0;
 }
 const FX = K.fx = {};
 
@@ -671,6 +672,10 @@ FX.hurricanes = function (f, st, opts) {
   for (const a of list) {
     const p = a.prog, y0 = 40 + hash(a.e.y, a.e.k + 20) * 18;
     const cx = W + 16 - p * (W + 34), cy = y0 - p * p * 34, r = 16 * Math.min(1, Math.sin(Math.PI * p) * 1.6) + 2;
+    /* lightning in the storm mass: every so often a strike, the whole storm flashing pale, a forked
+       bolt with a yellow glow down to the ground, out, and struck again (as lightning flickers) */
+    const n = a.e.y * 3 + a.e.k, slot = t / 0.5 + hash(n, 90), sid = Math.floor(slot), u = slot % 1;
+    const strike = mass && r > 6 && hash(n * 31, sid) < 0.5, lit = strike && (u < 0.09 || (u > 0.15 && u < 0.24));
     for (let y = Math.floor(cy - r - 4); y <= cy + r + 4; y++) for (let x = Math.floor(cx - r * 1.3 - 4); x <= cx + r * 1.3 + 4; x++) {
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
       const i = y * W + x, dx = x - cx, dy = (y - cy) * 1.2;
@@ -683,15 +688,29 @@ FX.hurricanes = function (f, st, opts) {
       }
       if (!mass && d < 0.12) continue;                                /* the eye: calm, clear */
       const band = mass ? 1 - d * 0.5 : d < 0.25 ? 1.25 : 1 - d * 0.55;  /* the eyewall darkest */
-      shade(f, i, 0.8 - 0.36 * band * (1 - d * 0.4));
+      shade(f, i, lit ? 1.3 - 0.2 * d : 0.8 - 0.36 * band * (1 - d * 0.4));
       if (d < 1.3 && S.biome[i] === B.sand) put(f, i, hash(i, Math.floor(t * 3)) < 0.5 ? P.shallow : P.foam);
       else if (mass && band > 0.45 && ((x * 3 + y * hs + Math.floor(t * 16)) % 6 + 6) % 6 === 0) put(f, i, "#9fb8d0");
       else if (S.kind[i] === 1 && hash(i, Math.floor(t * 5)) < (mass ? 0.08 : 0.05)) put(f, i, WHITE);
     }
+    if (lit) {
+      const pts = [], len = 12 + Math.floor(hash(n, sid + 1) * 7);
+      let x = Math.round(cx + (hash(n, sid + 2) - 0.5) * r * 1.4), y = Math.round(cy - r * 0.6 + hash(n, sid + 4) * r * 0.3), dir = hash(n, sid + 3) < 0.5 ? -1 : 1;
+      for (let s = 0; s < len; s++, y++) {
+        if (hash(n * 7 + s, sid) < 0.45) dir = -dir;
+        if (hash(n * 5 + s, sid) < 0.6) x += dir;
+        pts.push([x, y]);
+        if (s === 4 || s === 9) for (let b = 1, bx = x; b <= 4; b++) { bx -= dir; pts.push([bx, y + b]); }
+      }
+      for (const q of pts) { dot(q[0] - 1, q[1], "#f3df6a"); dot(q[0] + 1, q[1], "#f3df6a"); }
+      for (const q of pts) dot(q[0], q[1], "#ffffff");
+      const g = [x, y - 1];
+      dot(g[0] - 1, g[1] + 1, "#fff3a0"); dot(g[0] + 1, g[1] + 1, "#fff3a0"); dot(g[0], g[1] + 1, "#ffffff"); dot(g[0], g[1] + 2, "#fff3a0");
+    }
     if (mass) continue;
     /* the wind: streaks whirling round, each drawn in from the edge and spiralling in to the eye */
-    const n = Math.round(r * 6);
-    for (let s = 0; s < n; s++) {
+    const ns = Math.round(r * 6);
+    for (let s = 0; s < ns; s++) {
       const u = (t * 0.12 + hash(s, 201)) % 1, rho = r * (1 - u * 0.84), th = hash(s, 202) * 6.283 + hs * (t * 1.8 + u * 7 + u * u * 6);
       if (u < 0.08 && hash(s, 203) > u / 0.08) continue;
       for (let q = 2; q >= 0; q--) {

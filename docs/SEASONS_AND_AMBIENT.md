@@ -70,10 +70,10 @@ From `samples/seasons.html` and `samples/ambient-life.html` (three rounds):
 - **Settled 2026-10-30:** the orchard as sprites (`samples/seasonal-sprites.html`), farmland as
   striped fields without hedgerows, sheaves on the fields after the harvest (sprites).
 - **Storms (2026-10-30):** hurricanes top-down as the storm mass going over (`FX.hurricanes`
-  style "mass": dark, rain driven before it, whitecaps, surf on the coast and the sea washing over
-  the beaches). Tornadoes seen from the side, no cloud and no fill: the funnel only particles
-  whirling up it, dust and debris at its foot. Both funnels are in: dust colours and rain colours
-  (which one where is still to decide, e.g. dust over dry land, rain over wet land and water).
+  style "mass": dark, rain driven before it, lightning flashing the whole storm with a forked bolt,
+  whitecaps, surf on the coast and the sea washing over the beaches). Tornadoes seen from the side, no cloud and no fill: the funnel only particles
+  whirling up it, dust and debris at its foot; dust-coloured over land, the gales' rain colours over
+  water (a waterspout).
 - **Set aside for later:** winter gales. Well made (fronts sweeping in from the west, dark with
   rain or snow, whitecaps under them; `FX.gales` in `samples/seasons-kit.js`), but would players
   read them as gales?

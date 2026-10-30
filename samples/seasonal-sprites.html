@@ -239,15 +239,25 @@ function caravans(f, g) {
 /* the funnel's colours: dust over land, the gales' rain colours over water, sea, lake or river
    (Daan, 2026-10-30); a river is a pixel or two wide, so any water within a pixel of its foot counts */
 /* going from land to water or back, the new colours climb the funnel from its foot to its top in
-   about a second and a half: each tornado keeps the colours below and above the line and its height */
+   about a second and a half. Each change is a band rising from the foot behind the one before, so
+   turning back halfway (over a narrow river) sends the old colours up again under the new: dust,
+   then water from the foot, then dust again under the water, until the last change fills it all.
+   look.bands, oldest first: [colours, height reached]; the first one is the whole funnel's */
 function spoutLook(st, o, want, now) {
   const looks = st.looks || (st.looks = {});
   let L = looks[o.n];
-  if (!L) L = looks[o.n] = { low: want, high: want, level: 1, at: now };
-  if (want !== L.low) { L.high = L.level >= 1 ? L.low : L.high; L.low = want; L.level = 0; }
-  L.level = Math.min(1, L.level + Math.max(0, now - L.at) / 1500);
+  if (!L) L = looks[o.n] = { bands: [[want, 1]], at: now };
+  const step = Math.max(0, now - L.at) / 1500;
   L.at = now;
+  for (const b of L.bands) b[1] = Math.min(1, b[1] + step);
+  if (want !== L.bands[L.bands.length - 1][0]) L.bands.push([want, 0]);
+  /* a band that has reached the top covers all those before it */
+  for (let k = L.bands.length - 1; k > 0; k--) if (L.bands[k][1] >= 1) { L.bands = L.bands.slice(k); break; }
   return L;
+}
+function colourAt(look, top) {
+  for (let k = look.bands.length - 1; k > 0; k--) if (top < look.bands[k][1]) return look.bands[k][0];
+  return look.bands[0][0];
 }
 function overWater(S, o) {
   const x0 = Math.round(o.x), y0 = Math.round(o.y);
@@ -260,8 +270,8 @@ function overWater(S, o) {
    near side lighter than those behind. pal: [near, far] colours; the dust at its foot is the kit's. */
 const DUST = ["#e6d4ac", "#5a3e24"], RAIN = ["#c9d8e6", "#5f7488"];
 function tornado(g, o, t, look) {
-  /* look: the colours below the changing line (low), above it (high), and the line's height (0 ground, 1 top) */
-  const low = look.low, high = look.level >= 1 ? look.low : look.high;
+  /* look: the bands of colour up the funnel (spoutLook) */
+  const low = colourAt(look, 0);
   const gx = o.x * 3, gy = o.y * 3, rows = 26, life = Math.sin(Math.PI * Math.min(1, o.p * 1.15));
   const reach = rows * Math.min(1, life * 1.6);                      /* it reaches down, and lifts at the end */
   for (let q = 0; q < 200; q++) {
@@ -271,7 +281,7 @@ function tornado(g, o, t, look) {
     if (top > 0.8 && K.hash(q, 3) < (top - 0.8) / 0.2) continue;   /* thinning out at the top */
     const w = 1 + top * top * 5, off = Math.sin((rows - h) * 0.22 + t * 3) * (1 + top * 2), a = K.hash(q, 4) * 6.283 + t * (8 - top * 4);
     /* each a short streak along its way round */
-    const pal = top < look.level ? low : high;
+    const pal = colourAt(look, top);
     g.fillStyle = Math.sin(a) > 0 ? pal[0] : pal[1];
     for (let k = 0; k < 2; k++) {
       const b = a - k * 0.4;
@@ -326,7 +336,7 @@ const SCENES = [
     draw: function (f) { ground(f); FX.snowfall(f); }, sprites: function (f, g) { drawScenery(f, g, true); } },
   { title: "Hurricanes, the storm going over", scene: "tropical", start: 225, note: "The big storm going over, top-down: one dark mass moving in off the sea and curving away poleward, rain driven before it in slanting lines, lightning (big strikes: the whole storm flashing pale, a long forked bolt with a yellow glow, struck again; and between them small short bolts here and there, each lighting the storm round it), whitecaps under it, surf on the coast ahead and the sea washing over the beaches it passes. Two or three a year in late summer and autumn, at least six seconds each. None when held.",
     draw: function (f, st) { water(f); FX.wetDry(f); FX.hurricanes(f, st, { style: "mass" }); }, sprites: function (f, g) { drawScenery(f, g, true); } },
-  { title: "Tornadoes", scene: "temperate", start: 110, speed: 1, note: "Seen from the side, no cloud and no fill: the funnel only particles whirling round its twisting axis and rising up it, wider and thinning out towards the top, lighter on the near side, dust and debris at its foot. Dust-coloured over land; over water, the sea, a lake or a river (a waterspout), in the winter gales' rain colours, with spray at its foot; going from one to the other, the new colours climb the funnel from its foot to its top in about a second and a half. Four or so a year in spring and early summer, wandering east, at least six seconds each. Starts at 10 days/s. None when held.",
+  { title: "Tornadoes", scene: "temperate", start: 110, speed: 1, note: "Seen from the side, no cloud and no fill: the funnel only particles whirling round its twisting axis and rising up it, wider and thinning out towards the top, lighter on the near side, dust and debris at its foot. Dust-coloured over land; over water, the sea, a lake or a river (a waterspout), in the winter gales' rain colours, with spray at its foot; going from one to the other, the new colours climb the funnel from its foot to its top in about a second and a half, and turning back halfway sends the old colours up again under the new. Four or so a year in spring and early summer, wandering east, at least six seconds each. Starts at 10 days/s. None when held.",
     draw: function (f, st) { ground(f); FX.tornadoes(f, st, { places: (st.twisters = []) }); },
     sprites: function (f, g, sc, st) {
       drawScenery(f, g, true);

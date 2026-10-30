@@ -74,7 +74,8 @@ From `samples/seasons.html` and `samples/ambient-life.html` (three rounds):
   whitecaps, surf on the coast and the sea washing over the beaches). Tornadoes seen from the side, no cloud and no fill: the funnel only particles
   whirling up it, dust and debris at its foot; dust-coloured over land, the gales' rain colours over
   water: sea, lakes and rivers (a waterspout); changing over, the new colours climb the funnel
-  from its foot to its top in about a second and a half.
+  from its foot to its top in about a second and a half (turning back halfway sends the old colours
+  up again under the new, band after band).
 - **Set aside for later:** winter gales. Well made (fronts sweeping in from the west, dark with
   rain or snow, whitecaps under them; `FX.gales` in `samples/seasons-kit.js`), but would players
   read them as gales?

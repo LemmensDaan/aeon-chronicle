@@ -103,18 +103,30 @@ function after(list, y, yearOf) {
   return lo;
 }
 const Y0 = function (e) { return e[0]; }, YK = function (e) { return e.year; };
+/* A tick's changes are dated within it (core.js dateTick: land and settlements e[3], battles
+   e[10], events ev.date), and playback can pass them a month at a time: each() visits the
+   entries of a year-sorted list whose date falls in (y0, y1]. A date lies within its tick, so
+   only entries of ticks up to the one after y1 can qualify. */
+const TL = function (e) { return e[3] != null ? e[3] : e[0]; }, TB = function (e) { return e[10] != null ? e[10] : e[0]; },
+  TE = function (e) { return e.date != null ? e.date : e.year; };
+function each(w, list, y0, y1, yearOf, timeOf, fn) {
+  const until = y1 + w.timeStep;
+  for (let k = after(list, y0, yearOf); k < list.length && yearOf(list[k]) < until; k++) {
+    const t = timeOf(list[k]);
+    if (t > y0 && t <= y1) fn(list[k], k, t);
+  }
+}
 /* how many soldiers march for each side when `to` takes land from `from` in (y0, y1]: one to
    five by their share of the men in the battle that won it (world.battleLog), or null when no
    battle took it (a vassal folded in, a cession, a purchase): then no war band marches */
 function bands(w, y0, y1, to, from) {
-  const B = w.battleLog || [];
-  for (let k = after(B, y0, Y0); k < B.length && B[k][0] <= y1; k++) {
-    const b = B[k];
-    if (b[7] || !((b[6] && b[1] === to && b[2] === from) || (!b[6] && b[1] === from && b[2] === to))) continue;
+  let out = null;
+  each(w, w.battleLog || [], y0, y1, Y0, TB, function (b) {
+    if (out || b[7] || !((b[6] && b[1] === to && b[2] === from) || (!b[6] && b[1] === from && b[2] === to))) return;
     const mt = b[1] === to ? b[3] : b[4], mf = b[1] === to ? b[4] : b[3], s = mt + mf || 1;
-    return [Math.max(1, Math.min(5, Math.round(6 * mt / s))), Math.max(1, Math.min(5, Math.round(6 * mf / s)))];
-  }
-  return null;
+    out = [Math.max(1, Math.min(5, Math.round(6 * mt / s))), Math.max(1, Math.min(5, Math.round(6 * mf / s)))];
+  });
+  return out;
 }
 
 /* the owner each ownerLog entry replaced, kept up to date as the log grows */
@@ -129,16 +141,17 @@ function prevOwners(w) {
 
 /* every change in the years (y0, y1], as candidate animations with a priority */
 function changes(w, y0, y1) {
-  const out = [], P = w.polities, born = function (p) { return p && p.founded > y0 && p.founded <= y1; };
+  const out = [], P = w.polities;
   const wait = sailings(w, y0, y1, out), view = AEON.viewAt ? AEON.viewAt(w, y1) : null;
-  /* land: grouped by who it passed from and to */
+  /* land: grouped by who it passed from and to; a realm whose first land this is was born in the
+     tick of the change */
   const log = w.ownerLog, prev = prevOwners(w), groups = {};
-  for (let k = after(log, y0, Y0); k < log.length && log[k][0] <= y1; k++) {
-    const from = prev[k], to = log[k][2];
-    if (from === to) continue;
+  each(w, log, y0, y1, Y0, TL, function (e, k, t) {
+    const from = prev[k], to = e[2];
+    if (from === to) return;
     const key = from + ">" + to;
-    (groups[key] || (groups[key] = { from: from, to: to, cells: [] })).cells.push(log[k][1]);
-  }
+    (groups[key] || (groups[key] = { from: from, to: to, cells: [], year: e[0] })).cells.push(e[1]);
+  });
   for (const key in groups) {
     const g = groups[key], fp = P[g.from], tp = P[g.to], n = g.cells.length;
     let delay = 0;
@@ -146,7 +159,7 @@ function changes(w, y0, y1) {
     const flash = { kind: "flash", cells: g.cells, color: tp && tp.color, delay: delay };
     if (g.to == null) out.push({ prio: 1 + Math.log2(1 + n), fx: { kind: "lost", cells: g.cells, from: g.from, to: null }, alt: null });
     else if (g.from == null) out.push({ prio: 0, fx: flash });
-    else if (born(tp)) out.push({ prio: 4 + Math.log2(1 + n), fx: { kind: "split", cells: g.cells, from: g.from, to: g.to, capital: AEON.capitalAt(tp, y1) }, alt: flash });
+    else if (tp && tp.founded === g.year) out.push({ prio: 4 + Math.log2(1 + n), fx: { kind: "split", cells: g.cells, from: g.from, to: g.to, capital: AEON.capitalAt(tp, tp.founded) }, alt: flash });
     else {
       /* where the war band comes from: the attacker's land next to what it took, if any */
       let at = g.cells[0], origin = null;
@@ -162,18 +175,17 @@ function changes(w, y0, y1) {
   }
   for (const id in P) {
     const p = P[id];
-    if (p.founded > y1) continue;
+    if (p.founded > y1 + w.timeStep) continue;
     /* capitals moving (the first entry is the founding) */
     const cl = p.capitalLog || [];
-    for (let k = Math.max(1, after(cl, y0, YK)); k < cl.length && cl[k].year <= y1; k++)
-      out.push({ prio: 5, fx: { kind: "crown", pid: id, from: cl[k - 1].capital, to: cl[k].capital } });
+    each(w, cl, y0, y1, YK, TE, function (e, k) { if (k >= 1) out.push({ prio: 5, fx: { kind: "crown", pid: id, from: cl[k - 1].capital, to: e.capital } }); });
     /* ages: the one a realm is founded in, and each it reaches (not one it falls back into) */
     const al = p.ageLog || [];
     if (!w.pack.ages || !al.length) continue;
-    for (let k = after(al, y0, YK); k < al.length && al[k].year <= y1; k++) {
-      if ((al[k].inherited && !born(p)) || al[k].fell) continue;
-      out.push({ prio: al[k].inherited ? 3 : 4.5, fx: { kind: "age", pid: id, age: al[k].age, year: al[k].year } });
-    }
+    each(w, al, y0, y1, YK, TE, function (e) {
+      if ((e.inherited && p.founded !== e.year) || e.fell) return;
+      out.push({ prio: e.inherited ? 3 : 4.5, fx: { kind: "age", pid: id, age: e.age, year: e.year } });
+    });
   }
   /* wonders raised and lost */
   if (AEON.wonders) for (const a of AEON.wonders(w)) {
@@ -183,19 +195,19 @@ function changes(w, y0, y1) {
   }
   /* settlements razed: the size they had before; a city burning is a great moment */
   const sl = w.settleLog || [], SK = w.sackLog || [];
-  for (let k = after(sl, y0, Y0); k < sl.length && sl[k][0] <= y1; k++) {
-    if (sl[k][2] !== 0) continue;
-    const before = AEON.tierAt(w, sl[k][1], sl[k][0] - 1);
-    if (before <= 0) continue;
+  each(w, sl, y0, y1, Y0, TL, function (e, k, t) {
+    if (e[2] !== 0) return;
+    const before = AEON.tierAt(w, e[1], t - 0.01);
+    if (before <= 0) return;
     const who = [];
-    for (let j = after(SK, y0, Y0); j < SK.length && SK[j][0] <= y1; j++) if (SK[j][1] === sl[k][1]) who.push(SK[j][2], SK[j][3]);
+    for (let j = after(SK, e[0] - w.timeStep, Y0); j < SK.length && SK[j][0] <= e[0]; j++) if (SK[j][1] === e[1]) who.push(SK[j][2], SK[j][3]);
     /* the roofs burn in the colour of the realm that held the place */
     const OL = w.ownerLog || [];
     let held = null;
-    for (let j = 0; j < OL.length && OL[j][0] < sl[k][0]; j++) if (OL[j][1] === sl[k][1]) held = OL[j][2];
+    for (let j = 0; j < OL.length && OL[j][0] <= e[0]; j++) if (OL[j][1] === e[1] && TL(OL[j]) < t) held = OL[j][2];
     const hp = held != null ? w.polities[held] : null;
-    out.push({ prio: before >= 3 ? 5 : 2 + before * 0.5, who: who, fx: { kind: "burn", at: sl[k][1], tier: Math.min(3, before), color: hp && hp.color } });
-  }
+    out.push({ prio: before >= 3 ? 5 : 2 + before * 0.5, who: who, fx: { kind: "burn", at: e[1], tier: Math.min(3, before), color: hp && hp.color } });
+  });
   for (const c of out) if (!c.who) c.who = [c.fx.from, c.fx.to, c.fx.pid];
   return out;
 }
@@ -353,7 +365,8 @@ function sailings(w, y0, y1, out) {
   for (const type in SEA) {
     const list = ix[type];
     if (!list) continue;
-    for (let k = after(list, y0, YK); k < list.length && list[k].year <= y1; k++) {
+    for (let k = after(list, y0, YK); k < list.length && list[k].year < y1 + w.timeStep; k++) {
+      if (TE(list[k]) <= y0 || TE(list[k]) > y1) continue;
       /* a crossing beaten back plays as a fight at sea that the attacker loses; those events
          name the defender first */
       const ev = list[k], rep = ev.tags.indexOf("repelled") >= 0, kind = rep ? "raid" : SEA[type], pol = ev.actors.filter(function (a) { return a.kind === "polity"; });
@@ -361,7 +374,7 @@ function sailings(w, y0, y1, out) {
       if (!p || target == null) continue;
       /* not from land taken in this same crossing */
       const skip = {};
-      if (kind === "invade") for (let j = after(w.ownerLog, y0, Y0); j < w.ownerLog.length && w.ownerLog[j][0] <= y1; j++) if (w.ownerLog[j][2] === p.id) skip[w.ownerLog[j][1]] = true;
+      if (kind === "invade") each(w, w.ownerLog, y0, y1, Y0, TL, function (e) { if (e[2] === p.id) skip[e[1]] = true; });
       const ports = portsFor(w, view, p.id, target, skip), lane = laneFrom(c, ports, target, null);
       if (!lane) continue;
       const sail = sailTime(lane);

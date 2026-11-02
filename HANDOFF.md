@@ -33,6 +33,14 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   every 0.5 s: the whole 4500 years take ~2 s instead of ~30 s (the drawing was the cost). A
   chapter starts from the engine's own history at its date; `world._finished` replaces `_played`
   (finish() only at the end of the record). See the doc's step 2 for why no sketch-made start.
+  **Step 3 done (2026-11-02, histories byte-identical):** changes dated to the month within their
+  tick (core.js `dateTick`, `AEON.logTime`, `stateKey`; ownerLog/settleLog `e[3]`, ageLog and
+  capitalLog `.date`); `viewAt` takes fractional years; ui.js `viewTime()`/`collectTo()` show and
+  animate by the month at 1 yr/s and slower; mapfx `each()` windows by date. Checked in Node only
+  (scratchpad harness): views right at every tick and mid-tick, monthly animation windows give
+  exactly the tick windows' changes. NOT checked in the browser: the preview's launch.json is gone
+  from .claude/. Finding: a chapter at 10 days/s has one animation every ~48 s; steps 4-5 must
+  fill it.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

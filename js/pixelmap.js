@@ -547,7 +547,7 @@ function elevBand(r) {
 /* sea: { season, key } for the seasons on the ground (seasons.js), in the realm modes only */
 function compose(c, w, mode, roads, contest, focus, provOf, sea) {
   const seasonal = sea && AEON.seasons && (mode === "political" || mode === "diplomacy");
-  const key = mode + "|" + w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0) + "|" + (mode === "diplomacy" ? focus : "") + "|" + (provOf || "") + "|" + (seasonal ? sea.key : "");
+  const key = mode + "|" + (w.stateKey || w.year) + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (roads ? 1 : 0) + "|" + (mode === "diplomacy" ? focus : "") + "|" + (provOf || "") + "|" + (seasonal ? sea.key : "");
   if (c.key === key && !contest) return c.frame;
   c.key = contest ? null : key;
   const VW = c.VW, VH = c.VH, R = w.regions, land = c.land, cellOf = c.cellOf;
@@ -663,7 +663,7 @@ const ROAD = [96, 68, 38], ROAD_MAX = 14, CAPITAL_SPOKES = 3;
 const ROAD_LINKS = new WeakMap();
 function roadLinks(w) {
   /* viewAt() hands out one object for every year: the links say which year they were made for */
-  const stamp = w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (w.settleLog ? w.settleLog.length : 0);
+  const stamp = (w.stateKey || w.year) + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (w.settleLog ? w.settleLog.length : 0);
   let out = ROAD_LINKS.get(w);
   if (out && out.stamp === stamp) return out;
   out = [];

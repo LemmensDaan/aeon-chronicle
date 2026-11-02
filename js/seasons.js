@@ -185,7 +185,7 @@ function farmBase(id, s, l) {
 }
 /* the shown year: viewAt() hands out one object for every year, so the caches kept on it say
    which year (and which owners and settlements) they were made for */
-function stampOf(w) { return w.year + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (w.settleLog ? w.settleLog.length : 0); }
+function stampOf(w) { return (w.stateKey || w.year) + "|" + (w.ownerLog ? w.ownerLog.length : 0) + "|" + (w.settleLog ? w.settleLog.length : 0); }
 /* the seats of the realms living in the shown year, by region */
 function capitalsOf(w) {
   const caps = {};

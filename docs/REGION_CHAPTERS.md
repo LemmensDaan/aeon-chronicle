@@ -178,8 +178,24 @@ Each step is checked on seed 7 at 10 days/s before the next.
    confederations to empires), every chapter of a region shares one history, and the backstory is
    the region's own chronicle. A start made up from the sketch alone was dropped: it could not
    match this. Tribes with spheres of influence stay step 6.
-3. **The live engine.** Monthly ticks in a worker with a head start; logs as now; scrubbing back,
-   jumping forward; speed and replay as above. Same history rules, only finer.
+3. **Changes by the month** — **done 2026-11-02, differently than planned.** True monthly ticks
+   would mean rescaling every rate in core.js and both packs (growth, expansion, event budgets,
+   cooldowns), which changes every history; and a worker is not needed while a region's whole
+   history takes a second or two. So the engine keeps its 5-year tick and its rules, and each
+   change gets its month within the tick: core.js `dateTick` dates land changing hands (by the
+   event it came with; a realm's natural spread a month of its own), settlements (with their
+   land), new ages and capital moves (`e[3]` on ownerLog/settleLog, `.date` on ageLog/capitalLog).
+   `AEON.viewAt` takes a fractional year; at 1 yr/s and slower the map shows the month (ui.js
+   `viewTime()`) and mapfx animates each change on its date (`collectTo`); faster, all as before.
+   Histories are byte-identical (checked: seed 7 region 4,2 historical, seed 42 region 2,1
+   fantasy). The map's caches key on `view.stateKey` (the tick plus how many of the next tick's
+   changes have come), so a month without changes redraws nothing.
+   "Live" (head start, rerun on intervention) waits for interactivity: with a region computing in
+   seconds, an intervention can rerun it from the start with the intervention applied.
+   **Finding:** region 4,2's chapter 710-785 has 57 map animations (5 land takes) and 148
+   chronicle events: at 10 days/s one animation every ~48 s, one event every ~18 s. The engine is
+   too quiet per month for 10 days/s; steps 4 and 5 (wars shown as they unfold, campaigns by
+   season) are what fill it.
 4. **Wars shown as they unfold.** Levy, march, camp, siege, supply, from the engine's state.
 5. **Campaigns by season.** Armies as engine objects, weather of the month stops or slows them.
 6. **Tribes.** Spheres, seasonal pastures, raids, settling into land.

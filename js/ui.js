@@ -262,7 +262,21 @@ let simulating = false;
 let scrubbing = false, scrubTimer = 0;
 
 /* the world as it stood in the scrubbed year; the live world while generating */
-function shown() { return simulating || onPlanet() || !AEON.viewAt ? world : AEON.viewAt(world, playbackYear); }
+function shown() { return simulating || onPlanet() || !AEON.viewAt ? world : AEON.viewAt(world, viewTime()); }
+/* the moment the map shows: at the seasonal speeds the date, to the month, so a tick's changes come
+   on their own dates (core.js dateTick); faster, the tick */
+function viewTime() {
+  if (playSpeed > SEASON_SPEED || simulating || onPlanet()) return playbackYear;
+  return Math.floor((playbackYear + playOwed) * 12 + 1e-6) / 12;
+}
+/* the map animations have been given every change up to fxUpTo; playback hands them the rest as
+   it passes it (a month at a time at the seasonal speeds, a tick at a time faster) */
+let fxUpTo = 0;
+function collectTo(t) {
+  if (t <= fxUpTo) return;
+  if (AEON.mapfx && !simulating && !onPlanet() && ambientOn()) AEON.mapfx.collect(world, fxUpTo, t);
+  fxUpTo = t;
+}
 
 function visibleWorld() {
   return world;
@@ -275,6 +289,10 @@ function addSeasonStat() {
   seasonStatus();
 }
 function seasonStatus() {
+  if (dom.yearStat && world && !onPlanet()) {
+    const y = world.pack.yearLabel(Math.floor(viewTime()));
+    if (dom.yearStat.textContent !== y) dom.yearStat.textContent = y;
+  }
   if (!dom.seasonStat) return;
   const f = season(), name = f == null ? "" : seasonName(f);
   dom.seasonStat.classList.toggle("hidden", f == null);
@@ -287,7 +305,7 @@ function updateStatus() {
   const s = AEON.summary(world);
   dom.status.innerHTML = "";
   dom.status.appendChild(el("span", { class: "ae-stat" },
-    el("b", { text: world.pack.yearLabel(playbackYear) }), el("i", { text: "year" })));
+    dom.yearStat = el("b", { text: world.pack.yearLabel(Math.floor(viewTime())) }), el("i", { text: "year" })));
   addSeasonStat();
   dom.status.appendChild(el("span", { class: "ae-stat" },
     el("b", { text: String(countAliveAt(playbackYear)) }), el("i", { text: "powers" })));
@@ -327,15 +345,15 @@ function countAliveAt(year) {
    the slider is dragged (the moment plays once it settles), otherwise a jump, which plays the
    moment straight away (mapfx.js) */
 function setPlaybackYear(y, how) {
-  const from = playbackYear;
   playbackYear = Math.max(firstYear(), Math.min(lastYear(), y));
   if (how !== "play") playOwed = 0;
   const fx = AEON.mapfx && !simulating && !onPlanet() && ambientOn() ? AEON.mapfx : null;
   if (fx) {
-    if (how === "play") fx.collect(world, from, playbackYear);
+    if (how === "play") { if (playSpeed > SEASON_SPEED) collectTo(playbackYear); }
     else if (how === "scrub") fx.clear();
     else fx.moment(world, playbackYear);
   }
+  if (how !== "play") fxUpTo = playbackYear;
   dom.scrub.value = String(playbackYear);
   updateStatus();
   drawMap();
@@ -457,6 +475,7 @@ function loop(now) {
     playOwed -= ticks * world.timeStep;
     setPlaybackYear(playbackYear + ticks * world.timeStep, "play");
   } else { drawMap(); seasonStatus(); }                    /* the animations still move */
+  if (playSpeed <= SEASON_SPEED) collectTo(viewTime());
   if (playbackYear >= lastYear()) { playing = false; dom.playBtn.textContent = "▶"; drawMap(); runFx(); return; }
   rafId = requestAnimationFrame(loop);
 }

@@ -86,8 +86,8 @@ function newWorld(pack, seed, rng, width, height) {
     figures: {},
     artifacts: {},
     chronicle: [],
-    ownerLog: [],             // [year, regionId, ownerId|null] — lets any year be reconstructed
-    settleLog: [],            // [year, regionId, tier] whenever a settlement appears, changes size or goes (0)
+    ownerLog: [],             // [year, regionId, ownerId|null, date] — lets any year be reconstructed; date: the month in the tick (dateTick)
+    settleLog: [],            // [year, regionId, tier, date] whenever a settlement appears, changes size or goes (0)
     battleLog: [],            // [year, attackerId, defenderId, attackerMen, defenderMen, regionId|null, attackerWon, atSea, margin 1-3, event index, date]
     sackLog: [],              // [year, regionId, attackerId, victimId|null, "plundered"|"razed"]
     treaties: [],             // { id, kind, a, b, start, end, ended, ... } — see AEON.treaty
@@ -549,7 +549,7 @@ AEON.capitalAt = function (p, year) {
   const log = p.capitalLog;
   if (!log || !log.length) return p.capital;
   let c = log[0].capital;
-  for (const e of log) { if (e.year <= year) c = e.capital; else break; }
+  for (const e of log) { if ((e.date != null ? e.date : e.year) <= year) c = e.capital; else break; }
   return c;
 };
 
@@ -623,7 +623,7 @@ function settleIndex(world) {
 AEON.tierAt = function (world, rid, year) {
   const list = settleIndex(world).by[rid];
   let t = 0;
-  if (list) for (const e of list) { if (e[0] <= year) t = e[2]; else break; }
+  if (list) for (const e of list) { if (timeOf(e) <= year) t = e[2]; else break; }
   return t;
 };
 AEON.settlementHistory = function (world, rid) { return (settleIndex(world).by[rid] || []).slice(); };
@@ -635,9 +635,9 @@ AEON.ruinAt = function (world, rid, year) {
   if (!list) return null;
   let t = 0, last = 0, since = null;
   for (const e of list) {
-    if (e[0] > year) break;
+    if (timeOf(e) > year) break;
     if (e[2] > 0) last = e[2];
-    else if (t > 0) since = e[0];
+    else if (t > 0) since = timeOf(e);
     t = e[2];
   }
   if (t > 0 || !last || since == null) return null;
@@ -775,8 +775,15 @@ function endPolity(world, polity, fate) {
 }
 
 function logOwner(world, rid, owner) {
-  if (world.ownerLog) world.ownerLog.push([world.year, rid, owner]);
+  if (!world.ownerLog) return;
+  world.ownerLog.push([world.year, rid, owner]);
+  /* during a tick: the entry and the event it comes with, for dateTick to date it */
+  if (world._ownPend) world._ownPend.push(world.ownerLog.length - 1, world.chronicle.length);
 }
+/* when an entry of the owner or settlement log happened: its date within the tick, else (made
+   before the first tick) the tick's year */
+function timeOf(e) { return e[3] != null ? e[3] : e[0]; }
+AEON.logTime = timeOf;
 
 /* --------------------------------------------------- the past, as a view --
 
@@ -807,7 +814,9 @@ function ownersAt(world, year) {
     if (c.idx === 0 || log[c.idx - 1][0] <= year) cp = c; else break;
   }
   const owners = cp ? cp.owners.slice() : new Array(N).fill(null);
-  for (let k = cp ? cp.idx : 0; k < log.length && log[k][0] <= year; k++) owners[log[k][1]] = log[k][2];
+  /* the entries up to the year, and those of the next tick dated on or before it */
+  const until = year + world.timeStep;
+  for (let k = cp ? cp.idx : 0; k < log.length && log[k][0] < until; k++) if (timeOf(log[k]) <= year) owners[log[k][1]] = log[k][2];
   return owners;
 }
 
@@ -848,6 +857,20 @@ AEON.ageAt = function (world, pid, year) {
   return { index: e.age, age: ages[e.age], since: e.year, inherited: !!e.inherited };
 };
 
+/* what a view shows, as a key that changes only when it does: the last whole tick, and how many
+   of the next tick's land and settlement changes have come by the (month) year. The map's caches
+   key on it, so a month without changes redraws nothing (pixelmap.js, seasons.js). */
+function stateKey(world, year) {
+  const st = world.timeStep, T0 = world.startYear + Math.floor((year - world.startYear) / st + 1e-9) * st;
+  if (year <= T0) return String(T0);
+  let n = 0;
+  for (const L of [world.ownerLog, world.settleLog || []]) {
+    let lo = 0, hi = L.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (L[m][0] > T0) hi = m; else lo = m + 1; }
+    for (let k = lo; k < L.length && L[k][0] <= T0 + st; k++) if (timeOf(L[k]) <= year) n++;
+  }
+  return T0 + "+" + n;
+}
 AEON.viewAt = function (world, year) {
   if (year == null || year >= world.year) year = world.year;
   let v = world._view;
@@ -882,7 +905,8 @@ AEON.viewAt = function (world, year) {
   const pols = {};
   for (const id in world.polities) {
     const p = world.polities[id];
-    if (p.founded > year) continue;
+    /* a realm founded in the tick still running holds land from the month it rose */
+    if (p.founded > year && first[id] === undefined) continue;
     const pv = v._pv[id] || (v._pv[id] = Object.create(p));
     const alive = p.ended == null || p.ended > year;
     pv.ended = alive ? null : p.ended;
@@ -893,6 +917,7 @@ AEON.viewAt = function (world, year) {
   }
   v.polities = pols;
   v.year = year;
+  v.stateKey = stateKey(world, year);
   v._year = year;
   v._logLen = world.ownerLog.length;
   v._sLen = sLen;
@@ -1266,6 +1291,12 @@ AEON.warLength = function (world, t) {
   }
   return t.years;
 };
+/* a number in [0, 1) from a region and a year, the same every time */
+function spread(rid, year) {
+  let h = Math.imul(rid + 1, 374761393) ^ Math.imul(Math.round(year * 2) + 7919, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
 /* the dates of a tick's events: spread evenly through its years, in the order they happened,
    to the month (ev.date, a fractional year; ev.year stays the tick's); treaties take the dates of
    the events that made and ended them, and a war its length in years */
@@ -1278,6 +1309,35 @@ function dateTick(world, from) {
   for (let i = B.length - 1; i >= 0 && B[i][0] === world.year; i--) {
     const k = B[i][9];
     B[i][10] = dateOf(k) != null ? dateOf(k) : dateOf(k - 1) != null ? dateOf(k - 1) : world.year;
+  }
+  /* land changing hands takes the date of the event it came with (the one recorded next, else the
+     last before it, else the tick's end); land a realm's natural spread took, before the tick's
+     events, a month of its own; a region's later change in the tick is never dated before an
+     earlier one. A settlement's change takes the date its land changed in the tick, else a month
+     of its own. So the map can show a tick's changes as they come, month by month (ui.js), and
+     no history changes: nothing here draws on the world's random stream. */
+  const OL = world.ownerLog, PD = world._ownPend || [], base = PD.base || 0, landAt = {};
+  const monthOf = function (rid, salt) { return y0 + (1 + Math.floor(spread(rid, world.year + salt) * (world.timeStep * 12 - 1))) / 12; };
+  for (let j = 0; j < PD.length; j += 2) {
+    const e = OL[PD[j]], k = PD[j + 1];
+    let d = j < base ? monthOf(e[1], 0) : dateOf(k) != null ? dateOf(k) : dateOf(k - 1) != null ? dateOf(k - 1) : world.year;
+    if (landAt[e[1]] != null && d < landAt[e[1]]) d = landAt[e[1]];
+    e[3] = landAt[e[1]] = d;
+  }
+  PD.length = 0;
+  const SL = world.settleLog || [];
+  for (let i = SL.length - 1; i >= 0 && SL[i][0] === world.year; i--) SL[i][3] = landAt[SL[i][1]] != null ? landAt[SL[i][1]] : monthOf(SL[i][1], 0.5);
+  /* a realm's new age and a capital moving: the month its capital's land changed in the tick (a
+     founding), else one of its own */
+  for (const id in world.polities) {
+    const p = world.polities[id], own = landAt[p.capital], salt = (+id.slice(1) || 0) * 7919;
+    for (const L of [p.ageLog, p.capitalLog]) {
+      if (!L) continue;
+      for (let i = L.length - 1; i >= 0 && L[i].year === world.year && L[i].date == null; i--) {
+        const at = L === p.capitalLog ? landAt[L[i].capital] : own;
+        L[i].date = at != null ? at : monthOf(salt, L === p.ageLog ? 0.25 : 0.75);
+      }
+    }
   }
   for (const t of world.treaties || []) {
     if (t.start === world.year && t.startDate == null) t.startDate = dateOf(t.ev) != null ? dateOf(t.ev) : world.year;
@@ -2178,8 +2238,11 @@ AEON.tick = function (world) {
   if (world.year >= world.endYear) return false;
   world.year += world.timeStep;
   const ev0 = world.chronicle.length;
+  if (!world._ownPend) Object.defineProperty(world, "_ownPend", { value: [], enumerable: false, configurable: true, writable: true });
+  world._ownPend.length = 0;
   updateEra(world);
   baselineTick(world);
+  world._ownPend.base = world._ownPend.length;
 
   const alive = living(world);
   const rng = world.rng;

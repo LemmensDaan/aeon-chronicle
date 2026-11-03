@@ -1134,8 +1134,8 @@ function draw(canvas, world, opts) {
   /* the weather: snowfall, the monsoon's rain, plankton blooms, hurricanes, the dust of tornadoes */
   if (sea && opts.time != null) SE.weather(ctx, c, world, v, X0, { season: opts.season, day: opts.day, speed: opts.speed, time: opts.time });
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
-  const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null;
-  const cell = PPC * v.P, env = fx && {
+  const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null, war = AEON.mapfx && opts.date != null && !dataMode;
+  const cell = PPC * v.P, env = (fx || war) && {
     world: world, c: c, P: v.P, X0: X0, Y0: v.Y0, u: spriteUnit(v), pc: v.P / v.dpr, mode: opts.mode || "political",
     sx: function (gx) { return X0 + gx * cell; }, sy: function (gy) { return v.Y0 + gy * cell; },
     sprites: { VILLAGE: VILLAGE, TOWN: TOWN, CITY: CITY, PALACE: PALACE, WONDER: WONDER }, blit: blit,
@@ -1143,6 +1143,8 @@ function draw(canvas, world, opts) {
   };
   if (fx) fx.draw(ctx, env, "under");
   drawOverlay(ctx, world, c, v, opts, [X0]);
+  /* the armies of the wars, at the seasonal speeds (campaigns.js) */
+  if (war) AEON.mapfx.armies(ctx, env, opts.date);
   if (fx) fx.draw(ctx, env, "over");
   if (sea && opts.time != null) SE.sky(ctx, c, world, v, X0, spriteUnit(v), { time: opts.time });
 }

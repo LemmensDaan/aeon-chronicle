@@ -274,6 +274,28 @@ Each step is checked on seed 7 at 10 days/s before the next.
    province or town at a time, weather of the month deciding; drawn on the map (merges the old
    steps "wars shown as they unfold" and "campaigns by season"). The biggest step, and the one
    that fixes "nothing is happening".
+   **5a done 2026-11-03: armies on the map, the weather deciding when.** js/campaigns.js. The
+   engine half (core.js dateTick calls `AEON.campaigns.dateWar`): a year's war events (tagged
+   "war", a place, two realms) are dated to the months the square's weather allows a campaign
+   (`climate`: twelve weights from the middle land's warmest and coldest months, the south's
+   seasons turned round, the rains of a warm monsoon summer; where it never warms, the three
+   warmest months), each at a place in the season drawn from the event itself; the year's other
+   events keep their order between them. Land, towns and battles take those dates as before. No
+   random stream is touched: over 32 regions (8 seeds x 2 squares, both packs) every count
+   (events, wars, battles, land changing hands, realms, towns, alliances, event types) is the
+   same as step 4; only dates move (and the war lengths read from them). The map half
+   (`AEON.campaigns.armiesAt(world, date)`, drawn by mapfx.js `armies`, at the seasonal speeds
+   only): each realm at war has an army whose year is read from that year's events. It winters
+   in quarters (its own land nearest the front), musters when the season opens, marches to each
+   place it fought to be there on the month it was fought, lies two months before a town it
+   besieges (smoke over the camp), stands to fight at a battle, watches the border in a year
+   without fighting (moving along it every two months or so), and goes home when the war ends.
+   On water it is a ship. Vassal levies and allies show only where they fight. Worked out per
+   year when shown and cached; nothing is stored. In a 75-year chapter an army is on the map
+   about 60-80% of the time, moving a fifth to a third of it.
+   **5b, not done:** armies deciding outcomes: the weather stopping a march or a war, land taken
+   a town at a time when a siege ends, supplies, peace on the terms reached. That means rewriting
+   both packs' war events (conquest, battle, siege, invasion) to act through the armies.
 6. **Court and diplomacy, raids, harvests and plague** on the monthly tick: deaths, heirs,
    regencies, marriages, envoys, revolts; raids after the harvest; bad harvests, famine, plague
    spreading by road and sea. Plus the chapter's stakes and the strip in the 4500 years.

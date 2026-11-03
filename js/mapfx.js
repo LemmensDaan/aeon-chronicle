@@ -910,6 +910,36 @@ function draw(g, env, layer) {
   }
 }
 
-AEON.mapfx = { looks: looksOf, shipSprite: function (kind) { return (SHIPS[kind] || SHIPS.oared)[0]; }, collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, laurels: function (age) { return LAURELS[Math.max(0, Math.min(4, age))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
+/* the armies of a region's wars at a date (campaigns.js): marching bands under their standards,
+   camps on the border and in winter quarters, a siege's camp with its smoke, a band standing to
+   fight; on water a ship of the realm's look. Each army stands a little to its own side, facing
+   the enemy, so two that meet stand apart. */
+function armies(g, env, date) {
+  if (!AEON.campaigns || date == null) return;
+  const w = env.world, list = AEON.campaigns.armiesAt(w, date);
+  if (!list.length) return;
+  const t = now(), y = Math.floor(date), c = env.c;
+  for (const a of list) {
+    const p = w.polities[a.pid];
+    if (!p) continue;
+    const look = looksOf(w, p, y), col = p.color, over = { f: col || "#888", F: shade(col) };
+    const gx = a.x - (a.moving ? 0 : a.dir * 0.35), x = env.sx(gx), yy = env.sy(a.y);
+    const mx = Math.floor(gx * 4), my = Math.floor(a.y * 4);
+    const wet = mx >= 0 && my >= 0 && mx < c.VW && my < c.VH && !c.land[my * c.VW + mx];
+    if (wet) {
+      const sp = (SHIPS[look.ship] || SHIPS.oared)[0];
+      frameAt(g, env, x, yy, function () { g.scale(a.dir, 1); env.blit(g, sp, -Math.floor(sp.w / 2), -sp.h + 2, 1, over); });
+      continue;
+    }
+    if (a.state === "march") { band(g, env, x + a.dir * 4 * env.u, yy, a.n, col, a.dir, t, true, true, look.band); continue; }
+    if (a.state === "battle") { band(g, env, x + a.dir * 3 * env.u, yy, a.n + 1, col, a.dir, t, false, true, look.band); continue; }
+    /* camp, siege and winter quarters: the tents under the standard, the band beside them in the
+       season, smoke over a siege */
+    frameAt(g, env, x, yy, function () { env.blit(g, CAMP, -5, -6, 1, over); if (a.state === "siege") smoke(g, a.dir * 7, -3, t, 3, 3, 1); });
+    if (a.state !== "winter") band(g, env, x + a.dir * 9 * env.u, yy + env.u, a.state === "siege" ? a.n : 1, col, a.dir, t, false, false, look.band);
+  }
+}
+
+AEON.mapfx = { armies: armies, looks: looksOf, shipSprite: function (kind) { return (SHIPS[kind] || SHIPS.oared)[0]; }, collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, laurels: function (age) { return LAURELS[Math.max(0, Math.min(4, age))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
 
 })();

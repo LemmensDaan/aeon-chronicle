@@ -54,6 +54,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   five-year steps. Outcome over 32 regions within a few percent of the five-year tick (wars -12%
   historical); compute ~2x. Details in the doc's step 4. Checked in Node only (scratchpad
   harnesses agg.js, outcome.js, view.js, density.js); the browser preview still needs a launch.json.
+  **Step 5a done (2026-11-03, histories unchanged but for dates):** js/campaigns.js: war events
+  dated to the square's campaign months (`dateWar`, from dateTick); armies read from each year's
+  events and drawn at the seasonal speeds (`armiesAt`, mapfx.js `armies`, ui.js passes `date`):
+  winter quarters, muster, march, siege, battle, border watch, home. `AEON.ownersAt` exported.
+  Same counts as step 4 over 32 regions. Seen in the browser (`.claude/launch.json`: python
+  http.server on 8765). 5b (armies deciding outcomes, weather stopping wars) still to do.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

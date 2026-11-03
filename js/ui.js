@@ -564,6 +564,8 @@ function drawMap() {
       season: season(),
       /* the date in days and the speed in days a second, for the storms and the ships (seasons.js) */
       day: (playbackYear + playOwed) * YEAR_DAYS, speed: playSpeed,
+      /* the date, for the armies in the field (campaigns.js), while the seasons show */
+      date: ambientOn() && season() != null && !simulating && !onPlanet() ? playbackYear + playOwed : null,
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
     if (worldMode && AEON.worldView) AEON.worldView.draw(dom.canvas, world, simulating ? world.year : playbackYear, { highlight: worldPick, pick: dom.squarePlaque && dom.squarePlaque._si, ages: mapMode === "ages" });

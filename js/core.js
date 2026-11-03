@@ -814,6 +814,7 @@ AEON.logTime = timeOf;
 
 const CHECKPOINT_EVERY = 4000;
 
+AEON.ownersAt = function (world, year) { return ownersAt(world, year); };
 function ownersAt(world, year) {
   const log = world.ownerLog, N = world.regions.length;
   let cps = world._ownerCps;
@@ -1341,6 +1342,8 @@ function spread(rid, year) {
 function dateTick(world, from) {
   const C = world.chronicle, n = C.length - from, y0 = world.year - world.timeStep;
   for (let i = from; i < C.length; i++) C[i].date = Math.round((y0 + (i - from + 1) / (n + 1) * world.timeStep) * 12) / 12;
+  /* in a region, the war events go to the months armies take the field (campaigns.js) */
+  if (AEON.campaigns) AEON.campaigns.dateWar(world, from);
   const dateOf = function (k) { return k != null && C[k] && C[k].year === world.year ? C[k].date : null; };
   /* a battle takes the date of the event it came before (or after, at the end of the tick) */
   const B = world.battleLog || [];

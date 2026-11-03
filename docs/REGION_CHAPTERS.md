@@ -1,6 +1,6 @@
 # Region chapters: design
 
-2026-10-30. A design to agree on before building. Nothing is built yet.
+2026-10-30, plan revised 2026-11-03 (two layers). Steps 1-3 of the build order are done.
 
 ## Why
 
@@ -34,6 +34,57 @@ So the two levels get one job each:
 6. **Wars are shown as they unfold** (the levy gathering, the march, the camp, the siege, the
    supply train) and **campaigns follow the seasons**: they advance in the campaigning season,
    stop for winter, fleets wait for good weather.
+7. **The engine gets two layers (2026-11-03).** Step 3 showed that dating the 5-year tick's
+   changes to the month is not enough: the tick itself makes nothing happen for minutes at the
+   chapter speeds. Daan does not want 5-year ticks. The engine becomes a yearly slow layer and a
+   monthly fast layer (section "Two layers"), even though this changes every history.
+
+## Two layers
+
+At 5 days/s a month lasts 6 s and a year 73 s; at 10 days/s, 3 s and 36.5 s. A chapter feels
+alive when something visible happens about once a month in the region: a beat every 3-10 s.
+Today's engine gives about 2 events a year per region (region 4,2, 710-785: 148 events in 75
+years, 5 land takes), so it is about six times too sparse, and its events are the wrong grain:
+what is missing is not more conquests but smaller, more frequent things. The engine thinks at
+the scale of kingdoms; a chapter is watched at the scale of armies, courts and towns. So, as
+Crusader Kings and Total War do, the slow things stay slow and fast things come in under them.
+
+**The slow layer: yearly.** Population, technology, learning and ages, realm types, wealth,
+dynasties, the decision to go to war (and what for), alliances, the sketch's pull and contacts.
+These change over decades and nobody watches them month by month. The tick goes from 5 years to
+1: every per-tick rate is rescaled to a year (some already scale with `world.timeStep`; the rest,
+in core.js and in both packs' events, are found and divided), and the event budget per tick is
+spread so a year holds a fifth of today's tick. This changes every history; the outcome over
+centuries should stay alike (checked with the region and worldgen harnesses: realm counts, sizes,
+ages reached, how many wars).
+
+**The fast layer: monthly.** What happens month by month in real history and can be watched:
+
+- **Campaigns.** The slow layer decides "X makes war on Y for these provinces"; the fast layer
+  carries it out. An army is an engine object (size from `AEON.fieldArmy`, a position, supplies,
+  a goal): the levy gathers at the capital, marches along the roads, camps, lays siege, fights
+  (the battle model of military step 2), takes or loses towns, goes into winter quarters. Land
+  changes hands a province or a town at a time, when a siege ends or a battle is won, so a war
+  of a few years is dozens of visible steps instead of one jump. The weather of the month and the
+  square decides: snow and mud stop the march, a frozen river can be crossed, storms keep fleets
+  in port, winter sends levies home. Peace ends the campaign on the terms the war reached.
+- **Court and diplomacy.** A ruler falls ill and dies, an heir is born or comes of age, a regency,
+  a marriage, an envoy riding between capitals, a treaty sealed, a province restless and then in
+  revolt. Mostly small, but frequent, and the dynasties of the slow layer are made of them.
+- **Raids and tribes.** Raiders ride out after the harvest; herders move between summer and
+  winter pastures (section 4).
+- **Harvest, famine and plague.** A bad harvest after a wet summer, famine the next spring, a
+  plague that spreads along roads and sea lanes region by region.
+
+Together, about one visible event per month per region. The fast layer runs only in a chapter
+(and in "Whole history" played at the seasonal speeds); the world sketch and fast playback keep
+the slow layer alone, so a region's whole history stays a matter of seconds.
+
+**The grand scheme inside a chapter.** A chapter opens with its stakes: the world history knows
+how it ends ("the Verergrianite treaty"), so the chapter asks its question (who will hold the
+coast?), and a strip shows where it lies in the 4500 years. Foreign powers press on the edge, and
+the arrivals the sketch has coming are announced before they come. Optional: quiet months pass a
+little faster and playback slows when armies meet; a convenience, not the fix.
 
 ## 1. Chapters
 
@@ -70,6 +121,10 @@ sketch at that date instead of from the starting peoples:
 - **the backstory** as chronicle entries: "what came before", written from the sketch
 
 ## 3. The live engine
+
+(Partly superseded: the monthly ticks are now the fast layer of "Two layers", the slow layer
+ticks yearly; a worker and a head start wait for interactivity, since a region computes in
+seconds. Kept for the record.)
 
 The region's history is no longer run in full before it plays. It runs while you watch.
 
@@ -153,10 +208,10 @@ events.
 
 ## What changes
 
-- region history: from a full pre-run to a live engine with a monthly tick, a worker and a head
-  start (core.js, ui.js playback, mapfx timing)
-- a region's start: from the sketch's state at a date, with tiers, not from the founding peoples
-- wars: campaigns with armies on the map
+- the engine: a yearly slow layer instead of the 5-year tick, and a monthly fast layer for
+  campaigns, court and diplomacy, raids, harvests and plague (core.js, both packs, ui.js
+  playback, mapfx)
+- wars: campaigns with armies as engine objects on the map
 - tribes: spheres of influence
 - every region history and its chronicle text (said here once: this changes all histories)
 
@@ -177,7 +232,7 @@ Each step is checked on seed 7 at 10 days/s before the next.
    construction (towns, roads, provinces, wars and treaties in progress, realm types from tribal
    confederations to empires), every chapter of a region shares one history, and the backstory is
    the region's own chronicle. A start made up from the sketch alone was dropped: it could not
-   match this. Tribes with spheres of influence stay step 6.
+   match this. Tribes with spheres of influence stay a later step (7).
 3. **Changes by the month** — **done 2026-11-02, differently than planned.** True monthly ticks
    would mean rescaling every rate in core.js and both packs (growth, expansion, event budgets,
    cooldowns), which changes every history; and a worker is not needed while a region's whole
@@ -194,13 +249,23 @@ Each step is checked on seed 7 at 10 days/s before the next.
    seconds, an intervention can rerun it from the start with the intervention applied.
    **Finding:** region 4,2's chapter 710-785 has 57 map animations (5 land takes) and 148
    chronicle events: at 10 days/s one animation every ~48 s, one event every ~18 s. The engine is
-   too quiet per month for 10 days/s; steps 4 and 5 (wars shown as they unfold, campaigns by
-   season) are what fill it.
-4. **Wars shown as they unfold.** Levy, march, camp, siege, supply, from the engine's state.
-5. **Campaigns by season.** Armies as engine objects, weather of the month stops or slows them.
-6. **Tribes.** Spheres, seasonal pastures, raids, settling into land.
-7. **The region wins.** Write the outcome back; rerun the sketch from that date.
-8. **Interactivity:** to be designed (see below).
+   too quiet per month for 10 days/s. That led to the two layers (decision 7); the steps below
+   replace the old 4-8 (2026-11-03).
+4. **The yearly slow layer.** The tick from 5 years to 1: rescale every per-tick rate in core.js
+   and both packs, spread the event budget, keep step 3's month dating for what a year's events
+   change. Check the outcome over centuries stays alike (region-history and worldgen harnesses).
+   Changes every history.
+5. **Campaigns (the fast layer begins).** The monthly tick inside a chapter; wars carried out by
+   armies as engine objects: levy, march, camp, siege, battle, winter quarters, land taken a
+   province or town at a time, weather of the month deciding; drawn on the map (merges the old
+   steps "wars shown as they unfold" and "campaigns by season"). The biggest step, and the one
+   that fixes "nothing is happening".
+6. **Court and diplomacy, raids, harvests and plague** on the monthly tick: deaths, heirs,
+   regencies, marriages, envoys, revolts; raids after the harvest; bad harvests, famine, plague
+   spreading by road and sea. Plus the chapter's stakes and the strip in the 4500 years.
+7. **Tribes.** Spheres, seasonal pastures, raids, settling into land.
+8. **The region wins.** Write the outcome back; rerun the sketch from that date.
+9. **Interactivity:** to be designed (see below).
 
 ## Open questions
 

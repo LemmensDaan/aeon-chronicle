@@ -41,6 +41,13 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   exactly the tick windows' changes. NOT checked in the browser: the preview's launch.json is gone
   from .claude/. Finding: a chapter at 10 days/s has one animation every ~48 s; steps 4-5 must
   fill it.
+  **Plan revised (2026-11-03): two layers.** Daan does not want 5-year ticks: at 5-10 days/s
+  nothing happens for minutes. The engine becomes a yearly slow layer (population, tech, ages,
+  dynasties, war decisions) and a monthly fast layer (campaigns with armies as engine objects,
+  court and diplomacy, raids, harvests and plague), aiming at one visible event a month per
+  region. New build order in the doc: 4 yearly slow layer, 5 campaigns, 6 court/diplomacy/raids/
+  plague + chapter stakes, 7 tribes, 8 region wins, 9 interactivity. Steps 4 on change every
+  history.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

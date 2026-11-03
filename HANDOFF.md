@@ -60,6 +60,13 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   winter quarters, muster, march, siege, battle, border watch, home. `AEON.ownersAt` exported.
   Same counts as step 4 over 32 regions. Seen in the browser (`.claude/launch.json`: python
   http.server on 8765). 5b (armies deciding outcomes, weather stopping wars) still to do.
+  **Step 5b done (2026-11-03, changes every region history):** armies are engine objects
+  (world.armies, world.armyLog) moving month by month in the yearly tick; a turn's events get its
+  month (`CP.slot`/`later` in AEON.tick, `dateYear`); pack war events marked `campaign` are gated
+  by the season and the army (ctx.ready/front/siegeOf/siegeMonths); sieges run months and armies
+  get their own siege/battle turns (`AEON.campaignTurn`, STORM 0.25, CLASH 0.02 in campaigns.js).
+  32-region comparison against 5a in the doc's step 5 (battles 5.8x historical, land +23%, wars
+  -9%). Tuning knobs: STORM, CLASH, SPEED, REACH.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

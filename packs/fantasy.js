@@ -883,13 +883,13 @@ const SPINE = [
     }
   },
   {
-    id: "border-battle", consolidate: true, scope: "polity", weight: 8, cooldown: 10,
-    test: function (c) { return hostileNeighbors(c).length > 0; },
+    id: "border-battle", consolidate: true, campaign: "battle", scope: "polity", weight: 8, cooldown: 10,
+    test: function (c) { return hostileNeighbors(c).some(function (o) { return c.ready(o); }); },
     run: function (c) {
-      const w = c.world, a = c.polity, b = c.pick(hostileNeighbors(c));
+      const w = c.world, a = c.polity, b = c.pick(hostileNeighbors(c).filter(function (o) { return c.ready(o); }));
       const fr = borderRegions(w, b, a);
       if (!fr.length) return null;
-      const site = c.pick(fr), name = sn(c, site, b), o = fight(c, a, b, site, fr.length);
+      const site = c.front(b, fr), name = sn(c, site, b), o = fight(c, a, b, site, fr.length);
       if (!o.won) {
         /* the attack broken; a rout lets the defenders follow it home */
         stock(a, "population", 0.97); b.prestige = clamp(b.prestige + 0.03, 0, 1);
@@ -917,17 +917,18 @@ const SPINE = [
     }
   },
   {
-    id: "siege-and-sack", scope: "polity", weight: 6, cooldown: 30,
+    id: "siege-and-sack", campaign: "siege", scope: "polity", weight: 6, cooldown: 30,
+    /* in a region, the town its army has lain before long enough (campaigns.js) */
     test: function (c) {
       const w = c.world;
-      return hostileNeighbors(c).some(function (o) { return o.regions.some(function (i) { return w.regions[i].settlement && w.regions[i].settlement.tier >= 2; }); });
+      return hostileNeighbors(c).some(function (o) { const s = c.siegeOf(o); return s === undefined ? o.regions.some(function (i) { return w.regions[i].settlement && w.regions[i].settlement.tier >= 2; }) : !!(s && s.settlement && s.settlement.tier >= 2); });
     },
     run: function (c) {
       const w = c.world, a = c.polity;
-      const foes = hostileNeighbors(c).filter(function (o) { return o.regions.some(function (i) { return w.regions[i].settlement && w.regions[i].settlement.tier >= 2; }); });
-      const lose = c.pick(foes);
+      const foes = hostileNeighbors(c).filter(function (o) { const s = c.siegeOf(o); return s === undefined ? o.regions.some(function (i) { return w.regions[i].settlement && w.regions[i].settlement.tier >= 2; }) : !!(s && s.settlement && s.settlement.tier >= 2); });
+      const lose = c.pick(foes), sat = c.siegeOf(lose);
       const rs = lose.regions.map(function (i) { return w.regions[i]; }).filter(function (r) { return r.settlement && r.settlement.tier >= 2; });
-      const r = c.pick(rs);
+      const r = sat || c.pick(rs);
       const name = r.settlement.name;
       const o = fight(c, a, lose, r, 1);
       if (!o.won) {
@@ -944,7 +945,7 @@ const SPINE = [
       if (lose.ended) lose.fate = "Its last city, " + name + ", was burned by " + pn(a) + " in " + yl(c.year) + ".";
       stock(lose, "population", 0.88); stab(lose, -0.05);
       return mk(4, ["war", "sacked", raze ? "razed" : "plunder"].concat(r.settlement ? [] : ["ruin-made"]), [c.actor(a), c.actor(lose), c.actor(r)].concat(held2.map(function (x) { return c.actor(x); })), r.id,
-        name + " was stormed by the army of " + pn(a) + " after a siege of " + c.int(2, 14) + " months. The walls held until the wells failed. " +
+        name + " was stormed by the army of " + pn(a) + " after a siege of " + (sat && c.siegeMonths(lose) || c.int(2, 14)) + " months. The walls held until the wells failed. " +
         (raze ? "The city was burned by the third day and is described by the survivors in terms the scribe declines to repeat; no one lives there now."
               : "The city was given over to the soldiers for three days, and what they could not carry they broke; then the army went home.") +
         (held2.length ? " " + held2[0].name + " was among the things carried out." : ""));
@@ -2412,20 +2413,20 @@ const ACTION_EVENTS = [
   {
     /* a war won outright, as the historical pack's conquest: the stronger side presses its war to
        an end and takes provinces (a realm of one or two provinces whole) */
-    id: "war-won", consolidate: true, scope: "polity", weight: 12,
+    id: "war-won", consolidate: true, campaign: true, scope: "polity", weight: 12,
     test: function (c) {
       const w = c.world, p = c.polity;
       return AEON.treatiesOf(w, p, c.year).some(function (t) {
         if (t.kind !== "war") return false;
         const q = w.polities[t.a === p.id ? t.b : t.a];
-        return q && !q.ended && might(w, p) > might(w, q) * 1.3 && borderRegions(w, q, p).length > 0;
+        return q && !q.ended && might(w, p) > might(w, q) * 1.3 && c.ready(q) && borderRegions(w, q, p).length > 0;
       });
     },
     run: function (c) {
       const w = c.world, p = c.polity;
       const foes = AEON.treatiesOf(w, p, c.year).filter(function (t) { return t.kind === "war"; }).map(function (t) { return w.polities[t.a === p.id ? t.b : t.a]; })
-        .filter(function (q) { return q && !q.ended && might(w, p) > might(w, q) * 1.3 && borderRegions(w, q, p).length > 0; });
-      const q = c.pick(foes), fr = borderRegions(w, q, p), site = c.pick(fr), name = sn(c, site, q), o = fight(c, p, q, site, fr.length);
+        .filter(function (q) { return q && !q.ended && might(w, p) > might(w, q) * 1.3 && c.ready(q) && borderRegions(w, q, p).length > 0; });
+      const q = c.pick(foes), fr = borderRegions(w, q, p), site = c.front(q, fr), name = sn(c, site, q), o = fight(c, p, q, site, fr.length);
       if (!o.won) {
         stock(p, "population", 0.97);
         return mk(3, ["war", "battle", "repelled"], [c.actor(q), c.actor(p), c.actor(site)], site.id,

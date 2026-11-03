@@ -318,6 +318,8 @@ function recordEvent(world, type, payload) {
     tags: payload.tags || [],
   };
   if (!ev.text) return null;
+  /* in a region's tick, the month of the turn it came in (campaigns.js) */
+  if (world._month != null && AEON.campaigns) ev.date = AEON.campaigns.dateNow(world);
   world.chronicle.push(ev);
   const ti = world._tagIndex || (world._tagIndex = {});
   for (const t of ev.tags) (ti[t] || (ti[t] = [])).push(ev);
@@ -353,6 +355,13 @@ function makeCtx(world, subject) {
 
     pick: function (a) { return rng.pick(a); },
     choice: function (a) { return rng.pick(a); },
+    /* the war against foe and its army (campaigns.js): may it be fought now; the place in a list
+       nearest the army (else one at random); the town its siege has made ready to storm (null:
+       none yet; undefined: no army, the pack chooses) */
+    ready: function (foe) { return !AEON.campaigns || AEON.campaigns.ready(world, ctx.polity, foe); },
+    front: function (foe, list) { return (AEON.campaigns && AEON.campaigns.front(world, ctx.polity, foe, list)) || rng.pick(list); },
+    siegeOf: function (foe) { return AEON.campaigns ? AEON.campaigns.siegeOf(world, ctx.polity, foe) : undefined; },
+    siegeMonths: function (foe) { return AEON.campaigns ? AEON.campaigns.siegeMonths(world, ctx.polity, foe) : null; },
     chance: function (p) { return rng.chance(p); },
     int: function (a, b) { return rng.int(a, b); },
     range: function (a, b) { return rng.range(a, b); },
@@ -1112,6 +1121,7 @@ AEON.treaty = function (world, kind, a, b, extra) {
   const ix = openIndex(world), k = pairKey(t.a, t.b);
   ix[k + "|" + kind] = t; ix[k + "|*"] = t;
   if (kind === "tribute") ix["lord|" + t.a] = t;
+  if (kind === "war" && AEON.campaigns) AEON.campaigns.warBegun(world, t);
   if (kind === "war" && !t.joined) callToArms(world, t, a, b);
   return t;
 };
@@ -1121,6 +1131,7 @@ AEON.endTreaty = function (world, t, how) {
   const open = openList(world), at = open.indexOf(t);
   if (at >= 0) open.splice(at, 1);
   endedNow(world).push(t);
+  if (AEON.campaigns) AEON.campaigns.warEnded(world, t);
   /* the pair's next open treaty, if any, takes its place in the index */
   const ix = openIndex(world), k = pairKey(t.a, t.b), T = world.treaties;
   if (ix[k + "|" + t.kind] === t) { ix[k + "|" + t.kind] = null; for (let i = T.length - 1; i >= 0; i--) if (T[i].end == null && T[i].kind === t.kind && pairKey(T[i].a, T[i].b) === k) { ix[k + "|" + t.kind] = T[i]; break; } }
@@ -1341,9 +1352,9 @@ function spread(rid, year) {
    the events that made and ended them, and a war its length in years */
 function dateTick(world, from) {
   const C = world.chronicle, n = C.length - from, y0 = world.year - world.timeStep;
-  for (let i = from; i < C.length; i++) C[i].date = Math.round((y0 + (i - from + 1) / (n + 1) * world.timeStep) * 12) / 12;
-  /* in a region, the war events go to the months armies take the field (campaigns.js) */
-  if (AEON.campaigns) AEON.campaigns.dateWar(world, from);
+  /* in a region, an event has the month of its turn, the rest go between (campaigns.js) */
+  if (AEON.campaigns && AEON.campaigns.on(world)) AEON.campaigns.dateYear(world, from);
+  else for (let i = from; i < C.length; i++) C[i].date = Math.round((y0 + (i - from + 1) / (n + 1) * world.timeStep) * 12) / 12;
   const dateOf = function (k) { return k != null && C[k] && C[k].year === world.year ? C[k].date : null; };
   /* a battle takes the date of the event it came before (or after, at the end of the tick) */
   const B = world.battleLog || [];
@@ -1390,6 +1401,7 @@ function dateTick(world, from) {
       if (t.kind === "war" && t.years == null) t.years = Math.min(10, Math.round((t.endDate - t.startDate) * 10) / 10);
     }
   }
+  if (AEON.campaigns) AEON.campaigns.closeYear(world);
 }
 
 /* ---- alliances, calls to arms, coalitions ----
@@ -2129,6 +2141,7 @@ AEON.battle = function (world, att, def, opts) {
   let take = 0;
   if (won) take = margin === "narrow" ? 1 : margin === "clear" ? (rng.chance(0.5) ? 2 : 1) : Math.max(2, Math.min(6, Math.round((opts.frontier || 2) * 0.35)));
   (world.battleLog || (world.battleLog = [])).push([world.year, att.id, def.id, ea, ed, r ? r.id : null, won, sea, margin === "narrow" ? 1 : margin === "clear" ? 2 : 3, world.chronicle.length, null]);
+  if (AEON.campaigns && r && !sea) AEON.campaigns.fought(world, att, def, r, won, margin);
   return { won: won, W: W, L: L, margin: margin, odds: odds, ratio: ratio, take: take, pushBack: !won && margin === "crushing",
            men: { att: ea, def: ed }, lost: { W: lostW, L: lostL } };
 };
@@ -2264,15 +2277,18 @@ function eligible(world, def, ctx, subjectKey) {
 }
 
 function fireOne(world, scope, subject, consolidateOnly) {
-  const defs = world.pack.events.filter(function (d) { return (d.scope || "polity") === scope && (!consolidateOnly || d.consolidate); });
+  const defs = world.pack.events.filter(function (d) { return (d.scope || "polity") === scope && (!consolidateOnly || (consolidateOnly === "battle" || consolidateOnly === "siege" ? d.campaign === consolidateOnly : d.consolidate)); });
   if (!defs.length) return;
   const ctx = makeCtx(world, subject);
   const subjectKey = subject ? (subject.obj.id || "w") : "w";
 
-  const ok = defs.filter(function (d) { return eligible(world, d, ctx, subjectKey); });
+  /* in a region, war is made in the season's months only, and the more in them (campaigns.js) */
+  const CP = AEON.campaigns && AEON.campaigns.on(world) ? AEON.campaigns : null, war = CP && CP.season(world);
+  const ok = defs.filter(function (d) { return (!d.campaign || !CP || war) && eligible(world, d, ctx, subjectKey); });
   if (!ok.length) return;
 
-  const def = world.rng.weighted(ok, function (d) { return d.weight || 1; });
+  const boost = CP ? CP.climate(world).boost : 1;
+  const def = world.rng.weighted(ok, function (d) { return (d.weight || 1) * (d.campaign ? boost : 1); });
   if (!def) return;
   /* an overreached realm's conquests mostly stall */
   if (def.consolidate && world.reach && subject && subject.kind === "polity" && world.rng.chance(Math.min(0.95, 0.6 * overreach(world, subject.obj)))) return;
@@ -2287,6 +2303,10 @@ function fireOne(world, scope, subject, consolidateOnly) {
   recordEvent(world, out.type || def.id, out);
 }
 
+/* an army's own turn (campaigns.js): its realm's battle or siege event (a pack marks them
+   campaign: "battle" or "siege"), in the month it is in */
+AEON.campaignTurn = function (world, p, kind) { fireOne(world, "polity", { kind: "polity", obj: p }, kind); };
+
 AEON.tick = function (world) {
   if (world.year >= world.endYear) return false;
   world.year += world.timeStep;
@@ -2297,6 +2317,9 @@ AEON.tick = function (world) {
   updateEra(world);
   baselineTick(world);
   world._ownPend.base = world._ownPend.length;
+  /* a region's tick goes through the months, its armies with it (campaigns.js) */
+  const CP = AEON.campaigns && AEON.campaigns.on(world) ? AEON.campaigns : null;
+  if (CP) CP.beginYear(world);
 
   const alive = living(world);
   const rng = world.rng;
@@ -2310,6 +2333,7 @@ AEON.tick = function (world) {
   for (const p of rng.shuffle(alive)) {
     if (fired >= budget) break;
     if (p.ended || !rng.chance(0.6)) continue;
+    if (CP) CP.slot(world, fired, budget);
     fireOne(world, "polity", { kind: "polity", obj: p });
     fired++;
   }
@@ -2322,6 +2346,7 @@ AEON.tick = function (world) {
   for (let i = 0; i < Math.min(3, Math.ceil(over / 6)); i++) {
     if (!rng.chance(share(world))) continue;
     const p = rng.weighted(living(world), function (x) { return x.regions.length; });
+    if (p && CP) CP.later(world, i);
     if (p) fireOne(world, "polity", { kind: "polity", obj: p }, true);
   }
 
@@ -2330,7 +2355,7 @@ AEON.tick = function (world) {
   for (const t of openList(world).slice()) {
     if (pressed >= 5 || t.end != null || t.kind !== "war" || !t.coalition) continue;
     const m = world.polities[t.a];
-    if (m && !m.ended && rng.chance(share(world))) { fireOne(world, "polity", { kind: "polity", obj: m }, true); pressed++; }
+    if (m && !m.ended && rng.chance(share(world))) { if (CP) CP.later(world, 10 + pressed); fireOne(world, "polity", { kind: "polity", obj: m }, true); pressed++; }
   }
 
   /* a figure's turn: about one every five years, as before the yearly tick */
@@ -2347,6 +2372,7 @@ AEON.tick = function (world) {
     if (rng.chance(0.5 * share(world))) fireOne(world, "world", null);
   }
 
+  if (CP) CP.endYear(world);
   warClock(world);
   allianceTick(world, living(world));
   vassalTick(world);

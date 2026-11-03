@@ -293,9 +293,37 @@ Each step is checked on seed 7 at 10 days/s before the next.
    On water it is a ship. Vassal levies and allies show only where they fight. Worked out per
    year when shown and cached; nothing is stored. In a 75-year chapter an army is on the map
    about 60-80% of the time, moving a fifth to a third of it.
-   **5b, not done:** armies deciding outcomes: the weather stopping a march or a war, land taken
-   a town at a time when a siege ends, supplies, peace on the terms reached. That means rewriting
-   both packs' war events (conquest, battle, siege, invasion) to act through the armies.
+   **5b done 2026-11-03: the armies decide where and when, and take towns by siege.** Replaces
+   5a's after-the-fact dating. js/campaigns.js, hooked into core.js:
+   - *Months in the tick.* Each turn of a region's tick has a month (ordinary turns spread over
+     the year, extra war turns in the season still to come); what it records is dated to that
+     month's end; what follows the turns (peace, alliances, the sketch) goes between the last of
+     them and the year's end.
+   - *Armies are engine objects* (world.armies): one per side of each war (vassal levies march
+     with their lord's), marching monthly at 16 cells a month (less in mountains, forest, marsh,
+     tundra, and in the mud of the season's edges) to the front, camping there; the attacker
+     besieges the greatest enemy town within three cells. Out of season they go to winter
+     quarters and sieges are lifted. Peace sends them home.
+   - *The packs ask the armies* (ctx.ready, ctx.front, ctx.siegeOf, ctx.siegeMonths). War events
+     are marked `campaign` (historical: conquest, battle, decisive-battle, siege; fantasy:
+     border-battle, siege-and-sack, war-won): out of season they cannot happen, in season they are
+     likelier by the year's share of season (so roughly as many per year); a war is fought only
+     where its army is in the field, at the place nearest it; a town is stormed only when its
+     siege has run its months (a village one, a town two, a city three or four), and the
+     chronicle tells the months. A battle moves the armies (winner onto the field, loser back
+     towards home).
+   - *Armies' own turns*, since a realm has a turn only every few decades in a region: a siege
+     ready to storm brings its realm's siege event one month in four; camping beside the enemy's
+     army, its battle event one month in fifty. A siege half a year overdue is lifted.
+   - *The record* (world.armyLog, about 1-2 entries per army-year) is what the map draws.
+   Over 32 regions (8 seeds x 2 squares, both packs) against 5a: wars -9% (historical) and -6%
+   (fantasy); battles 5.8x and 1.5x; land changing hands +23% and -1%; realms alive at the end,
+   land held and the largest realm about the same; towns -11% (historical; more sieges and
+   sacks), tribute +64% and +27%, technology lost +40% (historical; lost land shakes learning),
+   war declarations -25% (historical: armies worn down by sieges declare less). Compute +16-28%.
+   Still to do: supplies and attrition, the weather of a month (a hard winter, a wet summer)
+   rather than of the climate, fleets kept in port by storms, and overseas invasions and raids
+   carried by armies (they still happen as single events).
 6. **Court and diplomacy, raids, harvests and plague** on the monthly tick: deaths, heirs,
    regencies, marriages, envoys, revolts; raids after the harvest; bad harvests, famine, plague
    spreading by road and sea. Plus the chapter's stakes and the strip in the 4500 years.

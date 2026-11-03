@@ -1155,15 +1155,15 @@ const EVENTS = [
       "In " + p.name + " " + ctx.choice(why) + ". Officials in " + seat(ctx, p) + " noted that this was the " + ctx.choice(["third", "fourth", "sixth", "ninth", "latest"]) + " such report " + ctx.choice(["that year", "of the decade", "since the old ruler's death"]) + " and filed it with the others.");
   } },
 
-{ id: "conquest", consolidate: true, scope: "polity", weight: 12,
+{ id: "conquest", consolidate: true, campaign: true, scope: "polity", weight: 12,
   test: function (ctx) {
     const p = ctx.polity;
-    return wars(ctx, p).some(function (x) { return strength(ctx.world, p) > strength(ctx.world, x.foe) * 1.3 && frontier(ctx, p, x.foe).length > 0; });
+    return wars(ctx, p).some(function (x) { return strength(ctx.world, p) > strength(ctx.world, x.foe) * 1.3 && ctx.ready(x.foe) && frontier(ctx, p, x.foe).length > 0; });
   },
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
-    const wf = ctx.pick(wars(ctx, p).filter(function (x) { return strength(w, p) > strength(w, x.foe) * 1.3 && frontier(ctx, p, x.foe).length > 0; }));
-    const L = wf.foe, W = p, fr = frontier(ctx, W, L), site = ctx.pick(fr);
+    const wf = ctx.pick(wars(ctx, p).filter(function (x) { return strength(w, p) > strength(w, x.foe) * 1.3 && ctx.ready(x.foe) && frontier(ctx, p, x.foe).length > 0; }));
+    const L = wf.foe, W = p, fr = frontier(ctx, W, L), site = ctx.front(L, fr);
     const o = fight(ctx, W, L, site, fr.length);
     if (!o.won) return repelled(ctx, wf.war, W, L, site, o, W.name + " marched to end " + (wf.war.name || "the war") + ".");
     /* the margin sets how far it goes: a crushing win takes a small realm whole, or a third of a
@@ -1537,11 +1537,11 @@ const EVENTS = [
       (ctx.year - ev.year) + " years after the defeat of " + yl(ev.year) + (r ? " at " + provName(r) : "") + ", " + who(rl) + " of " + p.name + " told the assembled court that the debt to " + foe.name + " had never been discharged. The tale of the defeat had been taught in the schools of " + p.name + " for " + (ctx.year - ev.year < 50 ? "a generation" : Math.round((ctx.year - ev.year) / 28) + " generations") + ", and had grown with each telling. The war that followed was known as " + wr.name + ".");
   } },
 
-{ id: "battle", scope: "polity", weight: 8,
-  test: function (ctx) { return wars(ctx, ctx.polity).length > 0; },
+{ id: "battle", campaign: "battle", scope: "polity", weight: 8,
+  test: function (ctx) { return wars(ctx, ctx.polity).some(function (x) { return ctx.ready(x.foe); }); },
   run: function (ctx) {
-    const p = ctx.polity, w = ctx.world, wf = ctx.pick(wars(ctx, p)), foe = wf.foe;
-    const fr = frontier(ctx, p, foe), r = fr.length ? ctx.pick(fr) : null;
+    const p = ctx.polity, w = ctx.world, wf = ctx.pick(wars(ctx, p).filter(function (x) { return ctx.ready(x.foe); })), foe = wf.foe;
+    const fr = frontier(ctx, p, foe), r = fr.length ? ctx.front(foe, fr) : null;
     const o = fight(ctx, p, foe, r, fr.length), W = o.W, L = o.L;
     const place = r ? provName(r) : ctx.name("place", { polity: foe });
     loseFolk(L, ctx.range(0.005, 0.015)); loseFolk(W, ctx.range(0.002, 0.008));
@@ -1553,12 +1553,12 @@ const EVENTS = [
       fill(ctx.pick(BATTLE_LINES[Math.min(eIdx(ctx), 5)]), { W: W.name, L: L.name, P: place }) + " " + bodies(o) + " were left on the field." + (lost ? " " + cap(place) + " passed to " + W.name + "." : ""));
   } },
 
-{ id: "decisive-battle", scope: "polity", weight: 5,
-  test: function (ctx) { return wars(ctx, ctx.polity).some(function (x) { return frontier(ctx, ctx.polity, x.foe).length > 0; }); },
+{ id: "decisive-battle", campaign: true, scope: "polity", weight: 5,
+  test: function (ctx) { return wars(ctx, ctx.polity).some(function (x) { return ctx.ready(x.foe) && frontier(ctx, ctx.polity, x.foe).length > 0; }); },
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
-    const wf = ctx.pick(wars(ctx, p).filter(function (x) { return frontier(ctx, p, x.foe).length > 0; })), foe = wf.foe;
-    const fr = frontier(ctx, p, foe), site = ctx.pick(fr);
+    const wf = ctx.pick(wars(ctx, p).filter(function (x) { return ctx.ready(x.foe) && frontier(ctx, p, x.foe).length > 0; })), foe = wf.foe;
+    const fr = frontier(ctx, p, foe), site = ctx.front(foe, fr);
     const o = fight(ctx, p, foe, site, fr.length);
     if (!o.won) return repelled(ctx, wf.war, p, foe, site, o, "The decisive battle of " + (wf.war.name || "the war") + " was fought at " + provName(site) + ".");
     const W = p, L = foe;
@@ -1578,13 +1578,14 @@ const EVENTS = [
       "The decisive battle of " + (wf.war.name || "the war") + " was fought at " + names[0] + ". " + battleLine(ctx, W, L, site) + " " + bodies(o) + " were left on the field. In the settlement that followed, " + list + " passed to " + W.name + "." + (last ? " " + L.name + " did not survive the loss." : ""));
   } },
 
-{ id: "siege", scope: "polity", weight: 9,
-  test: function (ctx) { const p = ctx.polity; return wars(ctx, p).some(function (x) { return frontier(ctx, p, x.foe).some(function (r) { return r.settlement; }); }); },
+{ id: "siege", campaign: "siege", scope: "polity", weight: 9,
+  /* in a region, the town its army has lain before long enough (campaigns.js) */
+  test: function (ctx) { const p = ctx.polity; return wars(ctx, p).some(function (x) { const s = ctx.siegeOf(x.foe); return s === undefined ? frontier(ctx, p, x.foe).some(function (r) { return r.settlement; }) : !!s; }); },
   run: function (ctx) {
     const p = ctx.polity, w = ctx.world, h = H(w);
-    const wf = ctx.pick(wars(ctx, p).filter(function (x) { return frontier(ctx, p, x.foe).some(function (r) { return r.settlement; }); })), L = wf.foe, W = p;
-    const targets = frontier(ctx, W, L).filter(function (r) { return r.settlement; });
-    const r = ctx.rng.weighted(targets, function (x) { return x.settlement.tier; });
+    const wf = ctx.pick(wars(ctx, p).filter(function (x) { const s = ctx.siegeOf(x.foe); return s === undefined ? frontier(ctx, p, x.foe).some(function (r) { return r.settlement; }) : !!s; })), L = wf.foe, W = p;
+    const sat = ctx.siegeOf(L), targets = sat ? [sat] : frontier(ctx, W, L).filter(function (r) { return r.settlement; });
+    const r = sat || ctx.rng.weighted(targets, function (x) { return x.settlement.tier; });
     const o = fight(ctx, W, L, r, 1);
     if (!o.won) {
       tire(w, W, 0.05); loseFolk(W, 0.01); addWin(wf.war, L);
@@ -1593,12 +1594,15 @@ const EVENTS = [
         "The siege of " + locName(r) + " by " + W.name + " was raised after " + ctx.int(3, 20) + " months " + why + ". About " + approx(o.lost.L) + " of the besiegers did not go home. " + L.name + " held the city, and the besiegers, who had expected otherwise, went home by a different road.");
     }
     const name = locName(r), isCap = L.capital === r.id, last = L.regions.length === 1;
-    const method = ctx.pick(SIEGE_METHODS[Math.min(eIdx(ctx), 5)]), yrs = ctx.int(1, 3);
+    /* a siege of months (a region's army, campaigns.js) is not told as one of summers and winters */
+    const mo = sat && ctx.siegeMonths(L), ways = SIEGE_METHODS[Math.min(eIdx(ctx), 5)].filter(function (m) { return !mo || !/summer|winter|year/.test(m); });
+    const method = ctx.pick(ways.length ? ways : SIEGE_METHODS[Math.min(eIdx(ctx), 5)]), yrs = ctx.int(1, 3);
+    const long = mo ? (mo === 1 ? "a month" : mo + " months") : yrs === 1 ? "one year" : yrs + " years";
     /* a city taken by storm is more often razed than a field won */
     const aim = AEON.warAim(w, W, L, { raze: 4 });
     if (aim !== "conquer") {
       if (isCap) h.capLost[L.id] = ctx.year;
-      return pillage(ctx, wf.war, W, L, [r], aim, "After a siege of " + (yrs === 1 ? "one year" : yrs + " years") + ", " + W.name + " " + method + " and broke into " + name + (isCap ? ", the capital of " + L.name : "") + ".");
+      return pillage(ctx, wf.war, W, L, [r], aim, "After a siege of " + long + ", " + W.name + " " + method + " and broke into " + name + (isCap ? ", the capital of " + L.name : "") + ".");
     }
     annex(ctx, r, W);
     loseFolk(L, ctx.range(0.01, 0.04)); tire(w, L, 0.07); addWin(wf.war, W); addWin(wf.war, W);
@@ -1608,7 +1612,7 @@ const EVENTS = [
     if (isCap) tags.push("capital-lost");
     if (last) tags.push("fall");
     return res(isCap ? 5 : 3, tags, A(ctx, W, L), r.id,
-      "After a siege of " + (yrs === 1 ? "one year" : yrs + " years") + ", " + W.name + " " + method + " and took " + name + (isCap ? ", the capital of " + L.name : "") + "." +
+      "After a siege of " + long + ", " + W.name + " " + method + " and took " + name + (isCap ? ", the capital of " + L.name : "") + "." +
 " The garrison was spared, which surprised the garrison." + (last ? " With it, " + L.name + " ceased to exist." : ""));
   } },
 

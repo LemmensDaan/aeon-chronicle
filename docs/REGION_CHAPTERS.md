@@ -251,10 +251,24 @@ Each step is checked on seed 7 at 10 days/s before the next.
    chronicle events: at 10 days/s one animation every ~48 s, one event every ~18 s. The engine is
    too quiet per month for 10 days/s. That led to the two layers (decision 7); the steps below
    replace the old 4-8 (2026-11-03).
-4. **The yearly slow layer.** The tick from 5 years to 1: rescale every per-tick rate in core.js
-   and both packs, spread the event budget, keep step 3's month dating for what a year's events
-   change. Check the outcome over centuries stays alike (region-history and worldgen harnesses).
-   Changes every history.
+4. **The yearly slow layer** — **done 2026-11-03.** Both packs tick yearly (`timeStep: 1`). core.js
+   keeps its rates as set for five years (`RATE_YEARS`) and rescales them to the tick:
+   `chanceTick` (a chance per five years to the same rate per tick: peace, alliances sought,
+   coalitions, vassal revolts and absorption, expansion), amounts in proportion (tech, prestige,
+   growth as a power), decays as a power (hired troops and ships, prosperity), the event budget
+   as a quota (eventsPerTick x 1/5, the fraction drawn), the consolidation and coalition turns,
+   figure turns and world rolls at a fifth; alliances lapse on about one look in five years.
+   region.js: the learning pull per tick, newcomer campaigns in as many ticks as their five-year
+   turns. The slowest bookkeeping (money and spending, relations drift, learning and forgetting
+   technology) runs for each realm once in five years, on a year of its own (`onTurn`), at the
+   five-year rates: it needs no yearly resolution and it was half the cost. Open treaties are kept
+   in a list (`AEON.openTreaties`) instead of walking every treaty ever made. stats.js samples
+   five-year steps. Changes every history. Checked over 32 regions (8 seeds x 2 squares, both
+   packs) against the five-year tick: events, battles, land changing hands, realms, land held,
+   largest realm, towns, vassals and alliances within a few percent; wars -12% (historical) and
+   +2% (fantasy); no event type in the top 40 off by more than 20%. A region's whole history
+   computes in about 1.8-2.1 times the old time (Node: 4.5 s -> ~8.5 s for region 4,2). Not yet
+   checked in the browser.
 5. **Campaigns (the fast layer begins).** The monthly tick inside a chapter; wars carried out by
    armies as engine objects: levy, march, camp, siege, battle, winter quarters, land taken a
    province or town at a time, weather of the month deciding; drawn on the map (merges the old

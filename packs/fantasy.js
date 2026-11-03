@@ -2748,7 +2748,7 @@ AEON.registerPack({
   scale: "planet",
   startYear: -2000,
   endYear: 1200,
-  timeStep: 5,
+  timeStep: 1,                 /* a year a tick; the engine's rates are rescaled to it (core.js chanceTick) */
   seedPolities: 14,
   eventsPerTick: 2,
   realmsAtStart: 40,

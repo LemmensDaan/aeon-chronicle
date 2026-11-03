@@ -118,7 +118,8 @@ function bestOrder(colors) {
 
 /* ------------------------------------------------------------ data */
 function buildData(world) {
-  const step = world.timeStep, pols = Object.keys(world.polities).map(function (id) { return world.polities[id]; });
+  /* five-year steps whatever the tick: a series a year would be five times the size for nothing a chart shows */
+  const step = Math.max(world.timeStep, 5), pols = Object.keys(world.polities).map(function (id) { return world.polities[id]; });
   let y0 = Infinity, y1 = -Infinity;
   for (const p of pols) for (const s of p.sizeHistory) { if (s.year < y0) y0 = s.year; if (s.year > y1) y1 = s.year; }
   if (!isFinite(y0)) return null;
@@ -132,7 +133,8 @@ function buildData(world) {
     for (let t = 0; t < T; t++) { series.cities.total[t] += v.cities[t]; series.wonders.total[t] += v.wonders[t]; }
     let popYears = 0;
     for (const s of p.sizeHistory) {
-      const t = Math.round((s.year - y0) / step);
+      if ((s.year - y0) % step) continue;                  /* a step's own year only (yearly ticks log every year) */
+      const t = (s.year - y0) / step;
       v.pop[t] = s.pop; v.size[t] = s.size; v.army[t] = s.army || 0; v.navy[t] = s.navy || 0; v.income[t] = s.income || 0;
       series.pop.total[t] += s.pop; series.size.total[t] += s.size;
       series.army.total[t] += v.army[t]; series.navy.total[t] += v.navy[t]; series.income.total[t] += v.income[t];

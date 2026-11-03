@@ -48,6 +48,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   region. New build order in the doc: 4 yearly slow layer, 5 campaigns, 6 court/diplomacy/raids/
   plague + chapter stakes, 7 tribes, 8 region wins, 9 interactivity. Steps 4 on change every
   history.
+  **Step 4 done (2026-11-03, changes every history):** yearly tick in both packs; core.js
+  `RATE_YEARS`, `chanceTick`, `share`, `onTurn` (money, relations, tech once in five years per
+  realm, staggered), `AEON.openTreaties`; region.js pull and campaign turns rescaled; stats.js on
+  five-year steps. Outcome over 32 regions within a few percent of the five-year tick (wars -12%
+  historical); compute ~2x. Details in the doc's step 4. Checked in Node only (scratchpad
+  harnesses agg.js, outcome.js, view.js, density.js); the browser preview still needs a launch.json.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

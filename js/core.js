@@ -774,6 +774,25 @@ function endPolity(world, polity, fate) {
   world.stats.collapses++;
 }
 
+/* The engine's rates were set for a five-year tick (RATE_YEARS). The packs now tick yearly
+   (pack.timeStep; docs/REGION_CHAPTERS.md, "Two layers"), so each rate is rescaled to the tick: a
+   chance per five years becomes the chance of the same rate over the tick (chanceTick), an amount
+   shrinks in proportion and a factor is taken to the tick's share (share). */
+const RATE_YEARS = 5;
+function share(world) { return world.timeStep / RATE_YEARS; }
+function chanceTick(world, p) {
+  const k = share(world);
+  return k === 1 || p <= 0 ? p : p >= 1 ? 1 : 1 - Math.pow(1 - p, k);
+}
+AEON.chanceTick = chanceTick;
+AEON.tickShare = share;
+/* The slowest bookkeeping (money, relations, learning and forgetting) needs no yearly turn: each
+   realm does it once in five years, over those five years, in a year of its own (by its id), so
+   the yearly tick costs little more than the old one for it. With a five-year tick every realm
+   has its turn every tick, as before. */
+function onTurn(world, p) { return world.timeStep >= RATE_YEARS || (world.year + (+p.id.slice(1) || 0)) % RATE_YEARS === 0; }
+function turnYears(world) { return Math.max(world.timeStep, RATE_YEARS); }
+
 function logOwner(world, rid, owner) {
   if (!world.ownerLog) return;
   world.ownerLog.push([world.year, rid, owner]);
@@ -1088,6 +1107,7 @@ AEON.treaty = function (world, kind, a, b, extra) {
   const t = { id: "t" + world._ids.treaty, kind: kind, a: a.id, b: b.id, start: world.year, end: null, ended: null, ev: world.chronicle.length };
   if (extra) for (const k in extra) t[k] = extra[k];
   (world.treaties || (world.treaties = [])).push(t);
+  openList(world).push(t);
   const ix = openIndex(world), k = pairKey(t.a, t.b);
   ix[k + "|" + kind] = t; ix[k + "|*"] = t;
   if (kind === "tribute") ix["lord|" + t.a] = t;
@@ -1097,6 +1117,9 @@ AEON.treaty = function (world, kind, a, b, extra) {
 AEON.endTreaty = function (world, t, how) {
   if (!t || t.end != null) return;
   t.end = world.year; t.ended = how || null; t.endEv = world.chronicle.length;
+  const open = openList(world), at = open.indexOf(t);
+  if (at >= 0) open.splice(at, 1);
+  endedNow(world).push(t);
   /* the pair's next open treaty, if any, takes its place in the index */
   const ix = openIndex(world), k = pairKey(t.a, t.b), T = world.treaties;
   if (ix[k + "|" + t.kind] === t) { ix[k + "|" + t.kind] = null; for (let i = T.length - 1; i >= 0; i--) if (T[i].end == null && T[i].kind === t.kind && pairKey(T[i].a, T[i].b) === k) { ix[k + "|" + t.kind] = T[i]; break; } }
@@ -1106,6 +1129,21 @@ AEON.endTreaty = function (world, t, how) {
 /* the open treaty of a kind between two realms (any kind if kind is null), or null */
 /* the open treaties, by pair and kind ("a|b|kind", and "a|b|*" for the latest of any kind), kept
    up to date as treaties are made and ended */
+/* the treaties in force, in the order they were made (the yearly tick walks them often, and the
+   whole list grows into the thousands), and those ended in the tick running, for dateTick */
+function openList(world) {
+  let L = world._openList;
+  if (!L) {
+    L = (world.treaties || []).filter(function (t) { return t.end == null; });
+    Object.defineProperty(world, "_openList", { value: L, enumerable: false, configurable: true, writable: true });
+  }
+  return L;
+}
+AEON.openTreaties = openList;
+function endedNow(world) {
+  if (!world._endedNow) Object.defineProperty(world, "_endedNow", { value: [], enumerable: false, configurable: true, writable: true });
+  return world._endedNow;
+}
 function openIndex(world) {
   let ix = world._openIx;
   if (!ix) {
@@ -1176,15 +1214,15 @@ AEON.warScore = function (world, t) {
    border (if they share one), and a win takes one or two of the giant's provinces */
 function campaign(world) {
   const rng = world.rng, R = world.regions;
-  for (const t of (world.treaties || []).filter(function (x) { return x.kind === "war" && x.coalition && x.end == null; })) {
+  for (const t of openList(world).filter(function (x) { return x.kind === "war" && x.coalition; })) {
     const a = world.polities[t.a], H = world.polities[t.b];
-    if (!a || !H || a.ended || H.ended) continue;
+    if (!a || !H || a.ended || H.ended || !rng.chance(share(world))) continue;
     const fr = [];
     for (const rid of H.regions) if (R[rid].neighbors.some(function (n) { return R[n] && R[n].owner === a.id; })) fr.push(R[rid]);
     if (!fr.length) continue;
     /* each side's army is split over the wars it is fighting, as in the packs' battles */
     let wa = 0, wh = 0;
-    for (const x of world.treaties) if (x.kind === "war" && x.end == null) { if (x.a === a.id || x.b === a.id) wa++; if (x.a === H.id || x.b === H.id) wh++; }
+    for (const x of openList(world)) if (x.kind === "war" && x.end == null) { if (x.a === a.id || x.b === a.id) wa++; if (x.a === H.id || x.b === H.id) wh++; }
     const site = rng.pick(fr), o = AEON.battle(world, a, H, { region: site.id, frontier: fr.length, shareA: 1 / Math.max(1, wa), shareD: 1 / Math.max(1, wh) });
     if (!o.won) continue;
     for (const r of AEON.oneEach(world, [site].concat(rng.shuffle(fr.filter(function (x) { return x !== site; }))), Math.min(2, o.take))) {
@@ -1196,7 +1234,7 @@ function campaign(world) {
 }
 function warClock(world) {
   campaign(world);
-  const T = world.treaties || [], rng = world.rng;
+  const T = openList(world).slice(), rng = world.rng;
   const open = T.filter(function (t) { return t.kind === "war" && t.end == null; });
   for (const t of open) {
     if (t.end != null) continue;
@@ -1205,7 +1243,7 @@ function warClock(world) {
     const years = world.year - (t.startDate != null ? t.startDate : t.start), sc = AEON.warScore(world, t);
     const lead = t.leader && (world.treaties || []).filter(function (x) { return x.id === t.leader; })[0];
     const chance = years >= 8 || (lead && lead.end != null) ? 1 : 0.3 + 0.6 * Math.abs(sc) + (years >= 4 ? 0.35 : 0);
-    if (!rng.chance(chance)) continue;
+    if (!rng.chance(chanceTick(world, chance))) continue;
     concludePeace(world, t, sc);
   }
 }
@@ -1339,7 +1377,9 @@ function dateTick(world, from) {
       }
     }
   }
-  for (const t of world.treaties || []) {
+  const T = world.treaties || [], fresh = [];
+  for (let i = T.length - 1; i >= 0 && T[i].start === world.year; i--) fresh.push(T[i]);
+  for (const t of fresh.reverse().concat(endedNow(world).filter(function (x) { return fresh.indexOf(x) < 0; }))) {
     if (t.start === world.year && t.startDate == null) t.startDate = dateOf(t.ev) != null ? dateOf(t.ev) : world.year;
     if (t.end === world.year && t.endDate == null) {
       t.endDate = t.kind === "war" && t.years != null ? Math.round((t.startDate + t.years) * 12) / 12
@@ -1361,7 +1401,7 @@ function dateTick(world, from) {
    pack.joinWar(ctx, ally, enemy, extra), so its own war records are kept (default: a war treaty). */
 function alliesOf(world, p) {
   const out = [];
-  for (const t of world.treaties || []) {
+  for (const t of openList(world)) {
     if (t.end != null || t.kind !== "alliance" || (t.a !== p.id && t.b !== p.id)) continue;
     const o = world.polities[t.a === p.id ? t.b : t.a];
     if (o && !o.ended && out.indexOf(o) < 0) out.push(o);
@@ -1426,15 +1466,16 @@ function betrayalNote(world, a, b) {
 function strengthOf(world, p) { return Math.max(1, AEON.fieldArmy(world, p)) * (0.5 + p.tech); }
 function allianceTick(world, alive) {
   const rng = world.rng;
-  /* alliances lapse when the two have come to dislike each other */
-  for (const t of world.treaties || []) {
+  /* alliances lapse when the two have come to dislike each other (looked at about once in five
+     years, as before the yearly tick: a passing quarrel does not end them) */
+  for (const t of openList(world).slice()) {
     if (t.end != null || t.kind !== "alliance") continue;
     const a = world.polities[t.a];
-    if (a && (a.relations[t.b] || 0) < -0.2) AEON.endTreaty(world, t, "estranged");
+    if (a && (a.relations[t.b] || 0) < -0.2 && rng.chance(share(world))) AEON.endTreaty(world, t, "estranged");
   }
   /* the threatened seek allies */
   for (const p of alive) {
-    if (p.ended || !rng.chance(0.08)) continue;
+    if (p.ended || !rng.chance(chanceTick(world, 0.08))) continue;
     const near = neighborPolities(world, p), me = strengthOf(world, p);
     const threat = near.filter(function (q) { return (p.relations[q.id] || 0) < -0.3 && strengthOf(world, q) > me * 1.2; })
       .sort(function (x, y) { return strengthOf(world, y) - strengthOf(world, x); })[0];
@@ -1455,7 +1496,7 @@ function allianceTick(world, alive) {
   const H = big[0], sizes = big.map(function (p) { return p.regions.length; }), med = sizes[sizes.length >> 1];
   if (H.regions.length < 4 * med || H.regions.length < 2 * big[1].regions.length) return;
   if (H.coalitionYear != null && world.year - H.coalitionYear < 100) return;
-  if (!rng.chance(0.25)) return;
+  if (!rng.chance(chanceTick(world, 0.25))) return;
   const members = neighborPolities(world, H).filter(function (q) {
     return (q.relations[H.id] || 0) < 0.2 && !AEON.treatyBetween(world, q, H, "alliance") && !AEON.treatyBetween(world, q, H, "truce") && !AEON.treatyBetween(world, q, H, "tribute");
   }).sort(function (x, y) { return strengthOf(world, y) - strengthOf(world, x); }).slice(0, 5);
@@ -1484,7 +1525,7 @@ function allianceTick(world, alive) {
 AEON.lordOf = function (world, p) { const t = p && openIndex(world)["lord|" + p.id]; return t ? world.polities[t.b] || null : null; };
 AEON.vassalsOf = function (world, p) {
   const out = [];
-  for (const t of world.treaties || []) if (t.end == null && t.kind === "tribute" && t.b === p.id) { const v = world.polities[t.a]; if (v && !v.ended && out.indexOf(v) < 0) out.push(v); }
+  for (const t of openList(world)) if (t.end == null && t.kind === "tribute" && t.b === p.id) { const v = world.polities[t.a]; if (v && !v.ended && out.indexOf(v) < 0) out.push(v); }
   return out;
 };
 /* make a realm the vassal of another (ending any lord it had) */
@@ -1513,15 +1554,15 @@ function provincesIn(world, p) { return world.square ? Math.max(1, AEON.province
 
 function vassalTick(world) {
   const rng = world.rng, over = living(world).length > AEON.realmCap(world);
-  const open = (world.treaties || []).filter(function (t) { return t.end == null && t.kind === "tribute"; });
+  const open = openList(world).filter(function (t) { return t.kind === "tribute"; });
   for (const t of open) {
     const v = world.polities[t.a], l = world.polities[t.b];
     if (!v || !l || v.ended || l.ended || t.end != null) continue;
     let lordWars = 0;
-    for (const x of world.treaties) if (x.end == null && x.kind === "war" && (x.a === l.id || x.b === l.id)) lordWars++;
+    for (const x of openList(world)) if (x.end == null && x.kind === "war" && (x.a === l.id || x.b === l.id)) lordWars++;
     const lordOver = overreach(world, l);
     if (((world.year - t.start >= 20 && AEON.fieldArmy(world, v) >= 0.8 * AEON.fieldArmy(world, l)) || lordWars >= 2 ||
-         (lordOver > 1 && world.year - t.start >= 20 && rng.chance(0.15 * (lordOver - 1)))) && rng.chance(0.2)) {
+         (lordOver > 1 && world.year - t.start >= 20 && rng.chance(0.15 * (lordOver - 1)))) && rng.chance(chanceTick(world, 0.2))) {
       AEON.endTreaty(world, t, "revolt");
       AEON.remember(world, l, v, -0.4, "threw off its overlordship");
       const war = rng.chance(0.5);
@@ -1533,7 +1574,7 @@ function vassalTick(world) {
       if (war) joinWar(world, l, v, { joined: false, cause: "the defection of " + nameOf(v) });
       continue;
     }
-    if (world.year - t.start >= (world.vassalYears || 30) && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && lordOver < 1 && rng.chance((over ? 0.25 : 0.06) * (1 - lordOver) * (world.absorbRate || 1))) {
+    if (world.year - t.start >= (world.vassalYears || 30) && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && lordOver < 1 && rng.chance(chanceTick(world, (over ? 0.25 : 0.06) * (1 - lordOver) * (world.absorbRate || 1)))) {
       const n = provincesIn(world, v), cap = world.regions[v.capital], seat = cap && (cap.settlement ? cap.settlement.name : cap.name);
       recordEvent(world, "vassal-absorbed", { importance: 4, tags: ["vassal", "annexation", "territory", "fall", "diplomacy"],
         actors: [{ kind: "polity", id: l.id }, { kind: "polity", id: v.id }], regionId: v.capital,
@@ -1578,11 +1619,11 @@ AEON.dateLabel = function (world, ev) {
 };
 
 function endTreatiesOf(world, p) {
-  for (const t of world.treaties || []) if (t.end == null && (t.a === p.id || t.b === p.id)) AEON.endTreaty(world, t, "fall");
+  for (const t of openList(world).slice()) if (t.end == null && (t.a === p.id || t.b === p.id)) AEON.endTreaty(world, t, "fall");
 }
 function driftRelations(world, alive) {
-  const k = 1 - Math.pow(0.5, world.timeStep / DRIFT_HALF), war = {}, held = {};
-  for (const t of world.treaties || []) {
+  const k = 1 - Math.pow(0.5, turnYears(world) / DRIFT_HALF), war = {}, held = {};
+  for (const t of openList(world).slice()) {
     if (t.end != null) continue;
     if (t.until != null && world.year >= t.until) { AEON.endTreaty(world, t, "lapsed"); continue; }
     const key = pairKey(t.a, t.b);
@@ -1591,7 +1632,7 @@ function driftRelations(world, alive) {
     else if (t.kind === "marriage") held[key] = (held[key] || 0) + 0.2;
   }
   for (const p of alive) {
-    if (p.ended) continue;
+    if (p.ended || !onTurn(world, p)) continue;
     let near = null;
     for (const qid in p.relations) {
       if (!(p.id < qid)) continue;                         /* each pair once */
@@ -1634,7 +1675,7 @@ function driftRelations(world, alive) {
    people make. Each one also nudges p.tech up a little. */
 function contactsOf(world, p) {
   const out = neighborPolities(world, p);
-  for (const t of world.treaties || []) {
+  for (const t of openList(world)) {
     if (t.end != null || t.kind === "war" || (t.a !== p.id && t.b !== p.id)) continue;
     const o = world.polities[t.a === p.id ? t.b : t.a];
     if (o && !o.ended && out.indexOf(o) < 0) out.push(o);
@@ -1647,7 +1688,7 @@ function techTick(world, alive) {
   forgetTick(world, alive, T);
   const rng = world.rng, known = knownBy(alive, T);
   for (const p of alive) {
-    if (p.ended) continue;
+    if (p.ended || !onTurn(world, p)) continue;
     let contacts = null;
     for (const t of T) {
       if (!canLearn(world, p, t, known)) continue;
@@ -1659,7 +1700,7 @@ function techTick(world, alive) {
         for (const o of contacts) if (o.techs && o.techs[t.id] != null) n++;
         chance = Math.min(0.6, 0.12 * n) + 0.01;
       }
-      if (rng.chance(chance)) learnTech(world, p, t, known, false);
+      if (rng.chance(1 - Math.pow(1 - Math.min(1, chance), turnYears(world) / RATE_YEARS))) learnTech(world, p, t, known, false);
     }
   }
   world._techHolders = holdersOf(alive, T);
@@ -1760,13 +1801,13 @@ function forgetTick(world, alive, T) {
   const rng = world.rng, ages = world.pack.ages, byId = {};
   for (const t of T) byId[t.id] = t;
   for (const p of alive) {
-    if (p.ended) continue;
-    /* land lost since the last tick shakes it too */
+    if (p.ended || !onTurn(world, p)) continue;
+    /* land lost since its last turn shakes it too */
     const n = p.regions.length, before = p.techSize || n;
     p.techSize = n;
     if (before >= 4 && n < before && (before - n) / before > 0.2) AEON.techShock(world, p, (before - n) / before, "as its provinces fell away");
     const s = p.techShock || 0, cause = p.techCause;
-    p.techShock = s < 0.05 ? 0 : s * 0.4;
+    p.techShock = s < 0.05 ? 0 : s * Math.pow(0.4, turnYears(world) / RATE_YEARS);
     if (s < 0.05) { p.techCause = null; p.techCauseAt = 0; continue; }
     const leaves = leavesOf(p, byId);
     if (!leaves.length) continue;
@@ -1865,7 +1906,14 @@ AEON.payForWonder = function (world, p) { if (p) p.treasury = Math.round((p.trea
 AEON.currency = function (world) { return world.pack.currency || { one: "talent", many: "talents" }; };
 function economyTick(world, alive) {
   const live = alive.filter(function (p) { return !p.ended; }), base = {}, make = {}, trade = {}, paid = {}, war = {};
+  const due = live.filter(function (p) { return onTurn(world, p); }), need = {}, yrs = turnYears(world);
+  /* realms off their turn keep the money's pull on their wealth from their last one */
+  for (const p of live) if (!onTurn(world, p) && p.wealthEdge) p.wealth = clamp(p.wealth + p.wealthEdge, 0, 1);
+  if (!due.length) return;
+  for (const p of due) need[p.id] = true;
+  for (const t of openList(world)) if ((t.kind === "trade" || t.kind === "tribute") && (need[t.a] === true || need[t.b] === true)) { need[t.a] = need[t.a] || 1; need[t.b] = need[t.b] || 1; }
   for (const p of live) {
+    if (!need[p.id]) continue;
     const people = p.population * 0.0015 * (0.4 + p.tech) * techFactor(world, p, "wealth") * (1 + 0.25 * (p.prosperity || 0));
     let land = 0, ports = 0;
     for (const id of p.regions) {
@@ -1877,7 +1925,7 @@ function economyTick(world, alive) {
     make[p.id] = people;
     base[p.id] = people + (land + ports * 6) * (0.5 + p.tech);
   }
-  for (const t of world.treaties || []) {
+  for (const t of openList(world)) {
     if (t.end != null) continue;
     if (t.kind === "trade") {
       if (make[t.a] != null && (trade[t.a] || 0) < 4 * 0.05 * make[t.a]) trade[t.a] = (trade[t.a] || 0) + 0.05 * make[t.a];
@@ -1887,11 +1935,11 @@ function economyTick(world, alive) {
       paid[t.a] = (paid[t.a] || 0) - due; paid[t.b] = (paid[t.b] || 0) + due;
     } else if (t.kind === "war") { war[t.a] = true; war[t.b] = true; }
   }
-  for (const p of live) {
+  for (const p of due) {
     const income = Math.max(1, Math.round(base[p.id] + (trade[p.id] || 0) + (paid[p.id] || 0)));
     const upkeep = Math.round(((p.army || 0) * 0.05 + (p.navy || 0) * 0.8) * (war[p.id] ? 1.5 : 1));
     p.income = income; p.upkeep = upkeep; p.trade = Math.round(trade[p.id] || 0); p.tributeNet = Math.round(paid[p.id] || 0);
-    p.treasury = Math.round((p.treasury || 0) + (income - upkeep) * world.timeStep);
+    p.treasury = Math.round((p.treasury || 0) + (income - upkeep) * yrs);
     if (p.treasury < -2 * income) {
       p.armyDebt = (p.armyDebt || 0) + fullArmy(world, p) * 0.33;
       p.traits.stability = clamp(p.traits.stability - 0.08, 0.02, 0.98);
@@ -1904,9 +1952,10 @@ function economyTick(world, alive) {
       }
       p.bankrupt = world.year;
     }
-    spend(world, p, !!war[p.id]);
+    spend(world, p, !!war[p.id], yrs);
     p.treasury = Math.min(income * 3, p.treasury);
-    p.wealth = clamp(p.wealth + clamp(p.treasury / (income * 3), -1, 1) * 0.15, 0, 1);
+    p.wealthEdge = clamp(p.treasury / (income * 3), -1, 1) * 0.15;
+    p.wealth = clamp(p.wealth + p.wealthEdge, 0, 1);
   }
 }
 /* What a realm does with its money: it keeps a reserve (a year's income; two and a half years for a
@@ -1915,10 +1964,11 @@ function economyTick(world, alive) {
    enlisting more, up to a third above its levy) and on ships if it has a coast; at peace mostly on
    prosperity (p.prosperity, 0..1; eighty years' income buys all of it): roads, granaries, harbours,
    schools, which let its land feed more people (+30% at full) and make each of them earn more
-   (+25%). Soldiers cost 1 each to raise, ships 10. Prosperity wears away (4% a tick) and bought soldiers and ships go home again (10% a tick), so they must be paid for again. */
-function spend(world, p, atWar) {
-  p.armyExtra = (p.armyExtra || 0) * 0.9; p.navyExtra = (p.navyExtra || 0) * 0.9;
-  p.prosperity = (p.prosperity || 0) * 0.96;
+   (+25%). Soldiers cost 1 each to raise, ships 10. Prosperity wears away (4% in five years) and bought soldiers and ships go home again (10% in five years), so they must be paid for again. */
+function spend(world, p, atWar, yrs) {
+  const k = (yrs || world.timeStep) / RATE_YEARS;
+  p.armyExtra = (p.armyExtra || 0) * Math.pow(0.9, k); p.navyExtra = (p.navyExtra || 0) * Math.pow(0.9, k);
+  p.prosperity = (p.prosperity || 0) * Math.pow(0.96, k);
   const income = p.income || 1;
   let threat = atWar;
   if (!threat) {
@@ -2094,15 +2144,15 @@ function baselineTick(world) {
 
   for (const p of alive) {
     const cap = capacity(world, p);
-    const growth = (1 - p.population / cap) * 0.09 * (0.6 + p.traits.stability * 0.8);
-    p.population = Math.max(60, Math.round(p.population * (1 + growth)));
+    const growth = (1 - p.population / cap) * 0.09 * (0.6 + p.traits.stability * 0.8), k = share(world);
+    p.population = Math.max(60, Math.round(p.population * Math.pow(1 + growth, k)));
 
-    p.tech = clamp(p.tech + 0.0016 * (0.4 + p.traits.curiosity * 1.6) * (1 + p.regions.length * 0.015), 0, 1);
+    p.tech = clamp(p.tech + k * 0.0016 * (0.4 + p.traits.curiosity * 1.6) * (1 + p.regions.length * 0.015), 0, 1);
     advanceAge(world, p, alive);
     chooseType(world, p);
     p.wealth = clamp(0.2 + (p.population / cap) * 0.5 + p.tech * 0.4, 0, 1);
     p.military = clamp(0.1 + p.traits.aggression * 0.5 + p.tech * 0.3 + p.regions.length * 0.01, 0, 1);
-    p.prestige = clamp(p.prestige * 0.995 + p.regions.length * 0.004 + p.tech * 0.004, 0, 1);
+    p.prestige = clamp(p.prestige * Math.pow(0.995, k) + k * (p.regions.length * 0.004 + p.tech * 0.004), 0, 1);
 
     /* distribute population across regions for the map (a region does it every world.popEvery
        turns: only the map reads it) */
@@ -2122,7 +2172,7 @@ function baselineTick(world) {
        as many times faster, so it fills as the planet does */
     let frontier = null;
     for (let t = 0; t < (world.expandTries || 1); t++) {
-      if (rng.chance(expansionChance)) {
+      if (rng.chance(chanceTick(world, expansionChance))) {
         if (!frontier) {
           frontier = [];
           for (const r of rs) {
@@ -2240,6 +2290,7 @@ AEON.tick = function (world) {
   const ev0 = world.chronicle.length;
   if (!world._ownPend) Object.defineProperty(world, "_ownPend", { value: [], enumerable: false, configurable: true, writable: true });
   world._ownPend.length = 0;
+  endedNow(world).length = 0;
   updateEra(world);
   baselineTick(world);
   world._ownPend.base = world._ownPend.length;
@@ -2250,7 +2301,8 @@ AEON.tick = function (world) {
   /* A per-turn budget keeps chronicles readable however many polities are alive:
      a crowded world gets the same density of history as a sparse one, spread
      across a random selection of its powers. */
-  const budget = world.pack.eventsPerTick || 7;
+  const quota = (world.pack.eventsPerTick || 7) * share(world);
+  const budget = Math.floor(quota) + (rng.chance(quota % 1) ? 1 : 0);
   let fired = 0;
   for (const p of rng.shuffle(alive)) {
     if (fired >= budget) break;
@@ -2265,19 +2317,21 @@ AEON.tick = function (world) {
      without the ordinary event budget having to make room. */
   const living0 = living(world), over = living0.length - AEON.realmCap(world);
   for (let i = 0; i < Math.min(3, Math.ceil(over / 6)); i++) {
+    if (!rng.chance(share(world))) continue;
     const p = rng.weighted(living(world), function (x) { return x.regions.length; });
     if (p) fireOne(world, "polity", { kind: "polity", obj: p }, true);
   }
 
   /* a coalition's members press their war: an extra turn each, spent on war (consolidate events) */
   let pressed = 0;
-  for (const t of world.treaties || []) {
+  for (const t of openList(world).slice()) {
     if (pressed >= 5 || t.end != null || t.kind !== "war" || !t.coalition) continue;
     const m = world.polities[t.a];
-    if (m && !m.ended) { fireOne(world, "polity", { kind: "polity", obj: m }, true); pressed++; }
+    if (m && !m.ended && rng.chance(share(world))) { fireOne(world, "polity", { kind: "polity", obj: m }, true); pressed++; }
   }
 
-  let figs = 0;
+  /* a figure's turn: about one every five years, as before the yearly tick */
+  let figs = rng.chance(share(world)) ? 0 : 1;
   for (const p of rng.shuffle(alive)) {
     if (figs >= 1) break;
     if (p.ended || !p.ruler) continue;
@@ -2287,7 +2341,7 @@ AEON.tick = function (world) {
 
   const worldRolls = 1 + (rng.chance(0.3) ? 1 : 0);
   for (let i = 0; i < worldRolls; i++) {
-    if (rng.chance(0.5)) fireOne(world, "world", null);
+    if (rng.chance(0.5 * share(world))) fireOne(world, "world", null);
   }
 
   warClock(world);
@@ -2298,7 +2352,7 @@ AEON.tick = function (world) {
   /* if everyone is gone, let a new polity rise from the ashes */
   if (living(world).length === 0) {
     const spots = world.regions.filter(function (r) { return !r.barren && r.habitability > 0.4; });
-    if (spots.length && world.year < world.endYear - world.timeStep * 10) {
+    if (spots.length && world.year < world.endYear - 50) {
       const r = rng.pick(spots);
       const p = spawnPolity(world, r, null);
       recordEvent(world, "refounding", {

@@ -21,7 +21,7 @@ const AEON = window.AEON = window.AEON || {};
 
 /* share of the gap to the sketch's learning closed each turn: gently from behind, firmly from
    ahead, since the engine's own growth keeps pushing realms forward */
-const PULL = 0.08, PULL_AHEAD = 0.25;
+const PULL = 0.08, PULL_AHEAD = 0.25;   /* a five-year turn's; rescaled to the tick (AEON.tickShare) */
 /* what each outcome means inside the region (Daan: a conquest is not full control of a land).
    The newcomers hold a share of the land outright, taken over some turns (a turn is 5 years);
    after a conquest the realms they beat and the realms whose capitals lie near their new lands
@@ -65,7 +65,7 @@ AEON.createRegion = function (planet, si) {
   world.absorbRate = 0.4;
   /* a region has nearly three times the planet's land: the per-cell bookkeeping is lightened
      (core.js) so it plays about as fast */
-  world.popEvery = 4;
+  world.popEvery = Math.max(1, Math.round(20 / world.timeStep));
   world.fastNeighbors = true;
 
   C.makeProvinces(world);
@@ -186,7 +186,8 @@ function onTick(world) {
   const target = curveAt(sk, si, world.year);
   for (const p of AEON._core.living(world)) {
     if (p.learning == null) continue;
-    p.learning = Math.round((p.learning + (target - p.learning) * (p.learning > target ? PULL_AHEAD : PULL)) * 1000) / 1000;
+    const pull = 1 - Math.pow(1 - (p.learning > target ? PULL_AHEAD : PULL), AEON.tickShare(world));
+    p.learning = Math.round((p.learning + (target - p.learning) * pull) * 1000) / 1000;
   }
   /* the sketch's contacts that have come due */
   while (S.next < S.contacts.length && S.contacts[S.next].year <= world.year) {
@@ -259,8 +260,10 @@ function contact(world, c) {
      of a thinly settled land is a small one */
   const settled = land.filter(function (r) { return r.owner; }).length;
   const groups = spread(world, entry, Math.round(share * Math.max(settled, 0.1 * land.length)));
-  world._sketch.campaigns.push({ c: c, people: people, p: p, entry: entry, groups: groups, cells: [].concat.apply([], groups), turns: TURNS[c.outcome] || 4,
-    left: TURNS[c.outcome] || 4, waves: 1, losers: {}, from: index(c.from), holder: holder ? holder.id : null, prev: {} });
+  /* TURNS are five-year turns: as many ticks as fit in them */
+  const turns = Math.max(1, Math.round((TURNS[c.outcome] || 4) / AEON.tickShare(world)));
+  world._sketch.campaigns.push({ c: c, people: people, p: p, entry: entry, groups: groups, cells: [].concat.apply([], groups), turns: turns,
+    left: turns, waves: 1, losers: {}, from: index(c.from), holder: holder ? holder.id : null, prev: {} });
 }
 
 /* the land the newcomers mean to take, by whole provinces (core.js makeProvinces): from the one

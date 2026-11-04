@@ -16,6 +16,7 @@
    - plague: the contagion reaching a town (world.plagueLog, fastlayer.js), a pall over it for
      most of a year; a month's towns told together
    - riots in a restless town (world.unrestLog, fastlayer.js)
+   - the herders of a tribe driving their flocks up to the summer pastures (tribes.js)
    - arrivals announced: word of an invading host, migrants, colonists or raiders gathering beyond
      the border or the sea, some months before they come (the sketch's contacts, region.js)
    - the armies (world.armyLog, campaigns.js): a levy called up, a siege laid, winter quarters,
@@ -84,6 +85,16 @@ function yearOf(w, Y) {
   }
   yearly.sort(function (x, y) { return x[0] - y[0]; });
   for (const x of yearly.slice(0, 2)) x[1].text = x[2];
+  /* the herders driving their flocks up to the summer pastures (tribes.js), told one year in five */
+  if (AEON.tribes && w.square) {
+    let out = null;
+    for (let k = 0; k < 24 && out == null; k++) if (AEON.tribes.herdAt(w, Y + k / 24) === 0 && AEON.tribes.herdAt(w, Y + (k + 1) / 24) > 0) out = Y + (k + 1) / 24;
+    if (out != null) for (const s of AEON.tribes.spheresAt(w, Y)) {
+      if (s.pasture == null || hash(num(s.p.id), Y + 104729) >= 0.2) continue;
+      add({ date: out, until: out + 1 / 12, kind: "news", pid: s.p.id, rid: s.camp,
+            text: "The " + s.p.adjective + " herders drive their flocks up to the summer pastures." });
+    }
+  }
   /* sickness, plague, famine: from the year's events and the next's */
   for (const e of inYear(w.chronicle, Y, function (e) { return e.year; }, function (e) { return dateOf(e) - (e.tags.indexOf("famine") >= 0 ? 0.5 : e.tags.indexOf("succession") >= 0 ? 0.25 : 0); })) {
     const T = e.tags, d = dateOf(e), pa = (e.actors || []).filter(function (a) { return a && a.kind === "polity"; }), p = pa[0] && P[pa[0].id];

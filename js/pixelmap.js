@@ -1141,6 +1141,10 @@ function draw(canvas, world, opts) {
     sprites: { VILLAGE: VILLAGE, TOWN: TOWN, CITY: CITY, PALACE: PALACE, WONDER: WONDER }, blit: blit,
     wonderSprite: function (id) { return wonderSprite(baseOf(world).artifacts[id]); },
   };
+  /* the tribes' spheres, hatched in their colours, and their herds (tribes.js) */
+  if (AEON.tribes && world.square && (mode === "political" || mode === "diplomacy")) {
+    AEON.tribes.draw(ctx, world, world.year, function (gx) { return X0 + gx * cell; }, function (gy) { return v.Y0 + gy * cell; }, cell, opts.date, spriteUnit(v));
+  }
   if (fx) fx.draw(ctx, env, "under");
   /* the months' happenings and the armies of the wars, at the seasonal speeds (months.js, campaigns.js) */
   if (war) AEON.mapfx.months(ctx, env, opts.date, "under");

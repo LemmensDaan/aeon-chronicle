@@ -294,13 +294,18 @@ function neighborScan(world, polity) {
       if (n && n.owner && n.owner !== polity.id) seen[n.owner] = true;
     }
   }
+  /* tribes: the realms in a tribe's sphere and the tribes whose spheres meet (tribes.js) */
+  if (world.square && AEON.tribes) AEON.tribes.neighbors(world, polity, seen);
+  delete seen[polity.id];
   return Object.keys(seen).map(function (id) { return world.polities[id]; })
     .filter(function (p) { return p && !p.ended; });
 }
 
 function capacity(world, polity) {
   let cap = 0;
-  for (const r of regionsOf(world, polity)) {
+  /* a tribe lives off its sphere's herds (tribes.js) */
+  if (polity.tribe && AEON.tribes) cap = AEON.tribes.pasture(world, polity);
+  else for (const r of regionsOf(world, polity)) {
     cap += r.habitability * 9000 * (1 + polity.tech * 2.2);
   }
   return Math.max(500, cap * techFactor(world, polity, "growth") * (1 + 0.3 * (polity.prosperity || 0)));
@@ -514,7 +519,8 @@ function transferRegion(world, region, to) {
   if (AEON.fast && from && to && from !== to) AEON.fast.taken(world, region, from, to);
   if (to && to.regions.indexOf(region.id) < 0) to.regions.push(region.id);
   if (to && !region.name) region.name = callName(world, "place", { region: region, polity: to });
-  if (from && from.regions.length === 0 && !from.ended) {
+  /* a tribe driven from its camp moves it (tribes.js) */
+  if (from && from.regions.length === 0 && !from.ended && !(from.tribe && AEON.tribes && AEON.tribes.driven(world, from, region, to))) {
     endPolity(world, from, "Its last territory was lost, and it simply ceased to be counted among the powers.");
   }
   return true;
@@ -2190,7 +2196,10 @@ function baselineTick(world) {
     /* a region has more land than the planet map holds (js/region.js): its realms spread over it
        as many times faster, so it fills as the planet does */
     let frontier = null;
-    for (let t = 0; t < (world.expandTries || 1); t++) {
+    /* a tribe does not take land: its sphere grows with its people (tribes.js); a realm settles
+       land in a tribe's sphere the less readily the stronger the tribe's hold, and sours it */
+    const TR = world.square && AEON.tribes ? AEON.tribes : null;
+    for (let t = 0; t < (p.tribe ? 0 : world.expandTries || 1); t++) {
       if (rng.chance(chanceTick(world, expansionChance))) {
         if (!frontier) {
           frontier = [];
@@ -2204,7 +2213,13 @@ function baselineTick(world) {
         const open = t ? frontier.filter(function (n) { return !n.owner; }) : frontier;
         if (open.length) {
           /* harsh land is settled too, only far less eagerly: a soft frontier, not a wall */
-          const target = rng.weighted(open, function (r) { return r.habitability * r.habitability + 0.004; });
+          const target = rng.weighted(open, function (r) { return (r.habitability * r.habitability + 0.004) * (TR ? 1 - 0.85 * (TR.hold(world, r) || { infl: 0 }).infl : 1); });
+          const h = TR && TR.hold(world, target);
+          if (h && h.tribe && h.tribe !== p && h.infl > 0.3) {
+            if (!rng.chance(1 - h.infl * 0.6)) continue;
+            const v = Math.max(-1, (p.relations[h.tribe.id] || 0) - 0.03);
+            p.relations[h.tribe.id] = v; h.tribe.relations[p.id] = v;
+          }
           transferRegion(world, target, p);
           if (rng.chance(0.07 * Math.min(1, AEON.siteSuitability(target, world) * 1.6))) foundSettlement(world, target, rng.int(1, 2));
         }
@@ -2383,6 +2398,7 @@ AEON.tick = function (world) {
   warClock(world);
   allianceTick(world, living(world));
   vassalTick(world);
+  if (AEON.tribes) AEON.tribes.year(world);
   logSettlements(world);
 
   /* if everyone is gone, let a new polity rise from the ashes */
@@ -2441,7 +2457,8 @@ AEON.finish = finish;
 
 /* the engine's own pieces, for the region history (js/region.js) */
 AEON._core = { newWorld: newWorld, makeProvinces: makeProvinces, logSettlements: logSettlements, spawnPolity: spawnPolity,
-  transferRegion: transferRegion, endPolity: endPolity, callName: callName, living: living, regionsOf: regionsOf };
+  transferRegion: transferRegion, endPolity: endPolity, callName: callName, living: living, regionsOf: regionsOf,
+  logOwner: logOwner, recordEvent: recordEvent };
 
 /* ---------------------------------------------------------- derived info */
 

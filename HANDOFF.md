@@ -81,6 +81,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   (world.unrest, unrestLog, ctx.restless) and plague as a contagion (world.contagion, plagueLog).
   months.js tells harvests, hard winters, plague towns, riots and arrivals announced. Not done:
   regencies in the engine, foreign powers pressing on the edge.
+  **Step 7 (2026-11-04):** js/tribes.js (`AEON.tribes`): a herder people (pack.tribal) placed at its
+  seat in a region is a tribe (p.tribe {reach, pasture}, p.tribeLog): only its camp is land, the
+  rest a sphere of influence; hooks in core.js capacity, neighborScan, expansion, transferRegion
+  (driven out) and the tick (`AEON.tribes.year`: reach, pasture, settling); campaigns.js raids;
+  historical `frontier` / fantasy `borderRegions` use `AEON.tribes.front`. pixelmap.js draws the
+  spheres (hatching) and herds; months.js tells the flocks going up to the summer pastures.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

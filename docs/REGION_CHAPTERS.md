@@ -385,6 +385,38 @@ Each step is checked on seed 7 at 10 days/s before the next.
    Not yet: regencies as engine events, foreign powers pressing on the edge (only their arrivals
    are announced).
 7. **Tribes.** Spheres, seasonal pastures, raids, settling into land.
+   **Done 2026-11-04 (a first pass; Daan: the herder peoples are tribes, in both packs).**
+   - *Who* (js/tribes.js, `pack.tribal`): a herder people placed from the sketch at its seat (the
+     steppe folk and hill clans; fantasy: the hill-clans and druidic circles). Its other realms,
+     breakaways and newcomers stay realms.
+   - *The sphere*: a tribe holds only its winter camp (its seat). Every land cell within its
+     reach of the camp or its summer pasture, reached over land, has an influence from 1 at the
+     camp to 0 at the reach; the reach follows its people, 4 to 15 cells. Spheres overlap each
+     other and realms' land. It lives off its sphere's herds (core.js capacity): open grazing in
+     full, land a realm holds at a quarter, all thinner than tilled land.
+   - *Neighbours and war*: its neighbours are the realms holding land in its sphere and the tribes
+     whose spheres meet it (core.js neighborScan); in war it fights for the realm land in its
+     sphere, and a realm for its camp (`AEON.tribes.front`, the packs' frontiers). It raids
+     2.5 times as readily as a realm, the towns in its sphere, and its herds grow with the loot.
+   - *Realms and the sphere*: a realm settles open land in a sphere the less readily the stronger
+     the tribe's hold, and each farm sours the tribe against it.
+   - *Driven out*: losing its camp, a tribe moves its tents to the far side of its sphere with
+     less reach and fewer people ("tribe-driven"); it ends only if nowhere is left.
+   - *Settling* ("tribe-settled"): a tribe that has taken a town or four cells in war, or late in
+     history has grown very large, turns its strongest influence (0.5 and up, at most 40 cells)
+     into land and becomes a realm.
+   - *On the map*: the sphere as hatching in the tribe's colour, stronger on open land, no border;
+     at the seasonal speeds the herds drift out to the summer pasture in the six kindest months
+     of the year and back, with tents on the pasture in summer; the news tells now and then of
+     the flocks driven up to the summer pastures.
+   - Measured over 8 regions a pack (seeds 1, 7, 42, 99, the two most peopled squares): 5
+     historical tribes (2 settled, 3 conquered, living about 1400 years; 2% of the raids, 18 times
+     driven from their camps), 4 fantasy ones (all settled within a few centuries). Seed 7: a
+     tribe in 10 of its squares, most settled by 1000 BC. Over 32 regions against 6b everything
+     within 8% in both packs.
+   Not yet: tribes uniting into a confederation, a realm making a tribe pay tribute for its
+   pastures, newcomers arriving as tribes; the hatching and herds have not yet been judged at full
+   size (a camp on a region's edge has half a sphere).
 8. **The region wins.** Write the outcome back; rerun the sketch from that date.
 9. **Interactivity:** to be designed (see below).
 

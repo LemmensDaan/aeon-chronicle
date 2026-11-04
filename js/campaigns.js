@@ -356,14 +356,18 @@ function raids(world, k) {
     const p = P[id];
     if (p.ended || !p.regions.length) continue;
     const agg = p.traits && p.traits.aggression != null ? p.traits.aggression : 0.5;
+    /* a tribe rides out readily, to the towns in its sphere, and its herds grow with the loot (tribes.js) */
+    const tribe = p.tribe && AEON.tribes ? AEON.tribes : null;
     for (const q of AEON.neighborsOf(world, p)) {
       if ((p.relations[q.id] || 0) >= -0.3 || AEON.treatyBetween(world, p, q, null)) continue;
-      if (hash(num(p.id), num(q.id), mon) >= RAID * (0.5 + agg) * hungry) continue;
-      const towns = frontOf(world, q, p).filter(function (rid) { return R[rid].settlement; });
+      if (hash(num(p.id), num(q.id), mon) >= RAID * (0.5 + agg) * hungry * (tribe ? 2.5 : 1)) continue;
+      const towns = tribe ? AEON.tribes.front(world, p, q).filter(function (r) { return r.settlement; }).map(function (r) { return r.id; })
+        : frontOf(world, q, p).filter(function (rid) { return R[rid].settlement; });
       if (!towns.length) continue;
       const rid = towns[Math.floor(hash(num(q.id), mon, 7) * towns.length)], r = R[rid];
-      let from = rid;
-      for (const n of r.neighbors || []) if (R[n] && R[n].owner === p.id) { from = n; break; }
+      let from = tribe ? p.capital : rid;
+      if (!tribe) for (const n of r.neighbors || []) if (R[n] && R[n].owner === p.id) { from = n; break; }
+      if (tribe) p.population = Math.round(p.population * 1.004);
       q.relations[p.id] = Math.max(-1, (q.relations[p.id] || 0) - 0.04);
       q.prosperity = Math.max(0, (q.prosperity || 0) - 0.01);
       (world.raidLog || (world.raidLog = [])).push([d, p.id, q.id, from, rid]);

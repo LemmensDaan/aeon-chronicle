@@ -538,6 +538,8 @@ function citeProphecy(c, pe) {
 
 /* region helpers for conquest */
 function borderRegions(w, from, to) {
+  const tf = AEON.tribes && AEON.tribes.front(w, to, from);
+  if (tf) return tf;
   return from.regions.map(function (i) { return w.regions[i]; }).filter(function (r) {
     return r && r.neighbors.some(function (n) { return w.regions[n] && w.regions[n].owner === to.id; });
   });
@@ -2772,6 +2774,8 @@ AEON.registerPack({
   ],
   archetypes: ARCHETYPES,
   realmTypes: REALM_TYPES,
+  /* the herder peoples, tribes in a region (js/tribes.js) */
+  tribal: ["hill-clans", "druidic-circle"],
   technologies: TECHNOLOGIES,
   /* the money of the economy (core.js) */
   currency: { one: "crown", many: "crowns" },

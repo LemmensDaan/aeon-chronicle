@@ -162,6 +162,8 @@ function seedFromSketch(world, planet, si) {
     }
     if (people.culture) p.culture = people.culture;
     p.people = people.id;
+    /* a herder people is a tribe at its seat (tribes.js; its other realms take a kind at random) */
+    if (first && AEON.tribes) AEON.tribes.make(world, p);
     chosen.push(region);
     return p;
   };

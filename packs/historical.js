@@ -577,7 +577,8 @@ function lasted(y) { return y == null ? "some years" : y < 1 ? "a single campaig
 function winsOf(wr, p) { return wr.a === p.id ? wr.winsA : wr.winsB; }
 function addWin(wr, p) { if (wr.a === p.id) wr.winsA++; else wr.winsB++; }
 function frontier(ctx, p, q) {
-  const w = ctx.world;
+  const w = ctx.world, tf = AEON.tribes && AEON.tribes.front(w, p, q);
+  if (tf) return tf;
   return ctx.regionsOf(q).filter(function (r) { return r.neighbors.some(function (n) { return w.regions[n].owner === p.id; }); });
 }
 /* What conquest does to a place: a settlement may be razed (a village burned out) or shrink,
@@ -2451,6 +2452,8 @@ AEON.registerPack({
   /* 0..1: how worn down a realm is by its wars, for core.js musterForces */
   warWeariness: function (w, p) { return w._hist ? (w._hist.fatigue[p.id] || 0) / 0.35 : 0; },
   realmTypes: REALM_TYPES,
+  /* the herder peoples, tribes in a region (js/tribes.js) */
+  tribal: ["steppe", "hillclans"],
   technologies: TECHNOLOGIES,
 
   archetypes: [

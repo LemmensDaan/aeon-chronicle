@@ -362,6 +362,7 @@ function makeCtx(world, subject) {
     ready: function (foe) { return !AEON.campaigns || AEON.campaigns.ready(world, ctx.polity, foe); },
     front: function (foe, list) { return (AEON.campaigns && AEON.campaigns.front(world, ctx.polity, foe, list)) || rng.pick(list); },
     siegeOf: function (foe) { return AEON.campaigns ? AEON.campaigns.siegeOf(world, ctx.polity, foe) : undefined; },
+    restless: function () { return AEON.fast ? AEON.fast.restless(world, ctx.polity) : []; },
     siegeMonths: function (foe) { return AEON.campaigns ? AEON.campaigns.siegeMonths(world, ctx.polity, foe) : null; },
     chance: function (p) { return rng.chance(p); },
     int: function (a, b) { return rng.int(a, b); },
@@ -510,6 +511,7 @@ function transferRegion(world, region, to) {
   }
   region.owner = to ? to.id : null;
   logOwner(world, region.id, region.owner);
+  if (AEON.fast && from && to && from !== to) AEON.fast.taken(world, region, from, to);
   if (to && to.regions.indexOf(region.id) < 0) to.regions.push(region.id);
   if (to && !region.name) region.name = callName(world, "place", { region: region, polity: to });
   if (from && from.regions.length === 0 && !from.ended) {
@@ -2288,8 +2290,12 @@ function fireOne(world, scope, subject, consolidateOnly) {
   const ok = defs.filter(function (d) { return (!d.campaign || !CP || war) && eligible(world, d, ctx, subjectKey); });
   if (!ok.length) return;
 
-  const boost = CP ? CP.climate(world).boost : 1;
-  const def = world.rng.weighted(ok, function (d) { return (d.weight || 1) * (d.campaign ? boost : 1); });
+  /* the year's harvest (campaigns.js) makes famine likelier or rarer, a restless province
+     rebellion likelier (fastlayer.js) */
+  const boost = CP ? CP.climate(world, world.year).boost : 1;
+  const hk = CP ? CP.harvest(world, world.year).kind : null, hunger = hk === "failed" ? 6 : hk === "poor" ? 2 : hk === "good" ? 0.3 : 1;
+  const unrest = CP && AEON.fast && ctx.polity ? 1 + 0.5 * Math.min(4, AEON.fast.restless(world, ctx.polity).length) : 1;
+  const def = world.rng.weighted(ok, function (d) { return (d.weight || 1) * (d.campaign ? boost : 1) * (d.harvest ? hunger : 1) * (d.revolt ? unrest : 1); });
   if (!def) return;
   /* an overreached realm's conquests mostly stall */
   if (def.consolidate && world.reach && subject && subject.kind === "polity" && world.rng.chance(Math.min(0.95, 0.6 * overreach(world, subject.obj)))) return;

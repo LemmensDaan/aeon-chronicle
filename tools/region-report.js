@@ -27,7 +27,7 @@ const OUT = opt("--out") || path.join(__dirname, "out", "regions");
 const ctx = { console: console, Math: Math, Date: Date };
 ctx.window = ctx; ctx.self = ctx;
 vm.createContext(ctx);
-for (const f of ["js/rng.js", "js/core.js", "js/campaigns.js", "js/planetgen.js", "js/worldgen.js", "js/sketch.js", "packs/historical.js", "packs/fantasy.js"]) {
+for (const f of ["js/rng.js", "js/core.js", "js/campaigns.js", "js/fastlayer.js", "js/planetgen.js", "js/worldgen.js", "js/sketch.js", "packs/historical.js", "packs/fantasy.js"]) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f });
 }
 const AEON = ctx.AEON;

@@ -1371,7 +1371,7 @@ const EVENTS = [
 
 /* --------------------------------------------------------- disasters ---- */
 
-{ id: "famine", scope: "polity", weight: 3, cooldown: 25,
+{ id: "famine", harvest: true, scope: "polity", weight: 3, cooldown: 25,
   test: function (ctx) { return ctx.polity.population > 2000; },
   run: function (ctx) {
     const p = ctx.polity, frac = ctx.range(0.05, 0.2), n = loseFolk(p, frac);
@@ -1884,16 +1884,17 @@ const EVENTS = [
 
 /* ----------------------------------------------------------- internal ---- */
 
-{ id: "rebellion-crushed", scope: "polity", weight: 5, cooldown: 30,
+{ id: "rebellion-crushed", revolt: true, scope: "polity", weight: 5, cooldown: 30,
   test: function (ctx) { return ctx.polity.traits.stability < 0.55; },
   run: function (ctx) {
-    const p = ctx.polity, r = ctx.pick(ctx.regionsOf(p)), lead = ctx.name("figure", { polity: p, role: "rebel" });
+    /* in a region, a town still restless since it was taken (fastlayer.js) */
+    const p = ctx.polity, rs = ctx.restless(), r = rs.length ? rs[0] : ctx.pick(ctx.regionsOf(p)), lead = ctx.name("figure", { polity: p, role: "rebel" });
     const n = loseFolk(p, ctx.range(0.01, 0.03)); adjustT(p, "stability", 0.05);
     return res(2, ["rebellion"], A(ctx, p, r), r.id,
       "A rising in " + provName(r) + " under " + (lead && lead.name || "a local landholder") + " was put down by the army of " + p.name + " after " + ctx.int(2, 14) + " months. About " + approx(n) + " died; " + ctx.int(20, 400) + " were executed afterwards " + ctx.choice(["along the main road, as a lesson", "in the market of " + locName(r), "by drowning, the rebels having been fond of the river"]) + ".");
   } },
 
-{ id: "peasant-revolt", scope: "polity", weight: 3, cooldown: 60,
+{ id: "peasant-revolt", revolt: true, scope: "polity", weight: 3, cooldown: 60,
   test: function (ctx) { return ctx.polity.traits.stability < 0.5 && ctx.polity.population > 3000; },
   run: function (ctx) {
     const p = ctx.polity, lead = ctx.name("figure", { polity: p, role: "rebel" });
@@ -1903,7 +1904,7 @@ const EVENTS = [
       "A revolt of the peasantry broke out in " + p.name + " over " + ctx.choice(["a new levy on salt", "the enclosure of the common pasture", "the price of bread after the failed harvest", "forced labour on the capital's walls", "a tax on hearths"]) + ". " + host + ", led by " + (lead && lead.name || "a local carter") + ", burned " + ctx.int(10, 90) + " manor houses and the tax rolls kept in them. About " + approx(n) + " people died before the revolt was put down; the levy was afterwards withdrawn, an outcome which the rebels' surviving descendants considered adequate.");
   } },
 
-{ id: "secession-province", scope: "polity", weight: 2.5, cooldown: 120,
+{ id: "secession-province", revolt: true, scope: "polity", weight: 2.5, cooldown: 120,
   test: function (ctx) { return !crowded(ctx) && ctx.polity.traits.stability < 0.45 && ctx.polity.regions.length >= 3; },
   run: function (ctx) {
     const p = ctx.polity, regs = secessionGroup(ctx, p, 0.2);

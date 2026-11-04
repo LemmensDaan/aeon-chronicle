@@ -10,9 +10,14 @@
      between allies, envoys between trading partners, each once a year in a month of its own
    - sickness: a ruler who dies in his bed (an orderly succession, a regency, a disputed one) lies
      sick in his capital for the months before
-   - plague: a sickness that breaks out or spreads (events tagged plague) creeps out from the
-     stricken capital over the following year
-   - famine: the harvest fails the autumn before a famine (events tagged famine)
+   - the year's weather and harvest (campaigns.js weather, harvest): a failed, poor or rich
+     harvest told at the season's end, a hard winter at midwinter
+   - famine: the harvest fails in a realm the autumn before its famine (events tagged famine)
+   - plague: the contagion reaching a town (world.plagueLog, fastlayer.js), a pall over it for
+     most of a year; a month's towns told together
+   - riots in a restless town (world.unrestLog, fastlayer.js)
+   - arrivals announced: word of an invading host, migrants, colonists or raiders gathering beyond
+     the border or the sea, some months before they come (the sketch's contacts, region.js)
    - the armies (world.armyLog, campaigns.js): a levy called up, a siege laid, winter quarters,
      the troops sent home (a realm's armies told once a month: "and two other wars")
    - raids (world.raidLog, campaigns.js)
@@ -47,7 +52,7 @@ const ENVOY = { alliance: "Envoys of {A} ride to {B} to seal an alliance", trade
 
 /* the happenings of calendar year Y (dates in (Y, Y+1]) */
 function yearOf(w, Y) {
-  const cache = w._monthsYears || hidden(w, "_monthsYears", {}), key = w.chronicle.length + ":" + (w.armyLog ? w.armyLog.length : 0) + ":" + (w.raidLog ? w.raidLog.length : 0);
+  const cache = w._monthsYears || hidden(w, "_monthsYears", {}), key = w.chronicle.length + ":" + (w.armyLog ? w.armyLog.length : 0) + ":" + (w.raidLog ? w.raidLog.length : 0) + ":" + (w.plagueLog ? w.plagueLog.length : 0) + ":" + (w.unrestLog ? w.unrestLog.length : 0);
   if (cache[Y] && cache[Y].key === key) return cache[Y].list;
   for (const k in cache) if (Math.abs(+k - Y) > 3) delete cache[k];
   const R = w.regions, P = w.polities, out = [];
@@ -69,8 +74,9 @@ function yearOf(w, Y) {
     const m = Math.floor(hash(num(t.id), Y) * 12), d = Y + (m + 0.5) / 12;
     const a = capitalAt(w, t.a, d), b = capitalAt(w, t.b, d);
     if (a == null || b == null || a === b) continue;
+    /* the riders go every year, the news tells of them about two years in five */
     add({ date: d, until: d + 1 / 12, kind: t.kind === "marriage" ? "bride" : "envoy", pid: t.a, rid: a, to: b,
-          text: YEARLY[t.kind].replace("{A}", nm(P[t.a])).replace("{B}", nm(P[t.b])) + "." });
+          text: hash(num(t.id), Y + 7919) < 0.4 ? YEARLY[t.kind].replace("{A}", nm(P[t.a])).replace("{B}", nm(P[t.b])) + "." : "" });
   }
   /* sickness, plague, famine: from the year's events and the next's */
   for (const e of inYear(w.chronicle, Y, function (e) { return e.year; }, function (e) { return dateOf(e) - (e.tags.indexOf("famine") >= 0 ? 0.5 : e.tags.indexOf("succession") >= 0 ? 0.25 : 0); })) {
@@ -83,19 +89,53 @@ function yearOf(w, Y) {
       add({ date: d - 0.5, until: d, kind: "famine", pid: p.id, rid: rid, text: "The harvest fails in " + nm(p) + "." });
     }
   }
-  for (const e of inYear(w.chronicle, Y, function (e) { return e.year; }, dateOf)) {
-    const T = e.tags, d = dateOf(e);
-    if (T.indexOf("plague") >= 0 && e.regionId != null && !/wanes|over|ends/.test(e.type)) {
-      const pa = (e.actors || []).filter(function (a) { return a && a.kind === "polity"; }), p = pa[pa.length - 1] && P[pa[pa.length - 1].id];
-      add({ date: d, until: d + 1, kind: "plague", pid: p ? p.id : null, rid: e.regionId, text: "Sickness at " + place(R[e.regionId]) + (p ? ", in " + nm(p) : "") + "." });
+  /* the year's weather (the tick year Y+1 holds calendar year Y) */
+  if (AEON.campaigns) {
+    const C = AEON.campaigns.climate(w), hv = AEON.campaigns.harvest(w, Y + 1), m = C.raid[1];
+    const HARVEST = { failed: hv.wet > 0 ? "A wet summer rots the grain in the ear: the harvest fails across the land." : hv.wet < 0 ? "A summer without rain: the harvest fails across the land." : "A late frost and an early one: the harvest fails across the land.",
+                      poor: "A thin harvest is brought in; the granaries will not be full this winter.", good: "A rich harvest is brought in, and the markets are full." };
+    if (HARVEST[hv.kind]) add({ date: Y + (m + 0.6) / 12, until: Y + (m + 1.6) / 12, kind: "harvest", rid: null, text: HARVEST[hv.kind] });
+    if (hv.cold > 0.6) {
+      let cm = 0;
+      for (let k = 1; k < 12; k++) if (C.w[k] < C.w[cm]) cm = k;
+      add({ date: Y + (cm + 0.4) / 12, until: Y + (cm + 1.4) / 12, kind: "winter", rid: null, text: "A hard winter: the rivers freeze and the passes close." });
     }
+  }
+  /* the plague town by town, a month's towns told together */
+  const sick = {};
+  for (const e of inYear(w.plagueLog || [], Y, function (e) { return Math.floor(e[0]); }, function (e) { return e[0]; })) {
+    add({ date: e[0], until: e[0] + 0.8, kind: "plague", rid: e[1], silent: true, text: "" });
+    const k = Math.floor(e[0] * 12);
+    (sick[k] || (sick[k] = [])).push(e);
+  }
+  for (const k in sick) {
+    const L = sick[k], r = R[L[0][1]], p = r && P[r.owner], more = L.length - 1;
+    add({ date: L[0][0] + 0.001, until: L[0][0] + 1 / 12, kind: "news", rid: L[0][1],
+          text: "The sickness reaches " + place(r) + (p ? ", in " + nm(p) : "") + (more ? (more === 1 ? ", and one other town" : ", and " + more + " other towns") : "") + "." });
+  }
+  /* riots in restless towns */
+  for (const e of inYear(w.unrestLog || [], Y, function (e) { return Math.floor(e[0]); }, function (e) { return e[0]; })) {
+    add({ date: e[0], until: e[0] + 1 / 12, kind: "riot", pid: e[2], rid: e[1],
+          text: "Riots in " + place(R[e[1]]) + ", taken by " + nm(P[e[2]]) + " from " + nm(P[e[3]]) + "." });
+  }
+  /* arrivals announced, some months ahead (from next year's events too) */
+  const sk = w.planet && w.planet.sketch;
+  for (const e of inYear(w.chronicle, Y, function (e) { return e.year; }, function (e) { return dateOf(e) - 0.35; })) {
+    const c = e.sketch;
+    if (!c || !sk || c.to !== (w.square && w.square.id) || ["invasion", "migration", "colonisation", "raid"].indexOf(c.kind) < 0 || e.type === "sketch-outcome") continue;
+    const by = sk.peoples.filter(function (q) { return q.id === c.by; })[0], adj = by ? by.adjective : "foreign";
+    const ANNOUNCE = { invasion: "Word comes of a " + adj + " host gathering beyond the border.", migration: "Word comes of " + adj + " herders on the move, with their flocks and their gods.",
+                       colonisation: "Word comes of " + adj + " ships fitting out to carry settlers.", raid: "Word comes of " + adj + " longships sighted off the coast." };
+    const d = dateOf(e) - 0.35;
+    add({ date: d, until: d + 1 / 12, kind: "news", rid: e.regionId, text: ANNOUNCE[c.kind] });
   }
   /* the armies' turns of fortune: a realm's of each kind told once a month, its other wars counted */
   const told = {};
   for (const e of inYear(w.armyLog || [], Y, function (e) { return Math.floor(e[0] == null ? -1e9 : e[0] - 1e-9); }, function (e) { return e[0] == null ? -1e9 : e[0]; })) {
     const p = P[e[2]];
-    if (!p || ["muster", "siege", "quarters", "home"].indexOf(e[4]) < 0) continue;
-    const k = e[2] + "|" + e[4] + "|" + Math.floor(e[0] * 12), h = told[k];
+    /* not the year's opening entries (campaigns.js beginYear), and a siege told once a year */
+    if (!p || ["muster", "siege", "quarters", "home"].indexOf(e[4]) < 0 || e[0] - Math.floor(e[0]) < 1e-4) continue;
+    const k = e[4] === "siege" ? e[1] + "|siege|" + e[3] : e[2] + "|" + e[4] + "|" + Math.floor(e[0] * 12), h = told[k];
     if (h) { if (h.foes.indexOf(e[5]) < 0) h.foes.push(e[5]); continue; }
     told[k] = { e: e, p: p, foes: [e[5]] };
   }

@@ -357,9 +357,32 @@ Each step is checked on seed 7 at 10 days/s before the next.
      hold?", "Who will win the war of ...?"), and a strip of the world's whole history with the
      chapter and the ages the square reached marked; Begin starts playback. The plaques over the
      map are centred on the map left of the chronicle.
-   Not yet: court events in the engine (a regency, a revolt brewing in a restless province), the
-   harvest of each year from the month's weather, plague spreading cell by cell along roads and sea
-   lanes as an engine process, foreign powers pressing on the edge, arrivals announced.
+   **6b done 2026-11-04.**
+   - *The year's weather* (campaigns.js `weather`, `harvest`): how wet the summer and how hard the
+     winter, hashed from the square and the year. A hard winter shortens the campaign season and a
+     wet summer bogs it down (`climate(world, year)`). The harvest: about 5% of years fail, 4% are
+     poor, 17% rich. A failed harvest makes famine six times likelier (a poor one twice, a rich one
+     a third; pack events marked `harvest: true`) and raids 1.8 times (poor 1.3).
+   - *Unrest* (js/fastlayer.js): a town taken from another realm stays restless for up to six
+     years (a town taken in war the more); now and then it riots (world.unrestLog; the owner's
+     stability -0.003), and while a realm holds restless towns its revolt events (`revolt: true`)
+     are likelier and break out in them (`ctx.restless()`).
+   - *Plague as a contagion* (fastlayer.js): a pack's plague event starts it in its town; month by
+     month it spreads to towns within ten squares by road (the nearer the likelier) and from port
+     to port across the water; at most three towns a month and 24 in all, each costing its realm
+     0.3% of its people per settlement tier; it dies out after a quiet season, and a new one waits
+     three years. world.plagueLog.
+   - *Happenings*: the harvest and a hard winter told; the plague town by town (a pall over each, a
+     month's towns told together); riots; arrivals announced some months ahead ("Word comes of a X
+     host gathering beyond the border", from the sketch's invasions, migrations, colonists and
+     raiders). A treaty's yearly riders go every year but are told in the news about two years in
+     five; a long siege is told once a year.
+   - Over 32 regions against 6a: wars -6%/-5%, battles +2%/0%, land changing hands -3%/+2%,
+     alliances +21%/+7%, largest realm -9%/+17%, the rest within 10% (historical/fantasy);
+     compute about +3% (fastlayer). Region 4,2: 0.4-1.25 told happenings a month, a third to two
+     thirds of the months quiet.
+   Not yet: regencies as engine events, foreign powers pressing on the edge (only their arrivals
+   are announced).
 7. **Tribes.** Spheres, seasonal pastures, raids, settling into land.
 8. **The region wins.** Write the outcome back; rerun the sketch from that date.
 9. **Interactivity:** to be designed (see below).

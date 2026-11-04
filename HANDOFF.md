@@ -75,6 +75,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   news, raids) drawn by mapfx.js `months` and told in a news line (ui.js updateNews); chapter
   opening card with its question and the 4500-year strip (ui.js stakesCard; sketch.js chapters
   carry `ask`). The browser caches scripts: after edits, refetch them (fetch with cache "reload").
+  **Step 6b (2026-11-04):** the year's weather and harvest (campaigns.js `weather`/`harvest`,
+  `climate(world, year)`; pack defs `harvest: true` / `revolt: true` weighted in core.js fireOne);
+  js/fastlayer.js (`AEON.fast`, run monthly from campaigns advance): unrest in taken towns
+  (world.unrest, unrestLog, ctx.restless) and plague as a contagion (world.contagion, plagueLog).
+  months.js tells harvests, hard winters, plague towns, riots and arrivals announced. Not done:
+  regencies in the engine, foreign powers pressing on the edge.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

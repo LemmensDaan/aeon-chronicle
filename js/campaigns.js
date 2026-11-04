@@ -59,9 +59,12 @@ function on(world) { return !!(world && world.square && world.timeStep === 1 && 
 /* ------------------------------------------------------------ the weather of the months */
 /* the square's months for war: weights (0: no army takes the field; 1: the best of the year) from
    the middle land's warmest and coldest months, the south's seasons the other way round, and the
-   rains of a monsoon summer in the warm lands; `active` the months a campaign is on */
-function climate(world) {
+   rains of a monsoon summer in the warm lands; `active` the months a campaign is on. With a
+   tick year, that year's (its weather: a hard winter shortens the season, a wet summer bogs it
+   down, a mild year lengthens it) */
+function climate(world, year) {
   world = baseOf(world);
+  if (year != null) return yearClimate(world, year);
   if (world._campClimate) return world._campClimate;
   const land = world.regions.filter(function (r) { return !r.barren && !r.beyond && r.warmC != null; });
   const pick = function (k, d) { const m = median(land.map(function (r) { return r[k]; }).filter(function (v) { return v != null; })); return m == null ? d : m; };
@@ -81,15 +84,52 @@ function climate(world) {
     const top = temp.slice().sort(function (a, b) { return b - a; })[2];
     for (let m = 0; m < 12; m++) w[m] = temp[m] >= top ? 1 : 0;
   }
+  return hidden(world, "_campClimate", season12(w, south));
+}
+/* the months on, the raiding months (the last two of the season, late in the year without a
+   winter) and how much likelier war is in each month on */
+function season12(w, south) {
   const active = w.map(function (k) { return k >= ACTIVE; }), n = active.filter(Boolean).length;
-  /* the raiding months: the last two of the season (its longest run), late in the year without a winter */
   let raid = [8, 9];
   if (n < 12) {
     let end = -1;
     for (let m = 0; m < 12; m++) if (active[m] && !active[(m + 1) % 12]) { end = m; break; }
     if (end >= 0) raid = [(end + 11) % 12, end];
   }
-  return hidden(world, "_campClimate", { w: w, active: active, south: south, boost: 12 / Math.max(1, n), raid: raid });
+  return { w: w, active: active, south: south, boost: 12 / Math.max(1, n), raid: raid };
+}
+
+/* ------------------------------------------------------------ the weather of a year */
+/* how wet its summer and how hard its winter were (each about -1..1, mostly near 0), from the
+   square and the year alone (not the world's random stream), so the map and the engine agree */
+function seedOf(world) {
+  if (world._wxSeed != null) return world._wxSeed;
+  let h = 7;
+  for (const ch of String(world.seed) + ":" + (world.square ? world.square.id : "")) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return hidden(world, "_wxSeed", h >>> 0);
+}
+function weather(world, year) {
+  world = baseOf(world);
+  const s = seedOf(world) % 1000003, g = function (a) { return (hash(year, s, a) + hash(year, s, a + 1) + hash(year, s, a + 2)) / 1.5 - 1; };
+  return { wet: g(11), cold: g(21) };
+}
+/* the harvest a year's weather gave: q (1 a fair one), and "failed", "poor", "fair" or "good" */
+function harvest(world, year) {
+  const x = weather(world, year);
+  /* about one year in twenty fails, one in twenty is poor, one in six good */
+  const q = 1 - 1.5 * Math.max(0, x.wet - 0.55) - 1.5 * Math.max(0, -x.wet - 0.6) - 0.8 * Math.max(0, x.cold - 0.6);
+  const kind = q < 0.85 ? "failed" : q < 0.95 ? "poor" : Math.abs(x.wet) < 0.15 && x.cold < 0 ? "good" : "fair";
+  return { q: q, kind: kind, wet: x.wet, cold: x.cold };
+}
+function yearClimate(world, year) {
+  const cache = world._campYearC || hidden(world, "_campYearC", {});
+  if (cache[year]) return cache[year];
+  const base = climate(world), x = weather(world, year), w = [];
+  for (let m = 0; m < 12; m++) w.push(clamp(base.w[m] - 0.3 * x.cold - 0.3 * Math.max(0, x.wet) * base.w[m], 0, 1));
+  let out = season12(w, base.south);
+  if (!out.active.some(Boolean)) out = base;
+  for (const k in cache) if (Math.abs(+k - year) > 3) delete cache[k];
+  return (cache[year] = out);
 }
 
 /* ------------------------------------------------------------ the months of a tick */
@@ -104,7 +144,7 @@ function beginYear(world) {
 function slot(world, k, n) { setMonth(world, Math.min(11, Math.floor((k + hash(world.year, k, 1)) / Math.max(1, n) * 12))); }
 /* an extra war turn: a month of the season still to come (else the month it is) */
 function later(world, k) {
-  const C = climate(world), from = world._month || 0, open = [];
+  const C = climate(world, world.year), from = world._month || 0, open = [];
   for (let m = from; m < 12; m++) if (C.active[m]) open.push(m);
   setMonth(world, open.length ? open[Math.floor(hash(world.year, k, 2) * open.length)] : from);
 }
@@ -122,7 +162,7 @@ function endYear(world) {
 /* the open month's end as a date (what is recorded in it), or null after the turns */
 function dateNow(world) { return world._month == null ? null : y0(world) + (world._month + 1) / 12; }
 /* is it a month for war? (core.js fireOne, for events marked campaign) */
-function season(world) { return world._month == null || climate(world).active[world._month]; }
+function season(world) { return world._month == null || climate(world, world.year).active[world._month]; }
 
 /* core.js dateTick: events recorded in a month keep its date; the others go between them, in
    their order */
@@ -253,8 +293,9 @@ function holds(r) { const t = r && r.settlement ? r.settlement.tier : 0; return 
 function advance(world, m) {
   const A = armies(world);
   let k = world._armyMonth || 0;
-  const C = climate(world), R = world.regions, P = world.polities;
+  const C = climate(world, world.year), R = world.regions, P = world.polities;
   for (; k <= m; k++) {
+    if (AEON.fast) AEON.fast.month(world, k, y0(world) + (k + 0.5) / 12);
     const act = C.active[k], mud = C.w[k] < 0.6, d = y0(world) + (k + 0.85) / 12;
     if (C.raid.indexOf(k) >= 0) raids(world, k);
     /* over a copy: an army's turn may end wars and begin others */
@@ -309,13 +350,15 @@ function advance(world, m) {
 const RAID = 0.05;
 function raids(world, k) {
   const P = world.polities, R = world.regions, d = y0(world) + (k + 0.5) / 12, mon = world.year * 12 + k;
+  /* hunger rides out: more raids after a poor harvest */
+  const hk = harvest(world, world.year).kind, hungry = hk === "failed" ? 1.8 : hk === "poor" ? 1.3 : 1;
   for (const id in P) {
     const p = P[id];
     if (p.ended || !p.regions.length) continue;
     const agg = p.traits && p.traits.aggression != null ? p.traits.aggression : 0.5;
     for (const q of AEON.neighborsOf(world, p)) {
       if ((p.relations[q.id] || 0) >= -0.3 || AEON.treatyBetween(world, p, q, null)) continue;
-      if (hash(num(p.id), num(q.id), mon) >= RAID * (0.5 + agg)) continue;
+      if (hash(num(p.id), num(q.id), mon) >= RAID * (0.5 + agg) * hungry) continue;
       const towns = frontOf(world, q, p).filter(function (rid) { return R[rid].settlement; });
       if (!towns.length) continue;
       const rid = towns[Math.floor(hash(num(q.id), mon, 7) * towns.length)], r = R[rid];
@@ -483,7 +526,7 @@ function warChapters(world) {
 }
 
 AEON.campaigns = {
-  warChapters: warChapters,
+  warChapters: warChapters, weather: weather, harvest: harvest,
   on: on, climate: climate, beginYear: beginYear, slot: slot, later: later, endYear: endYear, season: season,
   dateYear: dateYear, closeYear: closeYear, dateNow: dateNow, warBegun: warBegun, warEnded: warEnded,
   ready: ready, front: front, siegeOf: siegeOf, siegeMonths: siegeMonths, fought: fought, armiesAt: armiesAt,

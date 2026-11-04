@@ -1013,7 +1013,7 @@ const SPINE = [
     }
   },
   {
-    id: "famine", scope: "polity", weight: 4, cooldown: 40,
+    id: "famine", harvest: true, scope: "polity", weight: 4, cooldown: 40,
     test: function (c) { return c.polity.population > 1200 && c.polity.regions.length > 0; },
     run: function (c) {
       const p = c.polity;
@@ -1038,7 +1038,7 @@ const SPINE = [
     }
   },
   {
-    id: "rebellion", scope: "polity", weight: 2, cooldown: 150,
+    id: "rebellion", revolt: true, scope: "polity", weight: 2, cooldown: 150,
     test: function (c) { return c.polity.regions.length >= 5 && c.polity.traits.stability < 0.45 && !crowded(c.world); },
     run: function (c) {
       const w = c.world, p = c.polity;

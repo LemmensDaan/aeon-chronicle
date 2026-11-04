@@ -481,7 +481,7 @@ function hideStakes() { if (dom.stakes) { dom.stakes.remove(); dom.stakes = null
 function updateNews(date) {
   if (!dom.news) return;
   const h = date != null && AEON.months ? AEON.months.between(world, date - 0.1, date) : [];
-  const last = h[h.length - 1], text = last ? last.text : "";
+  const told = h.filter(function (x) { return x.text; }), last = told[told.length - 1], text = last ? last.text : "";
   if (dom.news.textContent !== text) dom.news.textContent = text;
   dom.news.classList.toggle("hidden", !last);
 }

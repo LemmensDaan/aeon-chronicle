@@ -959,8 +959,8 @@ function months(g, env, date, layer) {
     const a = Math.max(0, Math.min(1, (date - h.date) / Math.max(1e-6, h.until - h.date)));
     if (layer === "under") {
       if (h.kind !== "plague" && h.kind !== "famine") continue;
-      /* a pall of specks over the land around: a plague's spreads and fades over its year */
-      const rad = h.kind === "plague" ? 1.5 + 9 * Math.min(1, a * 2) : 4, fade = h.kind === "plague" ? (a < 0.7 ? 1 : (1 - a) / 0.3) : 1 - a * 0.5;
+      /* a pall of specks over a stricken town (fading as it recovers), or the fields of a famine */
+      const rad = h.kind === "plague" ? 2.2 : 4, fade = h.kind === "plague" ? (a < 0.6 ? 1 : (1 - a) / 0.4) : 1 - a * 0.5;
       g.fillStyle = h.kind === "plague" ? "rgba(52,62,38," + (0.55 * fade).toFixed(2) + ")" : "rgba(122,84,34," + (0.45 * fade).toFixed(2) + ")";
       const s = Math.max(1, Math.round(cell / 2));
       for (let dy = -Math.ceil(rad); dy <= rad; dy++) for (let dx = -Math.ceil(rad); dx <= rad; dx++) {
@@ -979,6 +979,11 @@ function months(g, env, date, layer) {
     } else if (h.kind === "sick") {
       const c = centre(h.rid);
       frameAt(g, env, c[0] + 6 * env.u, c[1] - 6 * env.u, function () { env.blit(g, CANDLE, -2, -6, 1, Math.floor(t / 300) % 3 ? null : { y: "#ffd27a" }); });
+    } else if (h.kind === "riot") {
+      /* a crowd with torches in the street */
+      const c = centre(h.rid);
+      band(g, env, c[0] - 3 * env.u, c[1] + 2 * env.u, 2, "#5a2a1a", 1, t, false, false, "plain");
+      frameAt(g, env, c[0] + 2 * env.u, c[1], function () { flames(g, -1, -1, 2, t); });
     } else if (h.kind === "raid") {
       const c = centre(h.rid);
       if (a < 0.5 && R[h.from]) {

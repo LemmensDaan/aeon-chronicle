@@ -957,20 +957,29 @@ function months(g, env, date, layer) {
     const r = R[h.rid];
     if (!r) continue;
     const a = Math.max(0, Math.min(1, (date - h.date) / Math.max(1e-6, h.until - h.date)));
-    if (layer === "under") {
-      if (h.kind !== "plague" && h.kind !== "famine") continue;
-      /* a pall of specks over a stricken town (fading as it recovers), or the fields of a famine */
-      const rad = h.kind === "plague" ? 2.2 : 4, fade = h.kind === "plague" ? (a < 0.6 ? 1 : (1 - a) / 0.4) : 1 - a * 0.5;
-      g.fillStyle = h.kind === "plague" ? "rgba(52,62,38," + (0.55 * fade).toFixed(2) + ")" : "rgba(122,84,34," + (0.45 * fade).toFixed(2) + ")";
-      const s = Math.max(1, Math.round(cell / 2));
+    /* a pall of specks: the fields of a famine under the realms' colours, a stricken town's
+       sickness over them (fading as it recovers) */
+    const pall = h.kind === "plague" ? layer === "over" : h.kind === "famine" && layer === "under";
+    if (pall) {
+      const plague = h.kind === "plague", rad = plague ? 2.6 : 4, fade = plague ? (a < 0.6 ? 1 : (1 - a) / 0.4) : 1 - a * 0.5;
+      g.fillStyle = plague ? "rgba(34,40,26," + (0.75 * fade).toFixed(2) + ")" : "rgba(122,84,34," + (0.45 * fade).toFixed(2) + ")";
+      const s = Math.max(1, Math.round(cell * (plague ? 0.7 : 0.5)));
       for (let dy = -Math.ceil(rad); dy <= rad; dy++) for (let dx = -Math.ceil(rad); dx <= rad; dx++) {
-        if (dx * dx + dy * dy > rad * rad) continue;
+        if (dx * dx + dy * dy > rad * rad || (plague && !dx && !dy)) continue;
         const gx = r.x + dx, gy = r.y + dy, q = R[gy * w.width + gx];
         if (!q || q.barren || gx < 0 || gx >= w.width) continue;
-        if (hash(gx * 7 + gy, 31) < 0.45) g.fillRect(Math.round(env.sx(gx + hash(gx, gy) * 0.5)), Math.round(env.sy(gy + hash(gy, gx) * 0.5)), s, s);
+        if (hash(gx * 7 + gy, 31) < (plague ? 0.6 : 0.45)) g.fillRect(Math.round(env.sx(gx + hash(gx, gy) * 0.5)), Math.round(env.sy(gy + hash(gy, gx) * 0.5)), s, s);
       }
-      continue;
+      /* and over the town itself a cloud of dark motes drifting round it (seen on a coast too) */
+      if (plague) {
+        const c = centre(h.rid);
+        for (let i = 0; i < 7; i++) {
+          const ang = hash(h.rid, i) * 6.283 + (i % 2 ? 1 : -1) * t / 1400, rr = (0.8 + hash(i, h.rid) * 1.4) * cell;
+          g.fillRect(Math.round(c[0] + Math.cos(ang) * rr), Math.round(c[1] - 1.5 * cell + Math.sin(ang) * rr * 0.5), s, s);
+        }
+      }
     }
+    if (layer === "under" || h.kind === "plague") continue;
     const p = h.pid && w.polities[h.pid], over = { f: (p && p.color) || "#888" };
     if ((h.kind === "envoy" || h.kind === "bride") && R[h.to]) {
       const A = centre(h.rid), B = centre(h.to), f = ease(a), dir = B[0] >= A[0] ? 1 : -1;

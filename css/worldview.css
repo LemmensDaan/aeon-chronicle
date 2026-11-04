@@ -37,6 +37,9 @@
 .wv-chapters > i { color: var(--pp-soft, #6b4a2a); font-size: 12px; }
 .wv-pick .wv-chapter { text-align: left; font-family: var(--ae-serif); font-size: 13px; }
 .wv-pick .wv-chapter b { font-size: 12px; margin-right: 4px; }
+/* a chapter played to its end, and the note that the world now follows it (step 8) */
+.wv-pick .wv-seen { color: var(--pp-ribbon, #8e1d1d); font-size: 11px; }
+.wv-pick .wv-written { flex-basis: 100%; font-size: 12px; }
 .wv-play { border: 1px solid var(--pp-ink, #3a2614); background: #f3e4c4; color: var(--pp-ribbon, #8e1d1d); font-size: 9px; line-height: 1; padding: 2px 4px; cursor: pointer; }
 .wv-play:hover { background: var(--pp-ribbon, #8e1d1d); color: #f3e4c4; }
 /* the homeland map on a newcomer realm's chronicle page */

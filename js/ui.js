@@ -170,6 +170,7 @@ function writeHash() {
 
 /* the planet: its sketch in the World mode, and the world timeline in the sidebar */
 function showPlanet(year, mode) {
+  writeBack();
   stopRegion();
   chapter = null;
   world = planet; AEON.world = planet;
@@ -186,6 +187,7 @@ function showPlanet(year, mode) {
    to its date. k: the chapter to play (its index in chaptersFor), else the whole history;
    year: where to start within it (a link) */
 function openRegion(si, mode, k, year) {
+  writeBack();
   stopRegion();
   stopFinding();
   const ch = k != null ? chaptersFor(si)[k] : null;
@@ -196,7 +198,7 @@ function openRegion(si, mode, k, year) {
   }
   world = rw; AEON.world = rw;
   const st = rw.timeStep, snap = function (y, up) { return rw.startYear + (up ? Math.ceil : Math.floor)((y - rw.startYear) / st) * st; };
-  chapter = ch ? { index: k, title: ch.title, ask: ch.ask || null, war: !!ch.war, from: snap(ch.from), to: snap(ch.to, true) } : null;
+  chapter = ch ? { index: k, si: si, title: ch.title, ask: ch.ask || null, war: !!ch.war, from: snap(ch.from), to: snap(ch.to, true), raw: ch } : null;
   year = chapter ? (year != null && year >= chapter.from && year <= chapter.to ? year : chapter.from) : year != null ? year : playbackYear;
   view = { zoom: 1, panX: 0, panY: 0 };
   selectedRegion = null; hoverRegion = null;
@@ -205,6 +207,27 @@ function openRegion(si, mode, k, year) {
   if (rw.year >= lastYear()) { buildChronicle(); setPlaybackYear(year); }
   else { playbackYear = year; simulateAll(lastYear()); }
 }
+
+/* The region wins (docs/REGION_CHAPTERS.md, step 8): leaving a chapter played to its end writes
+   its outcome back into the world sketch, which is made again from that year on (sketch.js
+   AEON.rewriteSketch). The regions already worked out past that year are dropped (they are made
+   again when opened); those short of it take the new sketch's contacts from where they stand. */
+function writeBack() {
+  if (!chapter || chapter.written || onPlanet() || !world._sketch || playbackYear < chapter.to || world.year < chapter.to) return;
+  chapter.written = true;
+  const rw = world, si = chapter.si;
+  let sk;
+  try { sk = AEON.rewriteSketch(planet, AEON.regionOutcome(rw, chapter.from)); }
+  catch (e) { console.error("[aeon] write-back failed", e); return; }
+  (planet._seen || (planet._seen = [])).push({ si: si, from: chapter.raw.from, title: chapter.raw.title });
+  const Y = world.year;
+  for (const k of Object.keys(regionCache)) {
+    const r = regionCache[k], S = r._sketch, id = sk.squares[k].id;
+    if (r.year > Y) { delete regionCache[k]; continue; }
+    S.contacts = S.contacts.slice(0, S.next).concat(sk.contacts.filter(function (c) { return (c.to === id || c.from === id) && c.year > r.year; }));
+  }
+}
+function seenChapter(si, c) { return (planet._seen || []).some(function (x) { return x.si === si && x.from === c.from && x.title === c.title; }); }
 
 /* leave whatever is running in the shown world */
 function stopRegion() {
@@ -982,13 +1005,16 @@ function showSquare(si) {
   const button = function (c) {
     const k = all.indexOf(c);
     return el("button", { class: "ae-btn wv-chapter", title: c.also.length ? "Also: " + c.also.join("; ") : c.title, onclick: function () { openRegion(si, null, k); } },
-      el("b", { text: pk.yearLabel(c.from) + " to " + pk.yearLabel(c.to) }), " " + c.title);
+      el("b", { text: pk.yearLabel(c.from) + " to " + pk.yearLabel(c.to) }), " " + c.title, seenChapter(si, c) ? el("i", { class: "wv-seen", text: " ✓ seen" }) : null);
   };
   const seeking = finding && finding.si === si;
   P._si = si;
   P.replaceChildren(
     el("b", { text: "Square " + q.id }),
     el("span", { text: AEON.worldView.squareLine(planet, si, playbackYear) }),
+    /* the chapters written back here: the world after them follows what the region did */
+    ...((planet.sketch.writes || []).some(function (w) { return w.si === si; })
+      ? [el("span", { class: "wv-written", text: "From " + (planet.sketch.writes.filter(function (w) { return w.si === si; }).map(function (w) { return pk.yearLabel(w.year); }).join(" and ")) + " on, the world follows what happened here in the chapters you watched." })] : []),
     el("button", { class: "ae-btn" + (chs.length ? "" : " primary"), text: "Whole history", onclick: function () { openRegion(si); } }),
     el("button", { class: "ae-btn", text: "✕", title: "Close", onclick: function () { P.classList.add("hidden"); P._si = null; drawMap(); } }),
     chs.length ? el("div", { class: "wv-chapters" },

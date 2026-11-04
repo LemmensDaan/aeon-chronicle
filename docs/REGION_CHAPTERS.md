@@ -417,7 +417,34 @@ Each step is checked on seed 7 at 10 days/s before the next.
    Not yet: tribes uniting into a confederation, a realm making a tribe pay tribute for its
    pastures, newcomers arriving as tribes; the hatching and herds have not yet been judged at full
    size (a camp on a region's edge has half a sphere).
-8. **The region wins.** Write the outcome back; rerun the sketch from that date.
+8. **The region wins** — **done 2026-11-04.**
+   - *When*: leaving a chapter (to the world, to "Whole history", or to another region) after its
+     playback reached the end (ui.js `writeBack`). A chapter left half-way writes nothing.
+   - *What*: region.js `AEON.regionOutcome` reads the square at the chapter's end: its realms'
+     learning (weighed by people), how united it is (the share of the held land the strongest
+     realm rules with its vassals, against the pack's usual share: 0.22 historical, 0.1 fantasy,
+     measured at chapter ends; that share is the sketch's cohesion 1, twice it 1.5, half 0.5),
+     each of its peoples' land (so the people with the most land leads the square's contacts
+     from then on, newcomers too), and the newcomers who hold no land any more (their contact
+     is told as driven back).
+   - *Rerun*: sketch.js `AEON.rewriteSketch` makes the sketch again with all write-backs, each
+     setting its square's state at the first century after its year. Everything up to the year
+     is kept as it was (the contacts, with the region's outcomes); after it is a new forecast.
+     The sketch's dice are now drawn per century from a stream per square, per link and per tie
+     (Daan, 2026-11-04), so a change reaches only squares it touches: in tests 0 to 17 squares,
+     0 to 56 contacts changed after the year. This changed every world's sketch once: over 24
+     worlds a pack, ages and contact counts stay within about 10%; over 32 regions against step 7
+     the region outcomes stay within 12% (battles -7% / -12%, techs lost -21% in historical).
+   - *Order* (Daan, 2026-11-04): a write-back drops those with a later year; their chapters stay
+     marked as seen.
+   - *Regions*: those already worked out past the year are dropped and made again when opened;
+     those short of it take the new contacts from where they stand, so "Whole history" plays on
+     into the new forecast.
+   - *Shown*: "✓ seen" on a played chapter, and a line in the square's panel saying from which
+     year the world follows what happened there. The world timeline and map show the new sketch.
+   - A rerun takes about 0.1 s. Write-backs live for the session (not in the link).
+   Not yet: the region's own contacts with other squares (it makes none of its own yet), keeping
+   write-backs across a reload.
 9. **Interactivity:** to be designed (see below).
 
 ## Open questions

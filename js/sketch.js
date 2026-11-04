@@ -17,7 +17,7 @@ const OPEN_SEA = 0.04;          /* a square with less land than this is open sea
 const SEA_REACH = 120;          /* longest sea lane recorded, in cells */
 const SEAT_GAP = 6;             /* peoples' seats at least this many cells apart */
 
-AEON.makeSketch = function (world) {
+AEON.makeSketch = function (world, writes) {
   const W = world.width, H = world.height, R = world.regions, N = W * H;
   const rng = AEON.RNG(world.seed + ":sketch");
   const pack = world.pack;
@@ -163,11 +163,36 @@ AEON.makeSketch = function (world) {
     });
   }
 
-  const sketch = { cols: COLS, rows: ROWS, squares: squares, links: links, peoples: peoples };
+  const sketch = { cols: COLS, rows: ROWS, squares: squares, links: links, peoples: peoples, writes: writes || [] };
   runSketch(world, sketch, rng);
   runTies(world, sketch);
   Object.defineProperty(world, "sketch", { enumerable: false, configurable: true, writable: true, value: sketch });
   return sketch;
+};
+
+/* The region wins (docs/REGION_CHAPTERS.md, step 8): a played chapter's outcome, read from its
+   region (region.js AEON.regionOutcome), is written into the sketch at the chapter's end, and the
+   sketch is made again with it. What came before that year stays as it was (its contacts are
+   kept, with the outcome the region gave them); after it the sketch is a forecast, made anew.
+   A write-back drops the ones after its year: the world they were made in is gone. Returns the
+   new sketch, which replaces world.sketch. write: { year, si, learning, coh, cells, outcomes }. */
+AEON.rewriteSketch = function (world, write) {
+  const old = world.sketch, Y = write.year;
+  const writes = (old.writes || []).filter((w) => w.year < Y).concat([write]);
+  /* made again from the terrain and its own streams, with the writes (makeSketch sets world.sketch) */
+  const fresh = AEON.makeSketch(world, writes);
+  /* before the year: the contacts as they were, the region's outcomes on those it played */
+  const kept = old.contacts.filter((c) => c.year <= Y).map(function (c) {
+    const o = (write.outcomes || []).find((x) => x.year === c.year && x.kind === c.kind && x.from === c.from && x.to === c.to);
+    if (!o || o.outcome === c.outcome) return c;
+    const byId = {};
+    fresh.peoples.forEach((p) => { byId[p.id] = p; });
+    const d = Object.assign({}, c, { outcome: o.outcome, region: true });
+    d.text = storyOf(world, fresh, byId, d);
+    return d;
+  });
+  fresh.contacts = kept.concat(fresh.contacts.filter((c) => c.year > Y));
+  return fresh;
 };
 
 /* ------------------------------------------------------------------ the sketch's history --
@@ -205,8 +230,22 @@ function runSketch(world, sk, rng) {
   const contacts = [];
   const contact = (c) => { contacts.push(c); return c; };
 
+  /* each century's draws come from streams of their own, one per square and one per link (and one
+     for the order the links are taken in), so a change in one square (a region's outcome written
+     back, below) reaches only the squares it touches */
+  const stream = (t, what) => AEON.RNG(world.seed + ":sketch:" + years[t] + ":" + what);
+  /* the regions' outcomes written back (AEON.rewriteSketch): each square's state set from its
+     region at the first century after the chapter ended */
+  const writes = (sk.writes || []).slice().sort((a, b) => a.year - b.year);
   for (let t = 0; t < years.length; t++) {
     const y0 = years[t], frac = (y0 - start) / span;
+    for (const w of writes) {
+      if (!(w.year < y0 && (t === 0 || w.year >= years[t - 1]))) continue;
+      const i = w.si;
+      if (w.learning != null) L[i] = w.learning;
+      if (w.coh != null) coh[i] = clamp(w.coh, 0.4, 1.6);
+      for (const id in w.cells || {}) if (byId[id]) byId[id].cells = w.cells[id];
+    }
     /* develop: own pace rising through the timeline (as the engine's tech does), plus knowledge
        leaking from more developed linked squares */
     const gain = new Float64Array(n);
@@ -221,22 +260,23 @@ function runSketch(world, sk, rng) {
     }
     for (let i = 0; i < n; i++) {
       if (!lived[i]) continue;
+      const qr = stream(t, sq[i].id);
       L[i] += gain[i];
-      coh[i] = clamp(coh[i] + (rng.next() - 0.5) * 0.25 + (1 - coh[i]) * 0.15, 0.4, 1.6);
+      coh[i] = clamp(coh[i] + (qr.next() - 0.5) * 0.25 + (1 - coh[i]) * 0.15, 0.4, 1.6);
       /* a dark age: the square falls back part of the way; more likely when cohesion is low */
-      if (ageOf(L[i]) >= 1 && rng.chance(0.012 + 0.03 * Math.max(0, 1 - coh[i]))) {
+      if (ageOf(L[i]) >= 1 && qr.chance(0.012 + 0.03 * Math.max(0, 1 - coh[i]))) {
         const was = ageOf(L[i]);
-        L[i] = Math.max(0, L[i] - (ages[was].at - ages[was - 1].at) * (0.3 + 0.4 * rng.next()));
+        L[i] = Math.max(0, L[i] - (ages[was].at - ages[was - 1].at) * (0.3 + 0.4 * qr.next()));
         coh[i] = Math.max(0.4, coh[i] - 0.3);
-        contact({ year: y0 + rng.int(0, STEP - 1), kind: "dark-age", from: sq[i].id, to: sq[i].id, by: null, outcome: ageOf(L[i]) < was ? "fell-back" : "shaken", strength: 0 });
+        contact({ year: y0 + qr.int(0, STEP - 1), kind: "dark-age", from: sq[i].id, to: sq[i].id, by: null, outcome: ageOf(L[i]) < was ? "fell-back" : "shaken", strength: 0 });
       }
     }
 
     /* contacts along every link */
     const hit = {};
-    for (const l of rng.shuffle(sk.links)) {
+    for (const l of stream(t, "order").shuffle(sk.links)) {
       if (!lived[l.a] || !lived[l.b]) continue;
-      const k = key(l.a, l.b);
+      const k = key(l.a, l.b), rng = stream(t, k + "|" + l.kind);
       for (const [a, b] of [[l.a, l.b], [l.b, l.a]]) {
         const byLand = l.kind === "land";
         if (!byLand && l.lane > reachOf(L[a])) continue;
@@ -308,7 +348,10 @@ function runSketch(world, sk, rng) {
    (peace, marriage, league), told in the world chronicle and the regions. */
 const HOSTILE = { invasion: 1, raid: 1, migration: 1, colonisation: 1 };
 function runTies(world, sk) {
-  const rng = AEON.RNG(world.seed + ":sketch-ties"), pack = world.pack, end = pack.endYear;
+  const pack = world.pack, end = pack.endYear;
+  /* each tie draws from a stream of its own (the war it follows, the link and century, the square
+     and century), so a change elsewhere does not reach it */
+  const stream = (what) => AEON.RNG(world.seed + ":sketch-ties:" + what);
   const sq = sk.squares, byId = {}, idx = {};
   sk.peoples.forEach((p) => { byId[p.id] = p; });
   sq.forEach((q, i) => { idx[q.id] = i; });
@@ -320,7 +363,9 @@ function runTies(world, sk) {
   for (const c of sk.contacts) if (HOSTILE[c.kind]) (hostileYears[key(idx[c.from], idx[c.to])] || (hostileYears[key(idx[c.from], idx[c.to])] = [])).push(c.year);
   /* peace after a war that did not end in conquest */
   for (const c of sk.contacts) {
-    if (!HOSTILE[c.kind] || c.outcome === "conquest" || !rng.chance(0.55)) continue;
+    if (!HOSTILE[c.kind] || c.outcome === "conquest") continue;
+    const rng = stream("peace:" + c.year + ":" + c.kind + ":" + c.from + ":" + c.to);
+    if (!rng.chance(0.55)) continue;
     const y = c.year + rng.int(3, 25);
     if (y >= end) continue;
     const treaty = c.outcome === "partial" || c.outcome === "foothold" || c.outcome === "settled" || c.outcome === "colony";
@@ -334,6 +379,7 @@ function runTies(world, sk) {
     if (!sq[a].peoples.length || !sq[b].peoples.length || ageAt(a, y0) < 1 || ageAt(b, y0) < 1) continue;
     if (wed[k] != null && y0 - wed[k] < 300) continue;
     if ((hostileYears[k] || []).some((h) => h > y0 - 150 && h < y0 + STEP)) continue;
+    const rng = stream("wed:" + y0 + ":" + k + ":" + l.kind);
     if (!rng.chance(0.025)) continue;
     const pa = powerAt(a, y0) || 1, pb = powerAt(b, y0) || 1;
     const union = ageAt(a, y0) >= 2 && ageAt(b, y0) >= 2 && Math.max(pa, pb) / Math.min(pa, pb) < 1.5 && rng.chance(0.25);
@@ -346,6 +392,7 @@ function runTies(world, sk) {
   for (const y0 of sk.years) for (let i = 0; i < sq.length; i++) {
     if (leagued[i] || !sq[i].peoples.length || ageAt(i, y0) < 2 || !sq[i].coast) continue;
     const partners = sk.contacts.filter((c) => c.kind === "trade" && c.via === "sea" && c.year < y0 + STEP && (c.from === sq[i].id || c.to === sq[i].id));
+    const rng = stream("league:" + y0 + ":" + sq[i].id);
     if (partners.length < 2 || !rng.chance(0.04 * partners.length)) continue;
     const t = partners[partners.length - 1], other = t.from === sq[i].id ? t.to : t.from;
     leagued[i] = true;

@@ -87,6 +87,12 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   (driven out) and the tick (`AEON.tribes.year`: reach, pasture, settling); campaigns.js raids;
   historical `frontier` / fantasy `borderRegions` use `AEON.tribes.front`. pixelmap.js draws the
   spheres (hatching) and herds; months.js tells the flocks going up to the summer pastures.
+  **Step 8 (2026-11-04):** the region wins. region.js `AEON.regionOutcome(world, from)` reads a
+  square's state at a chapter's end; sketch.js `AEON.rewriteSketch(planet, write)` remakes the
+  sketch with `sk.writes` (each applied at the first century after its year), keeping the
+  contacts up to the year; the sketch's dice are per square / link / tie and century. ui.js
+  `writeBack` runs on leaving a chapter played to its end, drops regions worked out past the year
+  and gives the others the new contacts; `planet._seen` marks played chapters.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

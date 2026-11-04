@@ -78,6 +78,48 @@ AEON.createRegion = function (planet, si) {
   return world;
 };
 
+/* What a region's history has made of its square by now, to be written back into the world
+   sketch (sketch.js AEON.rewriteSketch, docs/REGION_CHAPTERS.md step 8):
+   - learning: its realms' learning, weighed by their people
+   - coh: how united the land is, from the share of the held land the strongest realm rules with
+     its vassals: the pack's usual share (UNITY_MID, measured at chapter ends) is the sketch's
+     middling 1, twice it 1.5, half of it 0.5
+   - cells: each of the sketch's peoples by the land its realms hold, in the sketch's cells
+   - outcomes: the newcomers of the contacts since `from` that hold no land any more were, in the
+     end, driven out ("repelled") */
+const UNITY_MID = { historical: 0.22, fantasy: 0.1 };
+AEON.regionOutcome = function (world, from) {
+  const C = AEON._core, sk = world.planet.sketch, si = world._sketch.si, sq = sk.squares[si];
+  const land = inner(world), alive = C.living(world);
+  const held = {};
+  for (const r of land) if (r.owner) held[r.owner] = (held[r.owner] || 0) + 1;
+  const owned = Object.keys(held).reduce(function (t, k) { return t + held[k]; }, 0);
+  let pop = 0, learnt = 0;
+  for (const p of alive) if (p.learning != null && held[p.id]) { pop += p.population || 0; learnt += (p.population || 0) * p.learning; }
+  /* blocs: a realm with its vassals */
+  const bloc = {};
+  for (const p of alive) {
+    if (!held[p.id]) continue;
+    const lord = AEON.lordOf ? AEON.lordOf(world, p) : null, top = lord && !lord.ended ? lord : p;
+    bloc[top.id] = (bloc[top.id] || 0) + held[p.id];
+  }
+  const strongest = Object.keys(bloc).reduce(function (m, k) { return Math.max(m, bloc[k]); }, 0);
+  const unity = owned ? strongest / owned : 0;
+  const scale = sq.land / Math.max(1, land.length), cells = {};
+  for (const p of alive) if (p.people && held[p.id]) cells[p.people] = (cells[p.people] || 0) + held[p.id];
+  for (const id of sq.peoples) cells[id] = Math.round((cells[id] || 0) * scale);
+  const outcomes = [];
+  for (const c of world._sketch.contacts) {
+    if (c.to !== sq.id || c.from === sq.id || c.year < from || c.year > world.year || !c.people) continue;
+    if (c.outcome === "repelled" || c.outcome === "raided") continue;
+    if (!cells[c.people]) outcomes.push({ year: c.year, kind: c.kind, from: c.from, to: c.to, outcome: "repelled" });
+  }
+  return { year: world.year, si: si, learning: pop ? Math.round(learnt / pop) : null,
+    coh: Math.round(100 * (unity > 0 ? clamp(1 + 0.5 * Math.log2(unity / (UNITY_MID[world.pack.id] || 0.2)), 0.4, 1.6) : 0.4)) / 100,
+    unity: Math.round(100 * unity) / 100, cells: cells, outcomes: outcomes };
+};
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
 /* ------------------------------------------------------------ helpers -- */
 
 function inner(world) { return world.regions.filter(function (r) { return !r.beyond && !r.barren; }); }

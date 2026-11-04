@@ -69,15 +69,21 @@ function yearOf(w, Y) {
   }
   /* the yearly traffic of the treaties in force all year, each in a month of its own (tribute
      was owed after the harvest, but brought in when it could be) */
+  /* the riders go every year; the news tells of a tribute about one year in eight, of the other
+     treaties one in four, and of no more than two of them in a year */
+  const yearly = [];
   for (const t of AEON.openTreaties ? (w.treaties || []) : []) {
     if (!YEARLY[t.kind] || t.start >= Y || (t.end != null && t.end <= Y + 1)) continue;
     const m = Math.floor(hash(num(t.id), Y) * 12), d = Y + (m + 0.5) / 12;
     const a = capitalAt(w, t.a, d), b = capitalAt(w, t.b, d);
     if (a == null || b == null || a === b) continue;
-    /* the riders go every year, the news tells of them about two years in five */
-    add({ date: d, until: d + 1 / 12, kind: t.kind === "marriage" ? "bride" : "envoy", pid: t.a, rid: a, to: b,
-          text: hash(num(t.id), Y + 7919) < 0.4 ? YEARLY[t.kind].replace("{A}", nm(P[t.a])).replace("{B}", nm(P[t.b])) + "." : "" });
+    const o = { date: d, until: d + 1 / 12, kind: t.kind === "marriage" ? "bride" : "envoy", pid: t.a, rid: a, to: b, text: "" };
+    const s = hash(num(t.id), Y + 7919) / (t.kind === "tribute" ? 0.125 : 0.25);
+    if (s < 1) yearly.push([s, o, YEARLY[t.kind].replace("{A}", nm(P[t.a])).replace("{B}", nm(P[t.b])) + "."]);
+    add(o);
   }
+  yearly.sort(function (x, y) { return x[0] - y[0]; });
+  for (const x of yearly.slice(0, 2)) x[1].text = x[2];
   /* sickness, plague, famine: from the year's events and the next's */
   for (const e of inYear(w.chronicle, Y, function (e) { return e.year; }, function (e) { return dateOf(e) - (e.tags.indexOf("famine") >= 0 ? 0.5 : e.tags.indexOf("succession") >= 0 ? 0.25 : 0); })) {
     const T = e.tags, d = dateOf(e), pa = (e.actors || []).filter(function (a) { return a && a.kind === "polity"; }), p = pa[0] && P[pa[0].id];

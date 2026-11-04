@@ -375,8 +375,9 @@ Each step is checked on seed 7 at 10 days/s before the next.
    - *Happenings*: the harvest and a hard winter told; the plague town by town (a pall over each, a
      month's towns told together); riots; arrivals announced some months ahead ("Word comes of a X
      host gathering beyond the border", from the sketch's invasions, migrations, colonists and
-     raiders). A treaty's yearly riders go every year but are told in the news about two years in
-     five; a long siege is told once a year.
+     raiders). A treaty's yearly riders go every year; the news tells of a tribute about one year in
+     eight, of other treaties one in four, and of at most two a year; a long siege is told once
+     a year.
    - Over 32 regions against 6a: wars -6%/-5%, battles +2%/0%, land changing hands -3%/+2%,
      alliances +21%/+7%, largest realm -9%/+17%, the rest within 10% (historical/fantasy);
      compute about +3% (fastlayer). Region 4,2: 0.4-1.25 told happenings a month, a third to two

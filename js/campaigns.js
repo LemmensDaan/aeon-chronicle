@@ -151,11 +151,24 @@ function later(world, k) {
 function setMonth(world, m) {
   if (world._month == null) return;
   m = Math.max(m, world._month);
+  nudgesTo(world, m);
   advance(world, m);
   world._month = m;
 }
+/* the changes the reader made (nudges.js) that fall in the months up to m: each in its month */
+function nudgesTo(world, m) {
+  if (!AEON.nudges) return;
+  let n;
+  while ((n = AEON.nudges.due(world, m))) {
+    const k = Math.max(world._month, n.month);
+    advance(world, k);
+    world._month = k;
+    AEON.nudges.apply(world, n);
+  }
+}
 /* the turns are over: the armies march out the year; what follows has no month of its own */
 function endYear(world) {
+  nudgesTo(world, 11);
   advance(world, 11);
   world._month = null;
 }

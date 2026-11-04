@@ -225,4 +225,15 @@ html .ae-app .ae-chronicle .ch-root {
 .ae-strip-span { position: absolute; top: -3px; bottom: -3px; background: var(--pp-ribbon, #8e1d1d); }
 .ae-strip u { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--pp-ink, #3a2614); text-decoration: none; }
 .ae-strip-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--pp-soft, #6b4a2a); }
+/* the change-history panel in a chapter (nudges.js) */
+.ae-nudge { position: absolute; right: 12px; top: 12px; width: 280px; max-height: calc(100% - 24px); overflow: auto; z-index: 6;
+  background: #f3e4c4; border: 2px solid var(--pp-ink, #3a2614); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+  font-family: var(--ae-serif, Georgia, serif); color: var(--pp-ink, #3a2614); box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+.ae-nudge-head { display: flex; justify-content: space-between; align-items: center; }
+.ae-nudge-head b { font-family: var(--ae-pixel, Georgia, serif); font-size: 16px; }
+.ae-nudge > span, .ae-nudge > p { font-size: 13px; font-style: italic; color: var(--pp-soft, #6b4a2a); margin: 0; }
+.ae-nudge-opts, .ae-nudge-made { display: flex; flex-direction: column; gap: 4px; }
+.ae-nudge-opts > i, .ae-nudge-made > i { font-size: 13px; font-weight: 600; font-style: normal; }
+.ae-nudge-opts .ae-btn { text-align: left; font-size: 13px; }
+.ae-nudge-made > span { font-size: 12px; }
 .ae-stakes-go { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }

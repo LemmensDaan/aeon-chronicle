@@ -74,6 +74,8 @@ AEON.createRegion = function (planet, si) {
 
   const contacts = sk.contacts.filter(function (c) { return c.to === sq.id || c.from === sq.id; });
   world._sketch = { si: si, next: 0, contacts: contacts, campaigns: [], log: [] };
+  /* the changes the reader made in this square's chapters (nudges.js), made again as it plays */
+  if (AEON.nudges) AEON.nudges.attach(world, (planet._nudges && planet._nudges[sq.id]) || []);
   Object.defineProperty(world, "onTick", { enumerable: false, configurable: true, writable: true, value: onTick });
   return world;
 };
@@ -119,6 +121,44 @@ AEON.regionOutcome = function (world, from) {
     unity: Math.round(100 * unity) / 100, cells: cells, outcomes: outcomes };
 };
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+/* A region's state at a moment, to play on again from it (a change made in a chapter, nudges.js,
+   makes the chapter again from its start instead of the region's whole history): a deep copy of
+   the world that keeps which objects are the same one, hidden properties included; the pack, the
+   planet, the map generator's data and functions are shared, the random stream is taken up at the
+   same point. AEON.regionSnapshot(world) takes one; AEON.regionRestore(snap) gives a world to play
+   on (a fresh copy each time, so the snapshot can be used again). */
+function deepCopy(world) {
+  const seen = new Map(), shared = new Set([world.pack, world.planet, world._gen]);
+  const copy = function (v) {
+    if (v === null || typeof v !== "object") return v;
+    if (shared.has(v)) return v;
+    const had = seen.get(v);
+    if (had) return had;
+    if (ArrayBuffer.isView(v)) { const c = v.slice(); seen.set(v, c); return c; }
+    if (v instanceof Map) { const c = new Map(); seen.set(v, c); v.forEach(function (x, k) { c.set(copy(k), copy(x)); }); return c; }
+    if (v instanceof Set) { const c = new Set(); seen.set(v, c); v.forEach(function (x) { c.add(copy(x)); }); return c; }
+    if (v.next && typeof v.next === "function" && typeof v.state === "function") {
+      const c = AEON.RNG(v.seed); c.setState(v.state()); seen.set(v, c); return c;
+    }
+    /* anything but plain objects and arrays (a cached canvas or image) is shared */
+    const arr = Array.isArray(v), proto = Object.getPrototypeOf(v);
+    if (!arr && proto !== Object.prototype && proto !== null) return v;
+    const c = arr ? new Array(v.length) : Object.create(proto);
+    seen.set(v, c);
+    if (arr) for (let i = 0; i < v.length; i++) c[i] = copy(v[i]);
+    for (const k of Object.getOwnPropertyNames(v)) {
+      if (arr && (k === "length" || (k.charCodeAt(0) >= 48 && k.charCodeAt(0) <= 57 && String(k >>> 0) === k))) continue;
+      const d = Object.getOwnPropertyDescriptor(v, k);
+      if ("value" in d) d.value = copy(d.value);
+      Object.defineProperty(c, k, d);
+    }
+    return c;
+  };
+  return copy(world);
+}
+AEON.regionSnapshot = function (world) { return { year: world.year, world: deepCopy(world) }; };
+AEON.regionRestore = function (snap) { return deepCopy(snap.world); };
 
 /* ------------------------------------------------------------ helpers -- */
 

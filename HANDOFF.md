@@ -95,6 +95,11 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   and gives the others the new contacts; `planet._seen` marks played chapters.
   Saved in localStorage `aeon.writes.<pack>.<seed>` ({writes, seen}), replayed by `loadWrites` in
   start(); "Forget watched chapters" (`forgetWrites`) clears them.
+  **Step 9a (2026-11-04):** js/nudges.js (`AEON.nudges`: make, attach, due, apply, options). ui.js
+  "Change history" panel (`toggleNudge`, `renderNudge`, `makeNudge`, `undoNudge`, `remake`);
+  `planet._nudges[squareId]`, saved with the write-backs. A chapter keeps `chapter.snap`
+  (`AEON.regionSnapshot` at chapter.from - 1, taken in simulateAll); remake restores it and plays
+  on. campaigns.js `setMonth` / `endYear` apply due nudges in their month.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

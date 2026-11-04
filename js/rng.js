@@ -5,16 +5,18 @@
 
 const AEON = window.AEON = window.AEON || {};
 
-/* sfc32 — small, fast, good distribution, 128-bit state. */
-function sfc32(a, b, c, d) {
+/* sfc32 — small, fast, good distribution, 128-bit state (kept in st, so a stream can be saved and
+   taken up again: state / setState, for a region's snapshot in region.js). */
+function sfc32(st) {
   return function () {
-    a |= 0; b |= 0; c |= 0; d |= 0;
+    let a = st[0] | 0, b = st[1] | 0, c = st[2] | 0, d = st[3] | 0;
     const t = (((a + b) | 0) + d) | 0;
     d = (d + 1) | 0;
     a = b ^ (b >>> 9);
     b = (c + (c << 3)) | 0;
     c = (c << 21) | (c >>> 11);
     c = (c + t) | 0;
+    st[0] = a; st[1] = b; st[2] = c; st[3] = d;
     return (t >>> 0) / 4294967296;
   };
 }
@@ -39,7 +41,8 @@ function scramble(seed) {
 
 function RNG(seed) {
   const s = scramble(seed == null ? 0 : seed);
-  const core = sfc32(s[0], s[1], s[2], s[3]);
+  const st = [s[0], s[1], s[2], s[3]];
+  const core = sfc32(st);
   for (let i = 0; i < 12; i++) core();   // warm up
 
   let spareGauss = null;
@@ -48,6 +51,10 @@ function RNG(seed) {
     seed: seed,
 
     next: core,
+
+    /* where the stream stands, and taking it up again from there */
+    state: function () { return [st[0], st[1], st[2], st[3], spareGauss]; },
+    setState: function (x) { st[0] = x[0]; st[1] = x[1]; st[2] = x[2]; st[3] = x[3]; spareGauss = x[4] == null ? null : x[4]; },
 
     /* float in [a,b) — or [0,a) with one argument */
     range: function (a, b) {

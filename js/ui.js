@@ -186,12 +186,13 @@ function showPlanet(year, mode) {
 /* a region: made the first time and kept after; its history is played as far as is needed (to the
    chapter's end, or the end of the record), so a chapter starts from the engine's own history up
    to its date. k: the chapter to play (its index in chaptersFor), else the whole history;
-   year: where to start within it (a link) */
-function openRegion(si, mode, k, year) {
+   year: where to start within it (a link); keep: the chapter being played, kept as it is (made
+   again after a change, nudges.js) */
+function openRegion(si, mode, k, year, keep) {
   writeBack();
   stopRegion();
   stopFinding();
-  const ch = k != null ? chaptersFor(si)[k] : null;
+  const ch = keep ? keep.raw : k != null ? chaptersFor(si)[k] : null;
   let rw = regionCache[si];
   if (!rw) {
     try { rw = regionCache[si] = AEON.createRegion(planet, si); }
@@ -199,7 +200,7 @@ function openRegion(si, mode, k, year) {
   }
   world = rw; AEON.world = rw;
   const st = rw.timeStep, snap = function (y, up) { return rw.startYear + (up ? Math.ceil : Math.floor)((y - rw.startYear) / st) * st; };
-  chapter = ch ? { index: k, si: si, title: ch.title, ask: ch.ask || null, war: !!ch.war, from: snap(ch.from), to: snap(ch.to, true), raw: ch } : null;
+  chapter = keep || (ch ? { index: k, si: si, title: ch.title, ask: ch.ask || null, war: !!ch.war, from: snap(ch.from), to: snap(ch.to, true), raw: ch } : null);
   year = chapter ? (year != null && year >= chapter.from && year <= chapter.to ? year : chapter.from) : year != null ? year : playbackYear;
   view = { zoom: 1, panX: 0, panY: 0 };
   selectedRegion = null; hoverRegion = null;
@@ -214,12 +215,19 @@ function openRegion(si, mode, k, year) {
    AEON.rewriteSketch). The regions already worked out past that year are dropped (they are made
    again when opened); those short of it take the new sketch's contacts from where they stand. */
 function writeBack() {
-  if (!chapter || chapter.written || onPlanet() || !world._sketch || playbackYear < chapter.to || world.year < chapter.to) return;
+  if (!chapter || chapter.written || resumeAt != null || onPlanet() || !world._sketch || playbackYear < chapter.to || world.year < chapter.to) return;
   chapter.written = true;
   const rw = world, si = chapter.si;
   let sk;
+  const old = planet.sketch;
   try { sk = AEON.rewriteSketch(planet, AEON.regionOutcome(rw, chapter.from)); }
   catch (e) { console.error("[aeon] write-back failed", e); return; }
+  /* changes made in other squares after the year hold only where the world there is unchanged */
+  const sig = function (S, id) { return S.contacts.filter(function (c) { return c.year > world.year && (c.to === id || c.from === id); }).map(function (c) { return [c.year, c.kind, c.from, c.to, c.outcome, c.by].join("|"); }).join(";"); };
+  for (const id of Object.keys(planet._nudges || {})) {
+    if (id === world.square.id || sig(old, id) === sig(sk, id)) continue;
+    planet._nudges[id] = planet._nudges[id].filter(function (n) { return n.date <= world.year; });
+  }
   (planet._seen || (planet._seen = [])).push({ si: si, from: chapter.raw.from, title: chapter.raw.title });
   saveWrites();
   const Y = world.year;
@@ -233,26 +241,99 @@ function writeBack() {
    again when the world is opened (in the order of their years, as they were made) */
 function writesKey() { return "aeon.writes." + planet.packId + "." + planet.seed; }
 function saveWrites() {
-  try { localStorage.setItem(writesKey(), JSON.stringify({ writes: planet.sketch.writes || [], seen: planet._seen || [] })); } catch (e) {}
+  try { localStorage.setItem(writesKey(), JSON.stringify({ writes: planet.sketch.writes || [], seen: planet._seen || [], nudges: planet._nudges || {} })); } catch (e) {}
 }
 function loadWrites() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(writesKey()) || "null"); } catch (e) {}
   if (!saved) return;
   planet._seen = saved.seen || [];
+  planet._nudges = saved.nudges || {};
   try { for (const w of (saved.writes || []).slice().sort(function (a, b) { return a.year - b.year; })) AEON.rewriteSketch(planet, w); }
   catch (e) { console.error("[aeon] the saved write-backs could not be made again", e); AEON.makeSketch(planet); }
 }
 /* back to the world's own history: the write-backs and the seen marks forgotten */
 function forgetWrites() {
-  if (!confirm("Forget the chapters you watched? The world goes back to its own history.")) return;
+  if (!confirm("Forget the chapters you watched and the changes you made? The world goes back to its own history.")) return;
   try { localStorage.removeItem(writesKey()); } catch (e) {}
-  planet._seen = [];
+  planet._seen = []; planet._nudges = {};
   AEON.makeSketch(planet);
   regionCache = {};
   showPlanet(playbackYear, "world");
 }
 function seenChapter(si, c) { return (planet._seen || []).some(function (x) { return x.si === si && x.from === c.from && x.title === c.title; }); }
+
+/* ---------------------------------------------------- changing history --
+   In a chapter (docs/REGION_CHAPTERS.md step 9, nudges.js): pick a realm on the map, and change
+   what happens to it from the month shown. The change is kept with the square (planet._nudges,
+   saved with the write-backs), and the region is made again from its start with it, back to the
+   month it was made in; at the chapter's end its outcome is written back to the world as ever. */
+let resumeAt = null;  /* the date to come back to once the region is made again */
+function nudgesHere() {
+  const id = world.square && world.square.id;
+  return id ? ((planet._nudges || (planet._nudges = {}))[id] || (planet._nudges[id] = [])) : [];
+}
+function toggleNudge() {
+  if (dom.nudge) { dom.nudge.remove(); dom.nudge = null; return; }
+  if (playing) togglePlay();
+  hideStakes();
+  dom.nudge = el("div", { class: "ae-nudge" });
+  dom.mapWrap.appendChild(dom.nudge);
+  renderNudge();
+}
+function renderNudge() {
+  const P = dom.nudge;
+  if (!P) return;
+  const pk = world.pack, date = viewTime(), pid = realmAt(selectedRegion), p = pid && world.polities[pid];
+  const month = SEASON_NAMES && playSpeed <= SEASON_SPEED ? seasonName(((date % 1) + 1) % 1) + " " : "";
+  const opts = p && !simulating ? AEON.nudges.options(world, pid, date) : [];
+  const mine = nudgesHere().filter(function (n) { return n.date >= chapter.from - 1 && n.date <= chapter.to; });
+  P.replaceChildren.apply(P, [
+    el("div", { class: "ae-nudge-head" },
+      el("b", { text: "Change history" }),
+      el("button", { class: "ae-btn", text: "✕", title: "Close", onclick: toggleNudge })),
+    el("span", { text: "From " + month + pk.yearLabel(Math.floor(date)) + " on. Everything before stays as it was." }),
+    simulating ? el("p", { text: "Working out the new history…" })
+      : !p ? el("p", { text: "Click a realm on the map to choose what happens to it." })
+      : el("div", { class: "ae-nudge-opts" },
+          el("i", { text: p.name }),
+          opts.length ? opts.map(function (o) {
+            return el("button", { class: "ae-btn", text: o.label, onclick: function () { makeNudge(AEON.nudges.make(o.kind, pid, o.other, date)); } });
+          }) : el("span", { text: "It holds no land in this month." })),
+    mine.length ? el("div", { class: "ae-nudge-made" },
+      el("i", { text: "Your changes in this chapter" }),
+      mine.map(function (n) { const q = world.polities[n.pid]; return el("span", { text: pk.yearLabel(Math.floor(n.date)) + ": " + nudgeLabel(n, q) }); }),
+      el("button", { class: "ae-btn", text: "Undo the last change", onclick: undoNudge })) : null].filter(Boolean));
+}
+function nudgeLabel(n, p) {
+  const name = p ? p.name : "a realm", o = n.other && world.polities[n.other], other = o ? o.name.replace(/^The /, "the ") : "a neighbour";
+  return { "ruler-dies": "the ruler of " + name + " died", war: name + " went to war with " + other, peace: name + " made peace with " + other,
+    revolt: "a revolt in " + name, plague: "plague in " + name }[n.kind] || n.kind;
+}
+/* make the region again with the changes, and come back to the month shown */
+function remake(date) {
+  const si = world.square.index, keep = chapter;
+  keep.begun = true;
+  saveWrites();
+  delete regionCache[si];
+  resumeAt = date;
+  /* from the chapter's snapshot when there is one, else from the region's start */
+  if (keep.snap) {
+    const rw = AEON.regionRestore(keep.snap);
+    AEON.nudges.attach(rw, nudgesHere());
+    regionCache[si] = rw;
+  }
+  const open = !!dom.nudge, sel = selectedRegion, v = view;
+  openRegion(si, mapMode, null, Math.floor(date), keep);
+  selectedRegion = sel; view = v;
+  if (open) toggleNudge();
+}
+function makeNudge(n) { nudgesHere().push(n); remake(n.date); }
+function undoNudge() {
+  const list = nudgesHere(), date = viewTime();
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].date >= chapter.from - 1 && list[i].date <= chapter.to) { list.splice(i, 1); break; }
+  remake(date);
+}
 
 /* leave whatever is running in the shown world */
 function stopRegion() {
@@ -277,6 +358,12 @@ function simulateAll(to) {
   function chunk() {
     const t0 = performance.now();
     while (performance.now() - t0 < SIM_SLICE && world.year < target) {
+      /* a chapter's region as it stood the year before the chapter: changes made in it play on
+         from here (remake) */
+      if (chapter && !chapter.snap && AEON.regionSnapshot && world._sketch && world.year === chapter.from - 1) {
+        chapter.snap = AEON.regionSnapshot(world);
+        break;
+      }
       AEON.tick(world);
       done++;
     }
@@ -302,6 +389,14 @@ function simulateAll(to) {
 function onSimulationComplete() {
   buildChronicle();
   setPlaybackYear(playbackYear || world.startYear);
+  /* back where the reader made a change, to the month */
+  if (resumeAt != null) {
+    setPlaybackYear(Math.floor(resumeAt));
+    playOwed = resumeAt - Math.floor(resumeAt);
+    resumeAt = null;
+    drawMap();
+    if (dom.nudge) renderNudge();
+  }
 }
 
 /* ---------------------------------------------------------- playback --- */
@@ -704,7 +799,8 @@ function buildApp() {
   /* in a region: the month's news (months.js), and a chapter's opening card */
   dom.news = el("div", { class: "ae-news hidden" });
   mapWrap.appendChild(dom.news);
-  dom.stakes = chapter && !onPlanet() ? stakesCard() : null;
+  dom.stakes = chapter && !onPlanet() && !chapter.begun ? stakesCard() : null;
+  dom.nudge = null;
   if (dom.stakes) mapWrap.appendChild(dom.stakes);
 
   dom.playBtn = el("button", { class: "ae-btn round", text: "▶", onclick: togglePlay });
@@ -752,7 +848,9 @@ function buildApp() {
     el("button", { class: "ae-btn", text: "⏮", title: "Back to the beginning",
       onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(firstYear()); } }),
     el("button", { class: "ae-btn", text: "⏭", title: "Jump to the end",
-      onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(lastYear()); } }));
+      onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(lastYear()); } }),
+    chapter && AEON.nudges ? el("button", { class: "ae-btn ae-nudge-btn", text: "Change history", title: "Change what happens to a realm, from the month shown",
+      onclick: toggleNudge }) : null);
 
   dom.chronicleHost = el("div", { class: "ae-chronicle" });
   /* on the planet the sidebar holds the world timeline instead of a chronicle */
@@ -785,7 +883,7 @@ function buildApp() {
       onPlanet() ? null : dom.statsBtn = el("button", { class: "ae-btn", text: "Statistics", title: "How the region's people and land were shared out",
         onclick: function () { toggleStats(); } }),
       onPlanet() ? null : el("button", { class: "ae-btn", text: "Export", onclick: exportChronicle }),
-      onPlanet() && planet.sketch && (planet.sketch.writes || []).length ? el("button", { class: "ae-btn", text: "Forget watched chapters",
+      onPlanet() && planet.sketch && ((planet.sketch.writes || []).length || Object.keys(planet._nudges || {}).some(function (k) { return planet._nudges[k].length; })) ? el("button", { class: "ae-btn", text: "Forget watched chapters",
         title: "The world follows the chapters you watched; this takes it back to its own history", onclick: forgetWrites }) : null,
       el("button", { class: "ae-btn", text: "New world", onclick: function () {
         stopRegion();
@@ -956,6 +1054,7 @@ function wireMap() {
     if (onPlanet()) { pickSquare(id); return; }
     selectedRegion = id;
     drawMap();
+    if (dom.nudge) renderNudge();
     if (id != null && AEON.chronicle && AEON.chronicle.show) AEON.chronicle.show("region", id);
   });
   c.addEventListener("wheel", function (e) {

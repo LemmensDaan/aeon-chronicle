@@ -2458,7 +2458,7 @@ AEON.finish = finish;
 /* the engine's own pieces, for the region history (js/region.js) */
 AEON._core = { newWorld: newWorld, makeProvinces: makeProvinces, logSettlements: logSettlements, spawnPolity: spawnPolity,
   transferRegion: transferRegion, endPolity: endPolity, callName: callName, living: living, regionsOf: regionsOf,
-  logOwner: logOwner, recordEvent: recordEvent };
+  logOwner: logOwner, recordEvent: recordEvent, killFigure: killFigure, concludePeace: concludePeace, makeCtx: makeCtx };
 
 /* ---------------------------------------------------------- derived info */
 

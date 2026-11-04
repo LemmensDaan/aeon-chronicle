@@ -394,7 +394,59 @@ function armiesAt(world, date) {
   return out;
 }
 
+/* ------------------------------------------------------------ the wars worth watching */
+/* A region's own wars are not in the world sketch (it knows only what passes between squares), so
+   the chapters picked from it are invasions, treaties, marriages and voyages. Once a region's
+   history is computed, its fiercest wars make chapters too: each war (with the allies called into
+   it) scored by its battles and sieges, and twice for each fight that took land; the best few
+   that do not overlap, from a year before the war to a year after it, at most WAR_MAX years. */
+const WAR_CHAPTERS = 4, WAR_MAX = 25;
+function warChapters(world) {
+  world = baseOf(world);
+  const C = world.chronicle, P = world.polities, T = (world.treaties || []).filter(function (t) { return t.kind === "war"; });
+  const lead = {}, wars = [];
+  for (const t of T) {
+    const head = t.leader && T.filter(function (x) { return x.id === t.leader; })[0];
+    const w = head && lead[head.id];
+    if (w) { w.pairs.push(t); w.to = Math.max(w.to, t.endDate != null ? t.endDate : t.end != null ? t.end : world.year); continue; }
+    const nw = { t: t, pairs: [t], from: t.startDate != null ? t.startDate : t.start, to: t.endDate != null ? t.endDate : t.end != null ? t.end : world.year, score: 0, fights: 0 };
+    lead[t.id] = nw; wars.push(nw);
+  }
+  /* the war events by realm pair, in date order */
+  const byPair = {};
+  for (const e of C) {
+    if ((e.tags || []).indexOf("war") < 0 || /declared|call|defends/.test(e.type)) continue;
+    const ps = (e.actors || []).filter(function (a) { return a && a.kind === "polity"; }).map(function (a) { return a.id; });
+    if (ps.length < 2) continue;
+    const k = ps[0] < ps[1] ? ps[0] + "|" + ps[1] : ps[1] + "|" + ps[0];
+    (byPair[k] || (byPair[k] = [])).push(e);
+  }
+  for (const w of wars) {
+    for (const t of w.pairs) {
+      const k = t.a < t.b ? t.a + "|" + t.b : t.b + "|" + t.a;
+      for (const e of byPair[k] || []) {
+        const d = e.date != null ? e.date : e.year;
+        if (d < w.from - 0.01 || d > w.to + 0.01) continue;
+        w.fights++;
+        w.score += (e.tags.indexOf("territory") >= 0 || e.tags.indexOf("conquest") >= 0 ? 3 : 1) * (e.importance || 1) / 2;
+      }
+    }
+  }
+  const out = [], start = world.startYear, end = world.endYear;
+  for (const w of wars.filter(function (x) { return x.fights >= 3; }).sort(function (x, z) { return z.score - x.score; })) {
+    if (out.length >= WAR_CHAPTERS) break;
+    const from = Math.max(start, Math.floor(w.from) - 1), to = Math.min(end, Math.max(from + 6, Math.min(from + WAR_MAX, Math.ceil(w.to) + 1)));
+    if (out.some(function (c) { return from < c.to && to > c.from; })) continue;
+    const a = P[w.t.a], b = P[w.t.b];
+    const title = w.t.name ? w.t.name.charAt(0).toUpperCase() + w.t.name.slice(1)
+      : "The war of " + (a ? a.name.replace(/^The /, "the ") : "a realm") + " and " + (b ? b.name.replace(/^The /, "the ") : "a realm");
+    out.push({ from: from, to: to, year: w.from, title: title, contacts: [], also: [w.fights + " battles, sieges and conquests" + (w.pairs.length > 1 ? ", " + (w.pairs.length - 1) + " allies called in" : "")], war: true });
+  }
+  return out.sort(function (x, z) { return x.from - z.from; });
+}
+
 AEON.campaigns = {
+  warChapters: warChapters,
   on: on, climate: climate, beginYear: beginYear, slot: slot, later: later, endYear: endYear, season: season,
   dateYear: dateYear, closeYear: closeYear, dateNow: dateNow, warBegun: warBegun, warEnded: warEnded,
   ready: ready, front: front, siegeOf: siegeOf, siegeMonths: siegeMonths, fought: fought, armiesAt: armiesAt,

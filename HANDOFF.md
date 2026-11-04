@@ -67,6 +67,9 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   get their own siege/battle turns (`AEON.campaignTurn`, STORM 0.25, CLASH 0.02 in campaigns.js).
   32-region comparison against 5a in the doc's step 5 (battles 5.8x historical, land +23%, wars
   -9%). Tuning knobs: STORM, CLASH, SPEED, REACH.
+  **War chapters (2026-11-04):** square plaque "Find its wars" (ui.js findWars/chaptersFor, computes
+  the region in the background) lists `AEON.campaigns.warChapters`; chapter indices past the
+  sketch's are war chapters (a reload with one falls back to the whole history).
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

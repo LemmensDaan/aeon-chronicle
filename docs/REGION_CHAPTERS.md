@@ -321,6 +321,13 @@ Each step is checked on seed 7 at 10 days/s before the next.
    land held and the largest realm about the same; towns -11% (historical; more sieges and
    sacks), tribute +64% and +27%, technology lost +40% (historical; lost land shakes learning),
    war declarations -25% (historical: armies worn down by sieges declare less). Compute +16-28%.
+   *War chapters* (2026-11-04): the sketch knows only what passes between squares, so no chapter
+   picked from it is about a region's own wars. The square plaque has "Find its wars": it
+   computes the region's whole history in the background (about ten seconds) and lists its
+   fiercest wars (`AEON.campaigns.warChapters`: each war with its allies, scored by battles and
+   sieges and three times for land taken; the best four that do not overlap, a year either side,
+   at most 25 years). A chapter's chronicle now stops at the chapter's end even when the history
+   has been computed further.
    Still to do: supplies and attrition, the weather of a month (a hard winter, a wet summer)
    rather than of the climate, fleets kept in port by storms, and overseas invasions and raids
    carried by armies (they still happen as single events).

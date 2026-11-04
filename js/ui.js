@@ -183,11 +183,12 @@ function showPlanet(year, mode) {
 
 /* a region: made the first time and kept after; its history is played as far as is needed (to the
    chapter's end, or the end of the record), so a chapter starts from the engine's own history up
-   to its date. k: the chapter to play (its index in AEON.chaptersOf), else the whole history;
+   to its date. k: the chapter to play (its index in chaptersFor), else the whole history;
    year: where to start within it (a link) */
 function openRegion(si, mode, k, year) {
   stopRegion();
-  const ch = k != null && AEON.chaptersOf ? AEON.chaptersOf(planet, si)[k] : null;
+  stopFinding();
+  const ch = k != null ? chaptersFor(si)[k] : null;
   let rw = regionCache[si];
   if (!rw) {
     try { rw = regionCache[si] = AEON.createRegion(planet, si); }
@@ -719,8 +720,13 @@ function buildChronicle() {
       el("p", { text: "The chronicle module failed to load." })));
     return;
   }
+  /* a chapter's chronicle ends with the chapter, though the region's history may have been
+     computed further (its wars found, its whole history played before) */
+  const told = chapter && world.year > chapter.to
+    ? Object.assign(Object.create(world), { chronicle: world.chronicle.filter(function (e) { return e.year <= chapter.to; }), year: chapter.to })
+    : world;
   try {
-    AEON.chronicle.mount(dom.chronicleHost, world, {
+    AEON.chronicle.mount(dom.chronicleHost, told, {
       onFocusRegion: function (rid) {
         selectedRegion = rid;
         const r = world.regions[rid];
@@ -886,12 +892,57 @@ function wireMap() {
   window.addEventListener("resize", drawMap);
 }
 
+/* a square's chapters: those picked from the world sketch, then (once its history has been
+   computed to the end) its own fiercest wars (campaigns.js) */
+function regionDone(si) { const rw = regionCache[si]; return !!rw && rw.year >= rw.endYear; }
+function chaptersFor(si) {
+  const sk = AEON.chaptersOf ? AEON.chaptersOf(planet, si) : [];
+  return regionDone(si) && AEON.campaigns ? sk.concat(AEON.campaigns.warChapters(regionCache[si])) : sk;
+}
+/* computing a square's history in the background, to find its wars: a few ms at a time, so the
+   world map stays live; opening a region stops it (the region's own playback carries on) */
+let finding = null;
+function stopFinding() { if (finding) { clearTimeout(finding.timer); finding = null; } }
+function findWars(si, btn) {
+  stopFinding();
+  let rw = regionCache[si];
+  if (!rw) {
+    try { rw = regionCache[si] = AEON.createRegion(planet, si); }
+    catch (e) { console.error(e); btn.textContent = "The region could not be made"; return; }
+  }
+  const job = finding = { si: si, timer: 0 };
+  btn.disabled = true;
+  (function step() {
+    if (finding !== job) return;
+    const t0 = performance.now();
+    while (performance.now() - t0 < 40 && rw.year < rw.endYear) AEON.tick(rw);
+    if (rw.year < rw.endYear) {
+      btn.textContent = "Reading its history… " + planet.pack.yearLabel(rw.year);
+      job.timer = setTimeout(step, 0);
+      return;
+    }
+    if (!rw._finished) { AEON.finish(rw); rw._finished = true; }
+    finding = null;
+    if (dom.squarePlaque._si === si) showSquare(si);
+  })();
+}
+
 /* a square picked on the planet: what it is, and the button that opens it */
 function pickSquare(rid) {
   const P = dom.squarePlaque, si = AEON.worldView ? AEON.worldView.squareAt(planet, rid) : null;
   if (si == null || !planet.sketch.squares[si].peoples.length) { P.classList.add("hidden"); P._si = null; drawMap(); return; }
-  const q = planet.sketch.squares[si];
-  const chs = AEON.chaptersOf ? AEON.chaptersOf(planet, si) : [], pk = planet.pack;
+  showSquare(si);
+}
+function showSquare(si) {
+  const P = dom.squarePlaque, q = planet.sketch.squares[si];
+  const all = chaptersFor(si), pk = planet.pack;
+  const chs = all.filter(function (c) { return !c.war; }), wars = all.filter(function (c) { return c.war; });
+  const button = function (c) {
+    const k = all.indexOf(c);
+    return el("button", { class: "ae-btn wv-chapter", title: c.also.length ? "Also: " + c.also.join("; ") : c.title, onclick: function () { openRegion(si, null, k); } },
+      el("b", { text: pk.yearLabel(c.from) + " to " + pk.yearLabel(c.to) }), " " + c.title);
+  };
+  const seeking = finding && finding.si === si;
   P._si = si;
   P.replaceChildren(
     el("b", { text: "Square " + q.id }),
@@ -900,10 +951,14 @@ function pickSquare(rid) {
     el("button", { class: "ae-btn", text: "✕", title: "Close", onclick: function () { P.classList.add("hidden"); P._si = null; drawMap(); } }),
     chs.length ? el("div", { class: "wv-chapters" },
       el("i", { text: "Chapters" }),
-      chs.map(function (c, k) {
-        return el("button", { class: "ae-btn wv-chapter", title: c.also.length ? "Also: " + c.also.join("; ") : c.title, onclick: function () { openRegion(si, null, k); } },
-          el("b", { text: pk.yearLabel(c.from) + " to " + pk.yearLabel(c.to) }), " " + c.title);
-      })) : null);
+      chs.map(button)) : null,
+    /* its own wars are known only once its history is computed */
+    el("div", { class: "wv-chapters" },
+      el("i", { text: "Wars" }),
+      regionDone(si) ? (wars.length ? wars.map(button) : el("span", { text: "No war worth a chapter." }))
+        : el("button", { class: "ae-btn", text: seeking ? "Reading its history…" : "Find its wars", disabled: seeking,
+            title: "Compute the region's whole history (a few seconds) and list its fiercest wars",
+            onclick: function (e) { findWars(si, e.currentTarget); } })));
   P.classList.remove("hidden");
   drawMap();
 }

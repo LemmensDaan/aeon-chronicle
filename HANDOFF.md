@@ -70,6 +70,11 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   **War chapters (2026-11-04):** square plaque "Find its wars" (ui.js findWars/chaptersFor, computes
   the region in the background) lists `AEON.campaigns.warChapters`; chapter indices past the
   sketch's are war chapters (a reload with one falls back to the whole history).
+  **Step 6a (2026-11-04):** raids in the engine (campaigns.js `raids`, world.raidLog); js/months.js
+  (view-time happenings: envoys, tribute, brides, sickness, plague palls, failed harvests, army
+  news, raids) drawn by mapfx.js `months` and told in a news line (ui.js updateNews); chapter
+  opening card with its question and the 4500-year strip (ui.js stakesCard; sketch.js chapters
+  carry `ask`). The browser caches scripts: after edits, refetch them (fetch with cache "reload").
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

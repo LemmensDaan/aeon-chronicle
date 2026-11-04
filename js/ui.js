@@ -196,7 +196,7 @@ function openRegion(si, mode, k, year) {
   }
   world = rw; AEON.world = rw;
   const st = rw.timeStep, snap = function (y, up) { return rw.startYear + (up ? Math.ceil : Math.floor)((y - rw.startYear) / st) * st; };
-  chapter = ch ? { index: k, title: ch.title, from: snap(ch.from), to: snap(ch.to, true) } : null;
+  chapter = ch ? { index: k, title: ch.title, ask: ch.ask || null, war: !!ch.war, from: snap(ch.from), to: snap(ch.to, true) } : null;
   year = chapter ? (year != null && year >= chapter.from && year <= chapter.to ? year : chapter.from) : year != null ? year : playbackYear;
   view = { zoom: 1, panX: 0, panY: 0 };
   selectedRegion = null; hoverRegion = null;
@@ -453,7 +453,41 @@ function toggleStats(force) {
   if (dom.statsBtn) dom.statsBtn.classList.add("on");
 }
 
+/* a chapter opens with its stakes: its title and years, the question it asks, and a strip of the
+   world's whole history with the chapter on it and the ages the square reached */
+function stakesCard() {
+  const pk = world.pack, a = planet ? planet.startYear : world.startYear, b = planet ? planet.endYear : world.endYear, span = Math.max(1, b - a);
+  const pct = function (y) { return Math.max(0, Math.min(100, (y - a) / span * 100)); };
+  const q = planet && planet.sketch && world.square ? planet.sketch.squares[world.square.index] : null, ages = pk.ages || [];
+  const strip = el("div", { class: "ae-strip", title: pk.yearLabel(a) + " to " + pk.yearLabel(b) },
+    el("i", { class: "ae-strip-span", style: "left:" + pct(chapter.from).toFixed(2) + "%;width:" + Math.max(0.8, pct(chapter.to) - pct(chapter.from)).toFixed(2) + "%" }));
+  ((q && q.ageYears) || []).forEach(function (y, k) {
+    if (k >= 1 && y != null && ages[k]) strip.appendChild(el("u", { style: "left:" + pct(y).toFixed(2) + "%", title: ages[k].name + ", " + pk.yearLabel(y) }));
+  });
+  const card = el("div", { class: "ae-stakes" },
+    el("i", { text: chapter.war ? "A war" : "A chapter" }),
+    el("b", { text: chapter.title }),
+    el("span", { text: pk.yearLabel(chapter.from) + " to " + pk.yearLabel(chapter.to) }),
+    chapter.ask ? el("p", { text: chapter.ask }) : null,
+    strip,
+    el("div", { class: "ae-strip-ends" }, el("span", { text: pk.yearLabel(a) }), el("span", { text: pk.yearLabel(b) })),
+    el("div", { class: "ae-stakes-go" },
+      el("button", { class: "ae-btn primary", text: "Begin", onclick: function () { if (!playing) togglePlay(); else hideStakes(); } }),
+      el("button", { class: "ae-btn", text: "✕", title: "Close", onclick: hideStakes })));
+  return card;
+}
+function hideStakes() { if (dom.stakes) { dom.stakes.remove(); dom.stakes = null; } }
+/* the latest of the months' happenings, while it is news (about a month) */
+function updateNews(date) {
+  if (!dom.news) return;
+  const h = date != null && AEON.months ? AEON.months.between(world, date - 0.1, date) : [];
+  const last = h[h.length - 1], text = last ? last.text : "";
+  if (dom.news.textContent !== text) dom.news.textContent = text;
+  dom.news.classList.toggle("hidden", !last);
+}
+
 function togglePlay() {
+  hideStakes();
   playing = !playing;
   dom.playBtn.textContent = playing ? "⏸" : "▶";
   fxFrozen = !playing;
@@ -551,6 +585,8 @@ function drawMap() {
   clampView();
   try {
     const worldMode = sketchMode();
+    const date = ambientOn() && season() != null && !simulating && !onPlanet() ? playbackYear + playOwed : null;
+    updateNews(date);
     AEON.render.draw(dom.canvas, shown(), {
       mode: worldMode ? "biome" : mapMode,
       focus: mapMode === "diplomacy" ? diploFocus() : null,
@@ -566,7 +602,7 @@ function drawMap() {
       /* the date in days and the speed in days a second, for the storms and the ships (seasons.js) */
       day: (playbackYear + playOwed) * YEAR_DAYS, speed: playSpeed,
       /* the date, for the armies in the field (campaigns.js), while the seasons show */
-      date: ambientOn() && season() != null && !simulating && !onPlanet() ? playbackYear + playOwed : null,
+      date: date,
       zoom: view.zoom, panX: view.panX, panY: view.panY,
     });
     if (worldMode && AEON.worldView) AEON.worldView.draw(dom.canvas, world, simulating ? world.year : playbackYear, { highlight: worldPick, pick: dom.squarePlaque && dom.squarePlaque._si, ages: mapMode === "ages" });
@@ -616,6 +652,12 @@ function buildApp() {
   /* a square picked on the planet, with the button that opens its region */
   dom.squarePlaque = el("div", { class: "wv-pick hidden" });
   mapWrap.appendChild(dom.squarePlaque);
+
+  /* in a region: the month's news (months.js), and a chapter's opening card */
+  dom.news = el("div", { class: "ae-news hidden" });
+  mapWrap.appendChild(dom.news);
+  dom.stakes = chapter && !onPlanet() ? stakesCard() : null;
+  if (dom.stakes) mapWrap.appendChild(dom.stakes);
 
   dom.playBtn = el("button", { class: "ae-btn round", text: "▶", onclick: togglePlay });
   dom.scrub = el("input", { class: "ae-scrub", type: "range",

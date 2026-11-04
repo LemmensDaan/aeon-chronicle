@@ -27,6 +27,12 @@
      battle event (`campaign: "battle"`) when it camps facing the enemy's army (one month in
      fifty). Conquests and decisive battles, which end wars, stay on the realm's own turns. A siege that drags on half a year past
      its time is lifted, and that town left alone for two years.
+   - Raids. After the harvest (the season's last two months; in lands without a winter, late in
+     the year) a realm may raid a hostile neighbour it has no treaty with (relations below -0.3):
+     a village or town on their border is plundered of its stores, its owner's prosperity falls a
+     little and its people remember (relations -0.04), which brings wars nearer. One chance in
+     twenty a raid month, more for an aggressive realm; decided by the date, not the world's random
+     stream. Recorded in world.raidLog [date, raider, raided, from region, region].
    - The record (world.armyLog): [date, army, realm, region, state, foe] whenever an army moves or
      changes what it does, and once at each year's start; the map draws from it (armiesAt).
 
@@ -76,7 +82,14 @@ function climate(world) {
     for (let m = 0; m < 12; m++) w[m] = temp[m] >= top ? 1 : 0;
   }
   const active = w.map(function (k) { return k >= ACTIVE; }), n = active.filter(Boolean).length;
-  return hidden(world, "_campClimate", { w: w, active: active, south: south, boost: 12 / Math.max(1, n) });
+  /* the raiding months: the last two of the season (its longest run), late in the year without a winter */
+  let raid = [8, 9];
+  if (n < 12) {
+    let end = -1;
+    for (let m = 0; m < 12; m++) if (active[m] && !active[(m + 1) % 12]) { end = m; break; }
+    if (end >= 0) raid = [(end + 11) % 12, end];
+  }
+  return hidden(world, "_campClimate", { w: w, active: active, south: south, boost: 12 / Math.max(1, n), raid: raid });
 }
 
 /* ------------------------------------------------------------ the months of a tick */
@@ -238,12 +251,12 @@ function holds(r) { const t = r && r.settlement ? r.settlement.tier : 0; return 
 
 /* the armies' months, up to and including month m of the tick */
 function advance(world, m) {
-  const A = world.armies;
+  const A = armies(world);
   let k = world._armyMonth || 0;
-  if (!A || !A.length) { world._armyMonth = Math.max(k, m + 1); return; }
   const C = climate(world), R = world.regions, P = world.polities;
   for (; k <= m; k++) {
     const act = C.active[k], mud = C.w[k] < 0.6, d = y0(world) + (k + 0.85) / 12;
+    if (C.raid.indexOf(k) >= 0) raids(world, k);
     /* over a copy: an army's turn may end wars and begin others */
     for (const a of A.slice()) {
       if (A.indexOf(a) < 0) continue;
@@ -292,6 +305,30 @@ function advance(world, m) {
   }
   world._armyMonth = k;
 }
+/* the raids of month k of the tick */
+const RAID = 0.05;
+function raids(world, k) {
+  const P = world.polities, R = world.regions, d = y0(world) + (k + 0.5) / 12, mon = world.year * 12 + k;
+  for (const id in P) {
+    const p = P[id];
+    if (p.ended || !p.regions.length) continue;
+    const agg = p.traits && p.traits.aggression != null ? p.traits.aggression : 0.5;
+    for (const q of AEON.neighborsOf(world, p)) {
+      if ((p.relations[q.id] || 0) >= -0.3 || AEON.treatyBetween(world, p, q, null)) continue;
+      if (hash(num(p.id), num(q.id), mon) >= RAID * (0.5 + agg)) continue;
+      const towns = frontOf(world, q, p).filter(function (rid) { return R[rid].settlement; });
+      if (!towns.length) continue;
+      const rid = towns[Math.floor(hash(num(q.id), mon, 7) * towns.length)], r = R[rid];
+      let from = rid;
+      for (const n of r.neighbors || []) if (R[n] && R[n].owner === p.id) { from = n; break; }
+      q.relations[p.id] = Math.max(-1, (q.relations[p.id] || 0) - 0.04);
+      q.prosperity = Math.max(0, (q.prosperity || 0) - 0.01);
+      (world.raidLog || (world.raidLog = [])).push([d, p.id, q.id, from, rid]);
+    }
+  }
+}
+function num(id) { return +String(id).replace(/\D/g, "") || 0; }
+
 function turn(world, p, k, kind) {
   if (!AEON.campaignTurn) return;
   const keep = world._month;
@@ -440,7 +477,7 @@ function warChapters(world) {
     const a = P[w.t.a], b = P[w.t.b];
     const title = w.t.name ? w.t.name.charAt(0).toUpperCase() + w.t.name.slice(1)
       : "The war of " + (a ? a.name.replace(/^The /, "the ") : "a realm") + " and " + (b ? b.name.replace(/^The /, "the ") : "a realm");
-    out.push({ from: from, to: to, year: w.from, title: title, contacts: [], also: [w.fights + " battles, sieges and conquests" + (w.pairs.length > 1 ? ", " + (w.pairs.length - 1) + " allies called in" : "")], war: true });
+    out.push({ from: from, to: to, year: w.from, title: title, ask: "Who will win " + title.charAt(0).toLowerCase() + title.slice(1) + ", and what will it cost?", contacts: [], also: [w.fights + " battles, sieges and conquests" + (w.pairs.length > 1 ? ", " + (w.pairs.length - 1) + " allies called in" : "")], war: true });
   }
   return out.sort(function (x, z) { return x.from - z.from; });
 }

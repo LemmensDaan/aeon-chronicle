@@ -1142,9 +1142,10 @@ function draw(canvas, world, opts) {
     wonderSprite: function (id) { return wonderSprite(baseOf(world).artifacts[id]); },
   };
   if (fx) fx.draw(ctx, env, "under");
+  /* the months' happenings and the armies of the wars, at the seasonal speeds (months.js, campaigns.js) */
+  if (war) AEON.mapfx.months(ctx, env, opts.date, "under");
   drawOverlay(ctx, world, c, v, opts, [X0]);
-  /* the armies of the wars, at the seasonal speeds (campaigns.js) */
-  if (war) AEON.mapfx.armies(ctx, env, opts.date);
+  if (war) { AEON.mapfx.months(ctx, env, opts.date, "over"); AEON.mapfx.armies(ctx, env, opts.date); }
   if (fx) fx.draw(ctx, env, "over");
   if (sea && opts.time != null) SE.sky(ctx, c, world, v, X0, spriteUnit(v), { time: opts.time });
 }

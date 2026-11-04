@@ -334,6 +334,32 @@ Each step is checked on seed 7 at 10 days/s before the next.
 6. **Court and diplomacy, raids, harvests and plague** on the monthly tick: deaths, heirs,
    regencies, marriages, envoys, revolts; raids after the harvest; bad harvests, famine, plague
    spreading by road and sea. Plus the chapter's stakes and the strip in the 4500 years.
+   **6a done 2026-11-04 (a first pass).**
+   - *Raids* (engine, campaigns.js `raids`): in the season's last two months (late in the year
+     where there is no winter) a realm may raid a hostile neighbour it has no treaty with
+     (relations below -0.3), one chance in twenty a month (more for an aggressive realm, decided by
+     the date, not the random stream): a border town's stores burned, its owner's prosperity
+     -0.01, relations -0.04. world.raidLog. 0.1-0.5 raids a region-year. Over 32 regions against
+     5b: historical within 8% everywhere (largest realm +15%), fantasy alliances +40% (raided
+     realms seek allies), the rest within 5%.
+   - *The months' happenings* (js/months.js, read from the computed history, changing nothing):
+     envoys riding between capitals the month before a treaty is made, and once a year for each
+     treaty in force (tribute carried to the lord, gifts between allies, trade envoys, kin visiting
+     after a marriage); a bride's train; a ruler lying sick before a natural succession; a plague's
+     pall creeping out from a stricken town over a year; a failed harvest the autumn before a
+     famine; the armies' news (levies called up, sieges laid, winter quarters, going home, a
+     realm's told once a month); raids. Drawn by mapfx.js `months` (riders, a candle, palls,
+     raiders and burning stores), and the latest is shown in a news line over the map. Region 4,2:
+     0.6-1.4 a month in most chapters, a quarter to a half of the months quiet; early chapters with
+     few realms and treaties stay sparse (0.03-0.3).
+   - *A chapter's opening card*: "A chapter" or "A war", the title and years, its question (from
+     the sketch moment: "Will the land hold against the X invaders?", "Will the peace with the X
+     hold?", "Who will win the war of ...?"), and a strip of the world's whole history with the
+     chapter and the ages the square reached marked; Begin starts playback. The plaques over the
+     map are centred on the map left of the chronicle.
+   Not yet: court events in the engine (a regency, a revolt brewing in a restless province), the
+   harvest of each year from the month's weather, plague spreading cell by cell along roads and sea
+   lanes as an engine process, foreign powers pressing on the edge, arrivals announced.
 7. **Tribes.** Spheres, seasonal pastures, raids, settling into land.
 8. **The region wins.** Write the outcome back; rerun the sketch from that date.
 9. **Interactivity:** to be designed (see below).

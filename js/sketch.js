@@ -404,7 +404,7 @@ AEON.chaptersOf = function (world, si) {
   const moments = [];
   for (const c of sk.contacts) {
     if (c.kind === "dark-age") {
-      if (c.to === q.id) moments.push({ year: c.year, score: c.outcome === "fell-back" ? 3 : 1.5, title: "The dark age", contact: c });
+      if (c.to === q.id) moments.push({ year: c.year, score: c.outcome === "fell-back" ? 3 : 1.5, title: "The dark age", ask: "What will be left when the dark age lifts?", contact: c });
       continue;
     }
     const into = c.to === q.id, out = c.from === q.id && c.to !== q.id;
@@ -412,7 +412,7 @@ AEON.chaptersOf = function (world, si) {
     const a = adj(c.by), other = adj(into ? c.by : c.against);
     /* trade: only the first ships over the sea count, as exploration */
     if (c.kind === "trade") {
-      if (c.via === "sea") moments.push({ year: c.year, score: into ? 1.8 : 2, title: into ? "The first " + a + " ships" : "The " + a + " voyages", contact: c });
+      if (c.via === "sea") moments.push({ year: c.year, score: into ? 1.8 : 2, title: into ? "The first " + a + " ships" : "The " + a + " voyages", ask: into ? "What will the " + a + " ships bring?" : "How far will the " + a + " ships sail?", contact: c });
       continue;
     }
     const tie = { peace: c.outcome === "treaty" ? "The " + other + " treaty" : "The " + other + " truce",
@@ -421,11 +421,15 @@ AEON.chaptersOf = function (world, si) {
     const title = tie || (into
       ? { invasion: "The " + a + " invasion", migration: "The " + a + " migration", colonisation: "The " + a + " colonists", raid: "The " + a + " sea-raids" }[c.kind]
       : { invasion: "The " + a + " war abroad", migration: "The " + a + " herders move on", colonisation: "The " + a + " fleets sail", raid: "The " + a + " raiders sail" }[c.kind]);
-    moments.push({ year: c.year, score: (SCORE[c.kind] || 2) * (OUTCOME[c.outcome] || 1) * (into || tie ? 1 : 0.7), title: title, contact: c });
+    /* the chapter's question: what is at stake when it opens */
+    const ask = { peace: "Will the peace with the " + other + " hold?", marriage: "Will the marriage bind the two crowns?", league: "Will the league keep the sea lanes open?" }[c.kind] || (into
+      ? { invasion: "Will the land hold against the " + a + " invaders?", migration: "Where will the " + a + " newcomers settle, and who will make room?", colonisation: "Will the " + a + " colonists take root?", raid: "How much will the " + a + " raiders take?" }[c.kind]
+      : { invasion: "How far will the " + a + " carry the war?", migration: "What will the land be like when the " + a + " are gone?", colonisation: "What will the " + a + " fleets find?", raid: "Will the " + a + " raiders come home rich?" }[c.kind]);
+    moments.push({ year: c.year, score: (SCORE[c.kind] || 2) * (OUTCOME[c.outcome] || 1) * (into || tie ? 1 : 0.7), title: title, ask: ask, contact: c });
   }
   /* a new age reached (in the century the curve says, taken at its middle) */
   (q.ageYears || []).forEach((y, k) => {
-    if (k >= 1 && y != null && ages[k]) moments.push({ year: y + STEP / 2, score: 1, title: "The coming of the " + ages[k].name.replace(/^the /i, "") });
+    if (k >= 1 && y != null && ages[k]) moments.push({ year: y + STEP / 2, score: 1, title: "The coming of the " + ages[k].name.replace(/^the /i, ""), ask: "Who will lead the land into the " + ages[k].name.replace(/^the /i, "") + "?" });
   });
   /* the century its power rose most: the rise of its leading people */
   const pw = sk.curves[si].power;
@@ -434,7 +438,7 @@ AEON.chaptersOf = function (world, si) {
   if (bt >= 0) {
     const y = sk.years[bt] + STEP / 2;
     const lead = q.peoples.map((id) => byId[id]).filter((p) => p && (p.arrived == null || p.arrived <= y)).sort((x, z) => z.cells - x.cells)[0];
-    if (lead) moments.push({ year: y, score: 2.5, title: "The rise of " + name(lead.id) });
+    if (lead) moments.push({ year: y, score: 2.5, title: "The rise of " + name(lead.id), ask: "How far will " + name(lead.id) + " rise, and who will stand in its way?" });
   }
   moments.sort((x, z) => x.year - z.year);
   const out = [];
@@ -456,7 +460,7 @@ AEON.chaptersOf = function (world, si) {
     titles[c.title] = true; kept.push(c);
   }
   kept.sort((x, z) => x.from - z.from);
-  return (cache[si] = kept.map((c) => ({ from: c.from, to: c.to, year: c.year, title: c.title,
+  return (cache[si] = kept.map((c) => ({ from: c.from, to: c.to, year: c.year, title: c.title, ask: c.top.ask || null,
     contacts: c.moments.map((m) => m.contact).filter(Boolean), also: c.moments.filter((m) => m !== c.top).map((m) => m.title) })));
 };
 

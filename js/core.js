@@ -283,6 +283,7 @@ function neighborPolities(world, polity) {
   }
   return neighborScan(world, polity);
 }
+AEON.neighborsOf = neighborPolities;
 function neighborScan(world, polity) {
   const seen = {};
   for (const rid of polity.regions) {

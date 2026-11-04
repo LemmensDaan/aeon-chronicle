@@ -940,6 +940,55 @@ function armies(g, env, date) {
   }
 }
 
-AEON.mapfx = { armies: armies, looks: looksOf, shipSprite: function (kind) { return (SHIPS[kind] || SHIPS.oared)[0]; }, collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, laurels: function (age) { return LAURELS[Math.max(0, Math.min(4, age))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
+/* the months' happenings (months.js): riders carrying a treaty or a bride between capitals, a
+   candle by a sick ruler's seat, a plague's pall creeping out from a stricken town, a failed
+   harvest browning the fields, raiders running in and the stores burning. layer "under": the palls,
+   below the settlements; "over": the rest */
+const RIDE = [sprite(["....f..", "...kff.", "...kw..", ".kkkkk.", "kbbbbbk", ".k...k."], { k: INK, f: "#888", w: "#e8c9a0", b: "#7a4a22" }),
+              sprite(["....f..", "...kff.", "...kw..", ".kkkkk.", "kbbbbbk", "..k.k.."], { k: INK, f: "#888", w: "#e8c9a0", b: "#7a4a22" })];
+const CANDLE = sprite(["..y..", "..k..", ".www.", ".www.", ".www.", "kkkkk"], { k: INK, y: GOLD, w: "#efe6d6" });
+function months(g, env, date, layer) {
+  if (!AEON.months || date == null) return;
+  const list = AEON.months.at(env.world, date);
+  if (!list.length) return;
+  const w = env.world, R = w.regions, t = now(), cell = env.sx(1) - env.sx(0);
+  const centre = function (rid) { const r = R[rid]; return [env.sx(r.x + 0.5), env.sy(r.y + 0.5)]; };
+  for (const h of list) {
+    const r = R[h.rid];
+    if (!r) continue;
+    const a = Math.max(0, Math.min(1, (date - h.date) / Math.max(1e-6, h.until - h.date)));
+    if (layer === "under") {
+      if (h.kind !== "plague" && h.kind !== "famine") continue;
+      /* a pall of specks over the land around: a plague's spreads and fades over its year */
+      const rad = h.kind === "plague" ? 1.5 + 9 * Math.min(1, a * 2) : 4, fade = h.kind === "plague" ? (a < 0.7 ? 1 : (1 - a) / 0.3) : 1 - a * 0.5;
+      g.fillStyle = h.kind === "plague" ? "rgba(52,62,38," + (0.55 * fade).toFixed(2) + ")" : "rgba(122,84,34," + (0.45 * fade).toFixed(2) + ")";
+      const s = Math.max(1, Math.round(cell / 2));
+      for (let dy = -Math.ceil(rad); dy <= rad; dy++) for (let dx = -Math.ceil(rad); dx <= rad; dx++) {
+        if (dx * dx + dy * dy > rad * rad) continue;
+        const gx = r.x + dx, gy = r.y + dy, q = R[gy * w.width + gx];
+        if (!q || q.barren || gx < 0 || gx >= w.width) continue;
+        if (hash(gx * 7 + gy, 31) < 0.45) g.fillRect(Math.round(env.sx(gx + hash(gx, gy) * 0.5)), Math.round(env.sy(gy + hash(gy, gx) * 0.5)), s, s);
+      }
+      continue;
+    }
+    const p = h.pid && w.polities[h.pid], over = { f: (p && p.color) || "#888" };
+    if ((h.kind === "envoy" || h.kind === "bride") && R[h.to]) {
+      const A = centre(h.rid), B = centre(h.to), f = ease(a), dir = B[0] >= A[0] ? 1 : -1;
+      const sp = RIDE[Math.floor(t / 180) % 2];
+      frameAt(g, env, A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f, function () { g.scale(dir, 1); env.blit(g, sp, -3, -sp.h, 1, h.kind === "bride" ? { f: "#efe6d6" } : over); });
+    } else if (h.kind === "sick") {
+      const c = centre(h.rid);
+      frameAt(g, env, c[0] + 6 * env.u, c[1] - 6 * env.u, function () { env.blit(g, CANDLE, -2, -6, 1, Math.floor(t / 300) % 3 ? null : { y: "#ffd27a" }); });
+    } else if (h.kind === "raid") {
+      const c = centre(h.rid);
+      if (a < 0.5 && R[h.from]) {
+        const F = centre(h.from), f = a * 2, dir = c[0] >= F[0] ? 1 : -1;
+        band(g, env, F[0] + (c[0] - F[0]) * f, F[1] + (c[1] - F[1]) * f, 2, over.f, dir, t, true, false, looksOf(w, p, Math.floor(date)).band);
+      } else frameAt(g, env, c[0], c[1], function () { flames(g, -3, 0, 6, t); smoke(g, 0, -2, t, 5, 5, 1 - Math.max(0, a - 0.8) * 5); });
+    }
+  }
+}
+
+AEON.mapfx = { months: months, armies: armies, looks: looksOf, shipSprite: function (kind) { return (SHIPS[kind] || SHIPS.oared)[0]; }, collect: collect, moment: moment, clear: clear, advance: advance, holding: holding, focusPoint: focusPoint, setPace: setPace, follow: follow, live: isLive, hides: hides, burning: burning, ruinSprite: function (tier) { return RUINS[Math.max(1, Math.min(3, tier))]; }, laurels: function (age) { return LAURELS[Math.max(0, Math.min(4, age))]; }, asTown: asTown, contested: contested, draw: draw, _live: function () { return live; } };
 
 })();

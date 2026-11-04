@@ -148,6 +148,7 @@ function start(packId, seed) {
     return;
   }
   regionCache = {};
+  loadWrites();
   const hash = location.hash;
   dom.setup.classList.add("hidden");
   dom.app.classList.remove("hidden");
@@ -220,12 +221,36 @@ function writeBack() {
   try { sk = AEON.rewriteSketch(planet, AEON.regionOutcome(rw, chapter.from)); }
   catch (e) { console.error("[aeon] write-back failed", e); return; }
   (planet._seen || (planet._seen = [])).push({ si: si, from: chapter.raw.from, title: chapter.raw.title });
+  saveWrites();
   const Y = world.year;
   for (const k of Object.keys(regionCache)) {
     const r = regionCache[k], S = r._sketch, id = sk.squares[k].id;
     if (r.year > Y) { delete regionCache[k]; continue; }
     S.contacts = S.contacts.slice(0, S.next).concat(sk.contacts.filter(function (c) { return (c.to === id || c.from === id) && c.year > r.year; }));
   }
+}
+/* the write-backs and the played chapters are kept in this browser, per pack and seed, and made
+   again when the world is opened (in the order of their years, as they were made) */
+function writesKey() { return "aeon.writes." + planet.packId + "." + planet.seed; }
+function saveWrites() {
+  try { localStorage.setItem(writesKey(), JSON.stringify({ writes: planet.sketch.writes || [], seen: planet._seen || [] })); } catch (e) {}
+}
+function loadWrites() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(writesKey()) || "null"); } catch (e) {}
+  if (!saved) return;
+  planet._seen = saved.seen || [];
+  try { for (const w of (saved.writes || []).slice().sort(function (a, b) { return a.year - b.year; })) AEON.rewriteSketch(planet, w); }
+  catch (e) { console.error("[aeon] the saved write-backs could not be made again", e); AEON.makeSketch(planet); }
+}
+/* back to the world's own history: the write-backs and the seen marks forgotten */
+function forgetWrites() {
+  if (!confirm("Forget the chapters you watched? The world goes back to its own history.")) return;
+  try { localStorage.removeItem(writesKey()); } catch (e) {}
+  planet._seen = [];
+  AEON.makeSketch(planet);
+  regionCache = {};
+  showPlanet(playbackYear, "world");
 }
 function seenChapter(si, c) { return (planet._seen || []).some(function (x) { return x.si === si && x.from === c.from && x.title === c.title; }); }
 
@@ -760,6 +785,8 @@ function buildApp() {
       onPlanet() ? null : dom.statsBtn = el("button", { class: "ae-btn", text: "Statistics", title: "How the region's people and land were shared out",
         onclick: function () { toggleStats(); } }),
       onPlanet() ? null : el("button", { class: "ae-btn", text: "Export", onclick: exportChronicle }),
+      onPlanet() && planet.sketch && (planet.sketch.writes || []).length ? el("button", { class: "ae-btn", text: "Forget watched chapters",
+        title: "The world follows the chapters you watched; this takes it back to its own history", onclick: forgetWrites }) : null,
       el("button", { class: "ae-btn", text: "New world", onclick: function () {
         stopRegion();
         planet = null; regionCache = {};

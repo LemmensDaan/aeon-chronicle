@@ -442,9 +442,12 @@ Each step is checked on seed 7 at 10 days/s before the next.
      into the new forecast.
    - *Shown*: "✓ seen" on a played chapter, and a line in the square's panel saying from which
      year the world follows what happened there. The world timeline and map show the new sketch.
-   - A rerun takes about 0.1 s. Write-backs live for the session (not in the link).
-   Not yet: the region's own contacts with other squares (it makes none of its own yet), keeping
-   write-backs across a reload.
+   - A rerun takes about 0.1 s.
+   - *Kept*: the write-backs and seen marks are saved in the browser per pack and seed, and made
+     again in the order of their years when the world opens (this gives the same sketch, checked
+     on seed 7). "Forget watched chapters" on the world's header takes the world back to its own
+     history. They are not in the link, so a shared link shows the world's own history.
+   Not yet: the region's own contacts with other squares (it makes none of its own yet).
 9. **Interactivity:** to be designed (see below).
 
 ## Open questions

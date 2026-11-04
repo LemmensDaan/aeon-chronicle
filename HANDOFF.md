@@ -93,6 +93,8 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   contacts up to the year; the sketch's dice are per square / link / tie and century. ui.js
   `writeBack` runs on leaving a chapter played to its end, drops regions worked out past the year
   and gives the others the new contacts; `planet._seen` marks played chapters.
+  Saved in localStorage `aeon.writes.<pack>.<seed>` ({writes, seen}), replayed by `loadWrites` in
+  start(); "Forget watched chapters" (`forgetWrites`) clears them.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

@@ -450,7 +450,7 @@ Each step is checked on seed 7 at 10 days/s before the next.
    Not yet: the region's own contacts with other squares (it makes none of its own yet).
 9. **Interactivity** (Daan, 2026-11-04: nudges first, playing a realm later on top of them; the
    world follows the changes at the chapter's end).
-   **9a, nudges — done 2026-11-04.** In a chapter, "Change history" in the playback bar opens a
+   **9a, nudges — done 2026-11-04.** In a chapter, "✎ Change" in the playback bar opens a
    panel: pick a realm on the map, then what happens to it from the month shown:
    - *its ruler dies* (the throne stands empty until the next year, stability falls)
    - *it declares war on* a neighbour (the pack's own war, with allies called to arms)

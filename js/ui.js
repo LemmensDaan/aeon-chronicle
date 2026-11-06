@@ -200,6 +200,9 @@ function openRegion(si, mode, k, year, keep) {
   }
   world = rw; AEON.world = rw;
   const st = rw.timeStep, snap = function (y, up) { return rw.startYear + (up ? Math.ceil : Math.floor)((y - rw.startYear) / st) * st; };
+  /* a chapter opens at 10 days a second, the speed it is made for (docs/REGION_CHAPTERS.md);
+     made again after a change, it keeps the speed the reader chose */
+  if (ch && !keep) playSpeed = 10;
   chapter = keep || (ch ? { index: k, si: si, title: ch.title, ask: ch.ask || null, war: !!ch.war, from: snap(ch.from), to: snap(ch.to, true), raw: ch } : null);
   year = chapter ? (year != null && year >= chapter.from && year <= chapter.to ? year : chapter.from) : year != null ? year : playbackYear;
   view = { zoom: 1, panX: 0, panY: 0 };

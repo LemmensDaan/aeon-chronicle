@@ -320,7 +320,9 @@ function recordEvent(world, type, payload) {
     importance: clamp(payload.importance || 1, 1, 5),
     actors: payload.actors || [],
     regionId: payload.regionId == null ? null : payload.regionId,
-    text: String(payload.text || "").trim(),
+    /* a sentence begins with a capital, though a pack's text may put a name like "the Hoe-Men" there */
+    text: String(payload.text || "").trim().replace(/^[a-z]/, function (c) { return c.toUpperCase(); })
+      .replace(/([.!?]["'”]? )([a-z])/g, function (m, p, c) { return p + c.toUpperCase(); }),
     tags: payload.tags || [],
   };
   if (!ev.text) return null;

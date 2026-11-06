@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aeon — sea animations</title>
+<link rel="stylesheet" href="../css/pixelify.css">
+<style>
+  :root { --ink: #2a1a0e; --soft: #6b4a2a; --red: #8a3a22; --paper: #e9d6ad; }
+  body { margin: 0; background: #2a1d12; color: var(--ink); font: 15px/1.4 "Pixelify Sans", Georgia, serif; }
+  main { max-width: 1180px; margin: 24px auto; padding: 26px 30px; background: var(--paper);
+         box-shadow: 0 0 0 1px #946a3c, 6px 8px 0 rgba(0,0,0,.35); outline: 1px solid rgba(58,38,20,.5); outline-offset: -8px; }
+  h1 { color: var(--red); font-weight: 600; margin: 0 0 4px; }
+  p.lede { margin: 4px 0 16px; color: var(--soft); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 22px 18px; }
+  figure { margin: 0; }
+  canvas { display: block; image-rendering: pixelated; outline: 2px solid var(--ink); width: 360px; height: 210px; }
+  figcaption b { display: block; color: var(--red); font-weight: 600; margin-top: 6px; }
+  figcaption span { color: var(--soft); font-size: 13px; }
+  @media (max-width: 420px) { main { padding: 16px; margin: 0; } canvas { width: 100%; height: auto; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Sea animations</h1>
+<p class="lede">Ideas for a calmer sea, on one piece of coast in the game's own palette: a bay, a headland and two islands.
+Every panel keeps the river current and river mouth that the map has now, so the sea is seen beside the inland water.
+Panel 1 is the sea as it is now. <code>?t=ms</code> freezes a frame and <code>?only=4</code> shows one panel large.</p>
+<div class="grid" id="grid"></div>
+</main>
+<script>
+"use strict";
+/* ------------------------------------------------------------ palette (js/pixelmap.js) */
+const C = {
+  deep: "#16295f", mid: "#1f4294", shallow: "#3570c4", foam: "#a6dbff", river: "#3570c4",
+  sand: ["#d4b56c", "#e6cd88", "#f3e2a6"], grass: ["#4a9438", "#5fae45", "#80c95a"], forest: ["#215a2a", "#2c7436", "#3b8f44"],
+  mountain: ["#584c42", "#796a5b", "#9a8b79"],
+};
+const LIGHT = "#5f93d8", PALE = "#a6dbff", GLINT = "#cfeaff", FOAM_B = "#dcefff";
+/* a half step lighter than the deep and mid sea, for swells that should be felt more than seen */
+const DEEP_UP = "#1b357a", MID_UP = "#2851a8";
+const W = 120, H = 70, N = W * H;
+
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function bayer(x, y) { return (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16; }
+function hash(a, b) { let h = Math.imul(a + 1, 374761393) ^ Math.imul(b + 7, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function vnoise(x, y, s) {
+  const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, tx = fx * fx * (3 - 2 * fx), ty = fy * fy * (3 - 2 * fy);
+  const v = function (i, j) { return hash(i * 131 + s * 7919, j); };
+  return (v(x0, y0) * (1 - tx) + v(x0 + 1, y0) * tx) * (1 - ty) + (v(x0, y0 + 1) * (1 - tx) + v(x0 + 1, y0 + 1) * tx) * ty;
+}
+function px(g, x, y, col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+function frac(v) { return v - Math.floor(v); }
+
+/* ------------------------------------------------------------ the piece of map */
+const S = (function () {
+  const kind = new Uint8Array(N);                          /* 0 land, 1 sea */
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const coast = 52 + (vnoise(0.5, y * 0.09, 1) - 0.5) * 18 - 15 * Math.exp(-Math.pow((y - 44) / 6, 2)) + 10 * Math.exp(-Math.pow((y - 28) / 4, 2));
+    const ix = (x - 96) / 11, iy = (y - 16) / 5.5, jx = (x - 80) / 4, jy = (y - 57) / 3;
+    const island = ix * ix + iy * iy < 1 + (vnoise(x * 0.25, y * 0.25, 2) - 0.5) * 0.8;
+    const islet = jx * jx + jy * jy < 1 + (vnoise(x * 0.3, y * 0.3, 5) - 0.5) * 0.6;
+    if (x > coast + (vnoise(x * 0.2, y * 0.2, 3) - 0.5) * 4 && !island && !islet) kind[y * W + x] = 1;
+  }
+  const bfs = function (src, pass) {
+    const d = new Int16Array(N).fill(99), q = [];
+    for (let i = 0; i < N; i++) if (src(i)) { d[i] = 0; q.push(i); }
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h], x = c % W, y = (c - x) / W;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, j = ny * W + nx;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || !pass(j) || d[j] <= d[c] + 1) continue;
+        d[j] = d[c] + 1; q.push(j);
+      }
+    }
+    return d;
+  };
+  const toLand = bfs(function (i) { return kind[i] === 0; }, function (i) { return kind[i] !== 0; });
+  const toSea = bfs(function (i) { return kind[i] === 1; }, function (i) { return kind[i] === 0; });
+
+  /* the river: Catmull-Rom through control points, one pixel per step, in the order it flows */
+  const trace = function (pts) {
+    const out = [], seen = new Set();
+    const at = function (p0, p1, p2, p3, t) {
+      const t2 = t * t, t3 = t2 * t;
+      return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    };
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[Math.max(0, k - 1)], b = pts[k], c = pts[k + 1], d = pts[Math.min(pts.length - 1, k + 2)];
+      for (let s = 0; s <= 1; s += 0.02) {
+        const x = Math.round(at(a[0], b[0], c[0], d[0], s)), y = Math.round(at(a[1], b[1], c[1], d[1], s)), i = y * W + x;
+        if (seen.has(i) || x < 0 || y < 0 || x >= W || y >= H || kind[i] !== 0) continue;
+        seen.add(i); out.push([x, y, out.length]);
+        if (out.length > 30 && !seen.has(i + W) && kind[i + W] === 0) { seen.add(i + W); out.push([x, y + 1, out.length - 1]); }
+      }
+    }
+    return out;
+  };
+  const river = trace([[3, 6], [10, 11], [17, 13], [24, 18], [31, 19], [38, 22], [45, 21], [52, 23], [62, 24]]);
+  const last = river[river.length - 1], prev = river[Math.max(0, river.length - 8)];
+  const mouth = { x: last[0], y: last[1], a: Math.atan2(last[1] - prev[1], last[0] - prev[0]) };
+
+  const foam = [], open = [], deep = [];
+  for (let i = 0; i < N; i++) {
+    if (kind[i] !== 1) continue;
+    if (toLand[i] === 1) foam.push(i);
+    if (toLand[i] >= 6) open.push(i);
+    if (toLand[i] >= 10) deep.push(i);
+  }
+  return { kind: kind, toLand: toLand, toSea: toSea, river: river, mouth: mouth, foam: foam, open: open, deep: deep };
+})();
+
+/* the map as it is drawn now (pixelmap.js buildTerrain), once; base: each sea pixel's band */
+const BASE = document.createElement("canvas"), BAND = new Uint8Array(N);   /* 1 shallow, 2 mid, 3 deep */
+BASE.width = W; BASE.height = H;
+(function () {
+  const g = BASE.getContext("2d");
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, t = bayer(x, y), d = S.toLand[i];
+    let col;
+    if (S.kind[i] === 1) {
+      const b = d === 1 ? 1 : d <= 3 + t * 2 ? 1 : d <= 9 + t * 3 ? 2 : 3;
+      BAND[i] = b;
+      col = d === 1 ? (t < 0.5 ? C.foam : C.shallow) : b === 1 ? C.shallow : b === 2 ? C.mid : C.deep;
+    } else {
+      const lvl = Math.min(2, Math.floor(vnoise(x * 0.3, y * 0.3, 9) * 2 + t));
+      const hill = x + y < 30 + vnoise(x * 0.2, y * 0.2, 6) * 10;
+      if (S.toSea[i] === 1 || (S.toSea[i] === 2 && t < 0.5)) col = C.sand[lvl];
+      else if (hill) col = C.mountain[lvl];
+      else if (vnoise(x * 0.12, y * 0.12, 4) > 0.55) col = C.forest[lvl];
+      else col = C.grass[lvl];
+    }
+    px(g, x, y, col);
+  }
+  for (const p of S.river) px(g, p[0], p[1], C.river);
+})();
+
+/* ------------------------------------------------------------ inland water, as shipped (every panel) */
+function riverNow(g, t) {
+  for (const p of S.river) if (((Math.floor(p[2] - t / 1000 * (p[2] < 25 ? 9 : 5)) % 9) + 9) % 9 === 0) px(g, p[0], p[1], LIGHT);
+  const m = S.mouth;
+  for (let k = 0; k < 22; k++) {
+    const life = (t / 3200 + hash(k, 3)) % 1, a = m.a + (hash(k, 4) - 0.5) * 1.4, d = 1 + life * 15;
+    const x = Math.round(m.x + Math.cos(a) * d), y = Math.round(m.y + Math.sin(a) * d * 0.8), i = y * W + x;
+    if (x < 0 || y < 0 || x >= W || y >= H || S.kind[i] !== 1) continue;
+    if (bayer(x, y) < 1.2 - life) px(g, x, y, life < 0.4 ? PALE : LIGHT);
+  }
+}
+
+/* ------------------------------------------------------------ the pieces of sea animation */
+/* 1. the surf as the map has it now: a third of the foam pixels, shifting, between two pale tones */
+function foamNow(g, t, hz) {
+  const tick = Math.floor(t / 1000 * (hz || 1.6));
+  g.fillStyle = tick % 2 ? C.foam : FOAM_B;
+  for (const i of S.foam) if ((i * 7 + tick) % 3 === 0) g.fillRect(i % W, (i / W) | 0, 1, 1);
+}
+/* the glints the map has now: on/off, fairly quick */
+function glintsNow(g, t) {
+  for (const i of S.open) {
+    if (hash(i, 21) > 0.0125) continue;
+    if (Math.sin(t / 1000 * (1.5 + hash(i, 23) * 2) + hash(i, 22) * 6.28) > 0.97) px(g, i % W, (i / W) | 0, GLINT);
+  }
+}
+/* the surf breathes: all the foam swells out and draws back together, slowly, with no flicker */
+function breathe(g, t) {
+  for (const i of S.foam) {
+    const x = i % W, y = (i - x) / W, s = 0.5 + 0.5 * Math.sin(t / 4200 * 6.28 + (x + y) * 0.04);
+    if (bayer(x, y) < s * 0.7) px(g, x, y, s > 0.75 ? FOAM_B : C.foam);
+  }
+}
+/* a swell rolls along the coast: only a stretch of shore is lit at a time, and it travels */
+function rolling(g, t) {
+  for (const i of S.foam) {
+    const x = i % W, y = (i - x) / W, s = Math.sin((y * 0.9 + x * 0.3) * 0.22 - t / 700);
+    if (s > 0.9) px(g, x, y, FOAM_B);
+    else if (s > 0.65 && bayer(x, y) < 0.5) px(g, x, y, C.foam);
+  }
+}
+/* waves come in: a pale line forms a few pixels out, runs up to the beach and breaks into foam.
+   Each stretch of coast has its own timing, so the coast never pulses as one */
+function surfLines(g, t) {
+  for (let i = 0; i < N; i++) {
+    const d = S.toLand[i];
+    if (S.kind[i] !== 1 || d > 5) continue;
+    const x = i % W, y = (i - x) / W, life = frac(t / 3600 + vnoise(x * 0.07, y * 0.07, 8) * 2);
+    const r = 4.6 - life * 3.8;
+    if (Math.abs(d - r) >= 0.55) continue;
+    if (life > 0.8) { if (bayer(x, y) < (1 - life) * 4) px(g, x, y, FOAM_B); }
+    else if (bayer(x, y) < 0.25 + life * 0.6) px(g, x, y, life > 0.55 ? C.foam : LIGHT);
+  }
+}
+/* fewer glints, each fading up and down through a dim tone rather than blinking */
+function glintsSlow(g, t) {
+  for (const i of S.open) {
+    if (hash(i, 31) > 0.006) continue;
+    const s = Math.sin(t / 1000 * (0.6 + hash(i, 33) * 0.5) + hash(i, 32) * 6.28);
+    if (s > 0.97) px(g, i % W, (i / W) | 0, GLINT);
+    else if (s > 0.88) px(g, i % W, (i / W) | 0, LIGHT);
+  }
+}
+/* long, faint swells on the open sea: bands a half step lighter drift slowly towards the coast */
+function swell(g, t) {
+  for (let i = 0; i < N; i++) {
+    if (BAND[i] < 2) continue;
+    const x = i % W, y = (i - x) / W;
+    const v = Math.sin((x * 0.9 + y * 0.35) * 0.28 + t / 1100 + (vnoise(x * 0.06, y * 0.12, 10) - 0.5) * 3);
+    if (v > 0.8 && bayer(x, y) < (v - 0.8) * 3.5) px(g, x, y, BAND[i] === 3 ? DEEP_UP : MID_UP);
+  }
+}
+/* cat's paws: patches of ruffled water drift over the open sea with the wind, as on the lakes */
+/* open: only this far from any shore, fading in over the next six pixels */
+function seaGusts(g, t, open) {
+  for (const i of S.open) {
+    if (open && S.toLand[i] < open) continue;
+    const x = i % W, y = (i - x) / W, v = vnoise((x - t / 160) * 0.12, y * 0.3, 7);
+    const th = 0.72 + (open ? Math.max(0, open + 6 - S.toLand[i]) * 0.025 : 0);
+    if (v > th && bayer(x, y) < (v - th) * 4) px(g, x, y, BAND[i] === 3 ? MID_UP : LIGHT);
+  }
+}
+/* the odd whitecap far out: a short dash of white that shrinks and is gone */
+function whitecaps(g, t) {
+  for (let k = 0; k < 4; k++) {
+    const ph = t / 2600 + hash(k, 41), cyc = Math.floor(ph), life = ph - cyc;
+    const c = S.deep[Math.floor(hash(k, cyc + 50) * S.deep.length)], x = c % W, y = (c - x) / W;
+    const n = life < 0.25 ? 3 : life < 0.5 ? 2 : life < 0.7 ? 1 : 0;
+    for (let j = 0; j < n; j++) px(g, x + j - 1, y, j === 1 ? FOAM_B : C.foam);
+  }
+}
+
+/* ------------------------------------------------------------ the panels */
+const SCENES = [
+  { title: "1. As now", note: "A third of the foam shifts every 0.6 seconds, switching between two pale tones, all along every coast at once. The glints blink on and off quickly.", period: 8000,
+    draw: function (g, t) { foamNow(g, t); glintsNow(g, t); } },
+  { title: "2. As now, slowed down", note: "The same shimmer at a third of the speed. The smallest change: still a flicker, but a gentle one.", period: 8000,
+    draw: function (g, t) { foamNow(g, t, 0.55); glintsNow(g, t); } },
+  { title: "3. Still foam", note: "No shimmer at all: the dithered foam on the base map is enough to mark the coast. Only the glints move.", period: 8000,
+    draw: function (g, t) { glintsNow(g, t); } },
+  { title: "4. Breathing surf", note: "All the foam swells out and draws back together over about four seconds. Movement without flicker.", period: 8400,
+    draw: function (g, t) { breathe(g, t); } },
+  { title: "5. Swell along the coast", note: "Only a stretch of shore is lit at a time, and it travels along the coast, like the lapping on the lakes.", period: 8800,
+    draw: function (g, t) { rolling(g, t); } },
+  { title: "6. Waves coming in", note: "A pale line forms a few pixels out, runs up to the beach and breaks into foam. Each stretch of coast has its own timing.", period: 7200,
+    draw: function (g, t) { surfLines(g, t); } },
+  { title: "7. Slow glints", note: "Half as many glints, each fading up through a dim blue and back, instead of blinking.", period: 10000,
+    draw: function (g, t) { glintsSlow(g, t); } },
+  { title: "8. Deep swell", note: "Long faint bands, a half step lighter, drift towards the coast on the open sea. Gives the sea a sense of motion away from the shore.", period: 8000,
+    draw: function (g, t) { swell(g, t); } },
+  { title: "9. Cat's paws", note: "Ruffled patches drift over the open sea with the wind, the same idea as the gusts on the lakes.", period: 9000,
+    draw: function (g, t) { seaGusts(g, t); } },
+  { title: "10. Whitecaps", note: "Now and then a short white dash far out, shrinking away. Could appear only in stormy seasons or high latitudes.", period: 7800,
+    draw: function (g, t) { whitecaps(g, t); } },
+  { title: "11. Calm mix", note: "3 + 5 + 7: still foam with one swell travelling along the coast, and slow glints.", period: 10000,
+    draw: function (g, t) { rolling(g, t); glintsSlow(g, t); } },
+  { title: "12. Rolling mix", note: "6 + 7 + 8: waves come in on the coast and long swells move on the open sea, both slow.", period: 7200,
+    draw: function (g, t) { swell(g, t); surfLines(g, t); glintsSlow(g, t); } },
+  { title: "13. Breathing mix", note: "4 + 7 + 8: the surf breathes, swells drift, glints fade. The quietest that still moves everywhere.", period: 8400,
+    draw: function (g, t) { swell(g, t); breathe(g, t); glintsSlow(g, t); } },
+  { title: "14. Livelier mix", note: "6 + 7 + 8 + 9 + 10: everything that moves slowly, plus whitecaps. A windy sea.", period: 7800,
+    draw: function (g, t) { swell(g, t); seaGusts(g, t); surfLines(g, t); whitecaps(g, t); glintsSlow(g, t); } },
+  { title: "15. Breathing mix, cat's paws far out (chosen)", note: "13 + 9, with the cat's paws only 12 or more pixels from any shore, fading in towards there. This is what the map now draws.", period: 9000,
+    draw: function (g, t) { swell(g, t); seaGusts(g, t, 12); breathe(g, t); glintsSlow(g, t); } },
+];
+
+/* ------------------------------------------------------------ run */
+const grid = document.getElementById("grid");
+const ONLY = /[?&]only=([0-9]+)/.exec(location.search);
+if (ONLY) { grid.style.display = "block"; document.head.insertAdjacentHTML("beforeend", "<style>canvas { width: 1080px; height: 630px; max-width: 100%; }</style>"); }
+const panels = SCENES.filter(function (sc, k) { return !ONLY || k === +ONLY[1] - 1; }).map(function (sc) {
+  const fig = document.createElement("figure"), cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const cap = document.createElement("figcaption");
+  cap.innerHTML = "<b></b><span></span>";
+  cap.querySelector("b").textContent = sc.title; cap.querySelector("span").textContent = sc.note;
+  fig.appendChild(cv); fig.appendChild(cap); grid.appendChild(fig);
+  return { sc: sc, g: cv.getContext("2d") };
+});
+const FIXED = /[?&]t=([0-9]+)/.exec(location.search);
+function frame(now) {
+  for (const p of panels) {
+    const t = FIXED ? +FIXED[1] : now;
+    p.g.drawImage(BASE, 0, 0);
+    riverNow(p.g, t);
+    p.sc.draw(p.g, t);
+  }
+  if (!FIXED) requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

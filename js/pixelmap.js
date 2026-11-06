@@ -15,6 +15,18 @@
 
 const AEON = window.AEON = window.AEON || {};
 const PPC = 4;
+/* how far from any shore, in map pixels, the sea counts as open for the cat's paws (drawSea) */
+const OPEN_SEA = 12;
+/* how far out from the shore, in map pixels, the waves roll in towards it (drawSea) */
+const COAST_WAVES = 14;
+/* the winds by latitude (planetgen.js), for a world whose generated winds are not at hand:
+   east, and poleward */
+const WIND_U = [[0, -0.75], [15, -0.95], [30, 0], [45, 1], [60, 0], [75, -0.6], [90, -0.3]];
+const WIND_V = [[0, 0], [15, -0.45], [30, 0], [45, 0.35], [60, 0], [75, -0.35], [90, 0]];
+function tableAt(t, d) {
+  for (let k = 1; k < t.length; k++) if (d <= t[k][0]) return t[k - 1][1] + (t[k][1] - t[k - 1][1]) * (d - t[k - 1][0]) / (t[k][0] - t[k - 1][0]);
+  return t[t.length - 1][1];
+}
 const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
 /* the diplomacy mode's colours: how each realm stands with the realm in focus (AEON.stancesAt) */
 /* (Daan, 2026-10-24: truce silver, trade gold; the realm in focus a pale cream wash, so it is never
@@ -390,6 +402,8 @@ function buildTerrain(world) {
   /* for the seasons (seasons.js): each land pixel's biome and shade as drawn (beaches and snowy
      peaks apart), 0 on water and rivers */
   const SE = AEON.seasons, pxB = new Uint8Array(N), pxL = new Uint8Array(N);
+  /* each sea pixel's band (1 shallow, 2 mid, 3 deep), for the swells (drawSea) */
+  const seaBand = new Uint8Array(N);
   const put = function (i, h) { const c = rgb(h); px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = 255; };
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
     const i = y * VW + x, e = E[i], t = bayer(x, y);
@@ -413,7 +427,9 @@ function buildTerrain(world) {
       }
       const d = 0.5 - e;
       /* the surf: foam dithered over the shallows, not a solid ring (the waves animate on top) */
-      put(i, coast ? (t < 0.5 ? P.foam : P.shallow) : d < 0.018 + t * 0.012 ? P.shallow : d < 0.075 + t * 0.03 ? P.mid : P.deep);
+      const band = coast || d < 0.018 + t * 0.012 ? 1 : d < 0.075 + t * 0.03 ? 2 : 3;
+      put(i, coast ? (t < 0.5 ? P.foam : P.shallow) : band === 1 ? P.shallow : band === 2 ? P.mid : P.deep);
+      seaBand[i] = band;
       continue;
     }
     /* jitter the biome lookup with the dither matrix so biome borders break up into pixels */
@@ -513,8 +529,140 @@ function buildTerrain(world) {
   props.sort(function (a, b) { return a[3] - b[3]; });
 
   /* what the ambient animation needs: the foam pixels along the shore, a scatter of deep-sea
-     pixels that glint, and a few clouds. All picked by hash, so a world always looks the same. */
+     pixels that glint, the swells and cat's paws on the open sea (drawSea), and a few clouds.
+     All picked by hash, so a world always looks the same. */
   const foam = [], glints = [];
+  /* how far each sea pixel lies from land or lake, in pixels (chebyshev, wrapping east-west) */
+  const toLand = new Uint8Array(N).fill(255), bq = new Int32Array(N);
+  let bn = 0;
+  for (let i = 0; i < N; i++) if (land[i] || lake[i]) { toLand[i] = 0; bq[bn++] = i; }
+  for (let h = 0; h < bn; h++) {
+    const ci = bq[h], cx = ci % VW, cy = (ci - cx) / VW, nd = toLand[ci] + 1;
+    if (nd > 40) continue;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const ny = cy + dy;
+      if (ny < 0 || ny >= VH) continue;
+      const j = ny * VW + (cx + dx + VW) % VW;
+      if (toLand[j] > nd) { toLand[j] = nd; bq[bn++] = j; }
+    }
+  }
+  /* the world's own wind, a vector a map cell (x east, y south): the planet's generated winds
+     (planetgen.js winds: three belts a hemisphere, bent by noise and drawn in by the monsoon), read
+     off the planet's grid for a region's cells; from latitude alone when they are not at hand */
+  const sq = world.square, pl = world.planet, gen = (pl || world)._gen;
+  const PWd = pl ? pl.width : W, PHd = pl ? pl.height : H, NC = W * H;
+  const windU = new Float32Array(NC), windV = new Float32Array(NC);
+  const planetAt = function (A, fx, fy) {
+    const x = fx - 0.5, y = Math.max(0, Math.min(PHd - 1, fy - 0.5)), x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0, y1 = Math.min(y0 + 1, PHd - 1);
+    const a = function (i, j) { return A[j * PWd + ((i % PWd) + PWd) % PWd]; };
+    return (a(x0, y0) * (1 - tx) + a(x0 + 1, y0) * tx) * (1 - ty) + (a(x0, y1) * (1 - tx) + a(x0 + 1, y1) * tx) * ty;
+  };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, fx = sq && pl ? sq.px0 + (x + 0.5) / sq.K : x + 0.5, fy = sq && pl ? sq.py0 + (y + 0.5) / sq.K : y + 0.5;
+    if (gen && gen.U) { windU[i] = planetAt(gen.U, fx, fy); windV[i] = planetAt(gen.V, fx, fy); continue; }
+    const lat = (0.5 - fy / PHd) * 150, deg = Math.abs(lat);
+    windU[i] = tableAt(WIND_U, deg); windV[i] = tableAt(WIND_V, deg) * (lat >= 0 ? -1 : 1);
+  }
+  /* the surface currents, from that wind: turned a little (to the right in the north, the left in
+     the south), smoothed over the open sea, and steered along the coasts, so the trades and the
+     westerlies close into gyres and run up and down the shores they meet */
+  const ocean = new Uint8Array(NC), cDist = new Uint8Array(NC).fill(9), cq = [];
+  for (let i = 0; i < NC; i++) { ocean[i] = R[i].barren && !R[i].lake ? 1 : 0; if (!ocean[i]) { cDist[i] = 0; cq.push(i); } }
+  for (let h = 0; h < cq.length; h++) {
+    const ci = cq[h], cx = ci % W, cy = (ci - cx) / W, nd = cDist[ci] + 1;
+    if (nd > 4) continue;
+    const nb = [cy * W + (cx + 1) % W, cy * W + (cx + W - 1) % W, cy > 0 ? ci - W : -1, cy < H - 1 ? ci + W : -1];
+    for (const j of nb) if (j >= 0 && cDist[j] > nd) { cDist[j] = nd; cq.push(j); }
+  }
+  let curU = new Float32Array(NC), curV = new Float32Array(NC);
+  for (let i = 0; i < NC; i++) {
+    if (!ocean[i]) continue;
+    const south = (sq && pl ? sq.py0 + (Math.floor(i / W) + 0.5) / sq.K : Math.floor(i / W) + 0.5) >= PHd / 2, a = south ? -0.45 : 0.45;
+    curU[i] = windU[i] * Math.cos(a) - windV[i] * Math.sin(a); curV[i] = windU[i] * Math.sin(a) + windV[i] * Math.cos(a);
+  }
+  for (let pass = 0; pass < 10; pass++) {
+    const nu = new Float32Array(NC), nv = new Float32Array(NC);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!ocean[i]) continue;
+      let su = curU[i] * 2, sv = curV[i] * 2, n = 2;
+      const nb = [y * W + (x + 1) % W, y * W + (x + W - 1) % W, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1];
+      for (const j of nb) if (j >= 0 && ocean[j]) { su += curU[j]; sv += curV[j]; n++; }
+      let u = su / n, v = sv / n;
+      if (cDist[i] <= 3) {
+        /* away from the land: down the slope of the distance to it */
+        const d = function (j) { return j >= 0 ? cDist[j] : cDist[i]; };
+        let gx = d(nb[0]) - d(nb[1]), gy = d(nb[3]) - d(nb[2]);
+        const gl = Math.hypot(gx, gy), sp = Math.hypot(u, v);
+        if (gl > 0 && sp > 0) {
+          gx /= gl; gy /= gl;
+          const into = u * gx + v * gy;
+          if (into < 0) { u -= into * gx; v -= into * gy; const s2 = Math.hypot(u, v) || 1; u *= sp / s2; v *= sp / s2; }
+        }
+      }
+      nu[i] = u; nv[i] = v;
+    }
+    curU = nu; curV = nv;
+  }
+  /* either field at a map pixel, interpolated between the cells' centres */
+  const fieldAt = function (A, x, y) {
+    const fx = (x + 0.5) / PPC - 0.5, fy = Math.max(0, Math.min(H - 1, (y + 0.5) / PPC - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, y1 = Math.min(y0 + 1, H - 1);
+    const a = function (i, j) { return A[j * W + ((i % W) + W) % W]; };
+    return (a(x0, y0) * (1 - tx) + a(x0 + 1, y0) * tx) * (1 - ty) + (a(x0, y1) * (1 - tx) + a(x0 + 1, y1) * tx) * ty;
+  };
+  /* swells on the mid and deep sea drift with the currents, cat's paws (only out on the open sea,
+     a few cells from any shore, fading in towards it) with the wind. Both are patterns carried
+     along their field (drawSea, flowNoise), worked out a 2x2 block of pixels at a time; each pixel
+     keeps its block and the level the pattern must reach to light it (the dither folded in, and
+     raised where the current or wind is slack; pixels it never reaches are left out). */
+  const blocks = function () { return { at: new Map(), x: [], y: [], u: [], v: [] }; };
+  const blockOf = function (B, x, y, U, V, speed) {
+    const bx = x >> 1, by = y >> 1, key = by * VW + bx;
+    let k = B.at.get(key);
+    if (k === undefined) {
+      k = B.x.length; B.at.set(key, k);
+      const cx = bx * 2 + 0.5, cy = by * 2 + 0.5;
+      B.x.push(cx); B.y.push(cy); B.u.push(fieldAt(U, cx, cy) * speed); B.v.push(fieldAt(V, cx, cy) * speed);
+    }
+    return k;
+  };
+  const SB = blocks(), PB = blocks();
+  const swellPx = [], swellBk = [], swellTh = [], swellDeep = [], pawPx = [], pawBk = [], pawTh = [], pawDeep = [];
+  /* near land the swell bends towards it, whatever the wind and current do further out: crests
+     run along the coast and roll in, each stretch of coast in its own time, fading out to sea
+     where the current's patches take over */
+  const coastPx = [], coastPh = [], coastTh = [], coastBand = [];
+  for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+    const i = y * VW + x, b = seaBand[i];
+    if (land[i] || lake[i] || !b) continue;
+    const by = bayer(x, y), d = toLand[i];
+    if (d >= 2 && d <= COAST_WAVES) {
+      const cth = 0.82 + by / 3.5 * 0.6 + Math.max(0, d - COAST_WAVES + 6) * 0.03;
+      if (cth < 1) { coastPx.push(i); coastPh.push(d * 0.75 + vnoise(x / PPC, y / PPC, 0.3, 73) * 5); coastTh.push(cth); coastBand.push(b); }
+    }
+    if (b < 2) continue;
+    const slackC = 1 - Math.min(1, Math.hypot(fieldAt(curU, x, y), fieldAt(curV, x, y)) / 0.4);
+    const sth = 0.7 + by * 0.28 + slackC * 0.12 + Math.max(0, COAST_WAVES + 2 - d) * 0.035;
+    if (sth < 1) { swellPx.push(i); swellBk.push(blockOf(SB, x, y, curU, curV, 2.5)); swellTh.push(sth); swellDeep.push(b === 3 ? 1 : 0); }
+    if (toLand[i] < OPEN_SEA) continue;
+    const slackW = 1 - Math.min(1, Math.hypot(fieldAt(windU, x, y), fieldAt(windV, x, y)) / 0.4);
+    const pth = 0.72 + Math.max(0, OPEN_SEA + 6 - toLand[i]) * 0.025 + by / 4 + slackW * 0.2;
+    if (pth < 1) { pawPx.push(i); pawBk.push(blockOf(PB, x, y, windU, windV, 6)); pawTh.push(pth); pawDeep.push(b === 3 ? 1 : 0); }
+  }
+  const packBlocks = function (B) { return { x: Float32Array.from(B.x), y: Float32Array.from(B.y), u: Float32Array.from(B.u), v: Float32Array.from(B.v), val: new Float32Array(B.x.length) }; };
+  const openSea = {
+    swell: { px: Int32Array.from(swellPx), bk: Int32Array.from(swellBk), th: Float32Array.from(swellTh), deep: Uint8Array.from(swellDeep), blocks: packBlocks(SB) },
+    paws: { px: Int32Array.from(pawPx), bk: Int32Array.from(pawBk), th: Float32Array.from(pawTh), deep: Uint8Array.from(pawDeep), blocks: packBlocks(PB) },
+    coast: { px: Int32Array.from(coastPx), ph: Float32Array.from(coastPh), th: Float32Array.from(coastTh), band: Uint8Array.from(coastBand) },
+  };
+  /* the clouds drift east or west with the wind along their row */
+  const rowWind = function (y) {
+    const cy = Math.max(0, Math.min(H - 1, Math.floor(y / PPC)));
+    let su = 0;
+    for (let x = 0; x < W; x++) su += windU[cy * W + x];
+    const m = su / W;
+    return (m < 0 ? -1 : 1) * Math.max(0.35, Math.min(1, Math.abs(m)));
+  };
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
     const i = y * VW + x;
     if (land[i] || lake[i]) continue;
@@ -524,7 +672,7 @@ function buildTerrain(world) {
       if (ny >= 0 && ny < VH && land[ny * VW + (x + dx + VW) % VW]) { coast = true; break; }
     }
     if (coast) foam.push(i);
-    else if (E[i] < 0.47 && cellRand(i, 21) < 0.0025) glints.push([i, cellRand(i, 22) * 6.28, 1.5 + cellRand(i, 23) * 2]);
+    else if (E[i] < 0.47 && cellRand(i, 21) < 0.0012) glints.push([i, cellRand(i, 22) * 6.28, 0.6 + cellRand(i, 23) * 0.5]);
   }
   /* and the inland water's: its river pixels (place along the river, fast or not, how long a
      winter freezes it), its lake pixels (how far from the shore, how long frozen, a jitter for
@@ -532,27 +680,30 @@ function buildTerrain(world) {
      that grows with how far its coldest month falls below freezing; south of the equator its
      winter comes half a year later (a region's rows sit on the planet's, world.square). */
   const winter = function (cell) { const cc = R[cell].coldC; return cc == null || cc >= 0 ? 0 : Math.min(0.85, 0.2 - cc / 25); };
-  const sq = world.square, pl = world.planet;
   const south = function (cell) { return sq && pl ? sq.py0 + (R[cell].y + 0.5) / sq.K >= pl.height / 2 : R[cell].y + 0.5 >= world.height / 2; };
   const river = { px: [], ph: [], fast: [], ice: [], jit: [], south: [] };
   riverAt.forEach(function (v, i) { if (R[cellOf[i]].beyond) return; river.px.push(i); river.ph.push(v[0]); river.fast.push(v[1]); river.ice.push(winter(v[2])); river.jit.push(cellRand(i, 53)); river.south.push(south(v[2])); });
-  const lakes = { px: [], d: [], ice: [], jit: [], open: [], glints: [], south: [] };
+  const lakes = { px: [], d: [], ice: [], jit: [], open: [], glints: [], south: [], wu: [], wv: [] };
   for (let i = 0; i < N; i++) {
     if (!lakeD[i] || R[cellOf[i]].beyond || R[cellOf[i]].beyondBiome) continue;
     const k = lakes.px.length;
+    lakes.wu.push(fieldAt(windU, i % VW, (i / VW) | 0) * 7); lakes.wv.push(fieldAt(windV, i % VW, (i / VW) | 0) * 7);
     lakes.px.push(i); lakes.d.push(lakeD[i] + (cellRand(i, 51) - 0.5) * 1.5); lakes.ice.push(winter(cellOf[i])); lakes.jit.push(cellRand(i, 52)); lakes.south.push(south(cellOf[i]));
     if (lakeD[i] >= 3) { lakes.open.push(k); if (cellRand(i, 54) < 0.006) lakes.glints.push([i, cellRand(i, 55) * 6.28, 1.5 + cellRand(i, 56) * 2]); }
   }
   const water = { river: river, lakes: lakes, mouths: mouths.map(function (m) { return [m[0], m[1], m[2], winter(m[3]), south(m[3])]; }) };
 
   const clouds = [];
-  for (let k = 0; k < Math.round(VW / 70); k++) clouds.push({ x: cellRand(k, 31) * VW, y: 10 + cellRand(k, 32) * (VH - 40), w: 26 + Math.floor(cellRand(k, 33) * 30), s: 3 + cellRand(k, 34) * 5 });
+  for (let k = 0; k < Math.round(VW / 70); k++) {
+    const cy = 10 + cellRand(k, 32) * (VH - 40);
+    clouds.push({ x: cellRand(k, 31) * VW, y: cy, w: 26 + Math.floor(cellRand(k, 33) * 30), s: (3 + cellRand(k, 34) * 5) * rowWind(cy + 5) });
+  }
 
   const frame = document.createElement("canvas");
   frame.width = VW; frame.height = VH;
   return {
     W: W, H: H, VW: VW, VH: VH, land: land, cellOf: cellOf, terrain: terrain, props: props, propLayer: null,
-    foam: foam, glints: glints, clouds: clouds, water: water, lake: lake, pxB: pxB, pxL: pxL,
+    foam: foam, glints: glints, openSea: openSea, clouds: clouds, water: water, lake: lake, pxB: pxB, pxL: pxL,
     terrainPx: g.getImageData(0, 0, VW, VH).data,
     frame: frame, fctx: frame.getContext("2d"), fimg: frame.getContext("2d").createImageData(VW, VH), key: null,
   };
@@ -760,27 +911,19 @@ function drawRoads(c, w, d) {
 }
 
 /* ------------------------------------------------------------ ambient animation */
-/* After samples/pixel.html: the shore foam shimmers between two pale tones, glints come and go on
-   the deep sea, and dithered cloud shadows drift east across the map and wrap round. Drawn at map
-   resolution (P device pixels per map pixel), clipped to the map, for a time in milliseconds. */
+/* After samples/pixel.html: dithered cloud shadows drift across the map with the wind and wrap round, over
+   the water's own animation (drawWater, drawSea). Drawn at map resolution (P device pixels per map
+   pixel), clipped to the map, for a time in milliseconds. */
 const FOAM_A = "#a6dbff", FOAM_B = "#dcefff", GLINT = "#cfeaff";
 function drawAmbient(ctx, c, v, X0, now, rivers, season) {
-  const P = v.P, VW = c.VW, Y0 = v.Y0, t = now / 1000, tick = Math.floor(t * 1.6);
+  const P = v.P, VW = c.VW, Y0 = v.Y0, t = now / 1000;
   ctx.save();
   ctx.beginPath(); ctx.rect(X0, Y0, VW * P, c.VH * P); ctx.clip();
   drawWater(ctx, c, v, X0, now, rivers, season);
-  /* none on the sea ice (seasons.js) */
-  const iced = c.sea && c.sea.hasIce ? c.sea.iced : null;
-  ctx.fillStyle = tick % 2 ? FOAM_A : FOAM_B;
-  for (let k = 0; k < c.foam.length; k++) {
-    const i = c.foam[k];
-    if ((i * 7 + tick) % 3 === 0 && !(iced && iced[i])) ctx.fillRect(X0 + (i % VW) * P, Y0 + ((i / VW) | 0) * P, P, P);
-  }
-  ctx.fillStyle = GLINT;
-  for (const g of c.glints) if (Math.sin(t * g[2] + g[1]) > 0.97 && !(iced && iced[g[0]])) ctx.fillRect(X0 + (g[0] % VW) * P, Y0 + ((g[0] / VW) | 0) * P, P, P);
   ctx.fillStyle = "rgba(10, 14, 40, .2)";
   for (const cl of c.clouds) {
-    const cx = ((cl.x + t * cl.s) % (VW + 80)) - 40;
+    /* each cloud drifts east or west with the wind along its row (s carries the sign) */
+    const cx = ((((cl.x + t * cl.s) % (VW + 80)) + VW + 80) % (VW + 80)) - 40;
     for (let j = 0; j < 10; j++) for (let i = 0; i < cl.w; i++) {
       const dx = (i - cl.w / 2) / (cl.w / 2), dy = (j - 5) / 5;
       if (dx * dx + dy * dy < 1 && bayer(i, j) < 0.55) ctx.fillRect(X0 + Math.round(cx + i) * P, Y0 + Math.round(cl.y + j) * P, P, P);
@@ -791,8 +934,8 @@ function drawAmbient(ctx, c, v, X0, now, rivers, season) {
 
 /* Inland water (samples/water-animations.html, panel 15; Daan, 2026-10-29): bands of current run
    down the rivers, white water flickers where they run fast, rings spread on open lake water,
-   gusts ruffle it and the sun glints on it, and a fan of lighter water drifts out where a river
-   meets the sea. Lakes and rivers with a cold winter ice over from the shore in a slow cycle and
+   gusts ruffle it as they drift downwind, the sun glints on it, and a fan of lighter water drifts
+   out where a river meets the sea. Lakes and rivers with a cold winter ice over from the shore in a slow cycle and
    break up again, the colder the longer; the river mouth stops while its river is frozen. The
    current, gusts and ripples are on the clock; the ice is on the calendar (season: the playback
    date's share of the year, 0 on the first of January), and when the years go by too fast for
@@ -812,6 +955,16 @@ function gustNoise(x, y) {
   const x0 = Math.floor(x), y0 = Math.floor(y), sx = x - x0, sy = y - y0, tx = sx * sx * (3 - 2 * sx), ty = sy * sy * (3 - 2 * sy);
   const v = function (i, j) { return cellRand((i & 0xffff) * 65536 + (j & 0xffff), 57); };
   return (v(x0, y0) * (1 - tx) + v(x0 + 1, y0) * tx) * (1 - ty) + (v(x0, y0 + 1) * (1 - tx) + v(x0 + 1, y0 + 1) * tx) * ty;
+}
+/* a pattern carried along a field that changes from place to place (u, v: pixels a second at
+   x, y): two copies of the noise, each pushed downstream for T seconds and then started afresh,
+   faded into each other so neither restart shows, with the contrast the fade loses put back */
+function flowNoise(x, y, u, v, t, T, sx, sy) {
+  const f = t / T, p0 = f - Math.floor(f), p1 = (f + 0.5) - Math.floor(f + 0.5), w0 = 1 - Math.abs(2 * p0 - 1), w1 = 1 - w0;
+  /* the noise is read on a turned grid, so its lattice never shows as boxes along the map's axes */
+  const ax = x - u * p0 * T, ay = y - v * p0 * T, bx = x - u * p1 * T, by = y - v * p1 * T;
+  const n0 = gustNoise((ax * 0.8 - ay * 0.6) * sx, (ax * 0.6 + ay * 0.8) * sy), n1 = gustNoise((bx * 0.8 - by * 0.6) * sx + 51.3, (bx * 0.6 + by * 0.8) * sy + 17.9);
+  return 0.5 + (n0 * w0 + n1 * w1 - 0.5) / Math.sqrt(w0 * w0 + w1 * w1);
 }
 function drawWater(ctx, c, v, X0, now, rivers, season) {
   const P = v.P, VW = c.VW, VH = c.VH, Y0 = v.Y0, t = now / 1000, w = c.water, L = w.lakes, Rv = w.river, ICE = PAL_ICE;
@@ -833,6 +986,8 @@ function drawWater(ctx, c, v, X0, now, rivers, season) {
     buf[i] = p; set.push(i);
   };
 
+  drawSea(c, dot, t);
+
   if (rivers) {
     const tick = Math.floor(now / 140);
     for (let k = 0; k < Rv.px.length; k++) {
@@ -846,7 +1001,7 @@ function drawWater(ctx, c, v, X0, now, rivers, season) {
   /* gusts drifting east over the lakes */
   for (let k = 0; k < L.px.length; k++) {
     if (L.d[k] < 2) continue;
-    const i = L.px[k], x = i % VW, y = (i - x) / VW, g = gustNoise((x - t * 7) * 0.16, y * 0.4);
+    const i = L.px[k], x = i % VW, y = (i - x) / VW, g = flowNoise(x, y, L.wu[k], L.wv[k], t, 6, 0.16, 0.4);
     if (g > 0.74 && bayer(x, y) < (g - 0.74) * 5) dot(WATER_LIGHT, i);
   }
   /* ripples: a few rings at a time, about one per 800 pixels of open water */
@@ -884,6 +1039,45 @@ function drawWater(ctx, c, v, X0, now, rivers, season) {
 
   w.layer.getContext("2d").putImageData(w.img, 0, 0);
   ctx.drawImage(w.layer, X0, Y0, VW * P, VH * P);
+}
+
+/* The sea (samples/sea-animations.html, panel 13 with 9 on the open sea; Daan, 2026-11-06): the
+   surf swells out from the shore and draws back over about four seconds, long faint swells a half
+   step lighter drift with the world's ocean currents over the mid and deep sea, ruffled patches
+   (cat's paws) drift with its winds only far from any shore (both fields: buildTerrain), and near
+   land the waves roll in towards the shore, and the glints fade up and down slowly. None of it on the sea ice
+   (seasons.js). dot paints a map pixel into drawWater's layer; t in seconds. */
+const SEA_DEEP_UP = "#1b357a", SEA_MID_UP = "#2851a8", SEA_SHALLOW_UP = "#4580cc";
+function drawSea(c, dot, t) {
+  const iced = c.sea && c.sea.hasIce ? c.sea.iced : null, Sw = c.openSea.swell, Pw = c.openSea.paws;
+  const fill = function (B, T, sc) { for (let k = 0; k < B.x.length; k++) B.val[k] = flowNoise(B.x[k], B.y[k], B.u[k], B.v[k], t, T, sc, sc); };
+  fill(Sw.blocks, 10, 0.07); fill(Pw.blocks, 6, 0.15);
+  const Cw = c.openSea.coast, roll = t * 1.5;
+  for (let k = 0; k < Cw.px.length; k++) {
+    if (Math.sin(Cw.ph[k] + roll) <= Cw.th[k]) continue;
+    const i = Cw.px[k], b = Cw.band[k];
+    if (!(iced && iced[i])) dot(b === 1 ? SEA_SHALLOW_UP : b === 2 ? SEA_MID_UP : SEA_DEEP_UP, i);
+  }
+  for (let k = 0; k < Sw.px.length; k++) {
+    if (Sw.blocks.val[Sw.bk[k]] <= Sw.th[k]) continue;
+    const i = Sw.px[k];
+    if (!(iced && iced[i])) dot(Sw.deep[k] ? SEA_DEEP_UP : SEA_MID_UP, i);
+  }
+  for (let k = 0; k < Pw.px.length; k++) {
+    if (Pw.blocks.val[Pw.bk[k]] <= Pw.th[k]) continue;
+    const i = Pw.px[k];
+    if (!(iced && iced[i])) dot(Pw.deep[k] ? SEA_MID_UP : WATER_LIGHT, i);
+  }
+  const VW = c.VW;
+  const breath = t / 4.2 * 6.28;
+  for (let k = 0; k < c.foam.length; k++) {
+    const i = c.foam[k], x = i % VW, y = (i - x) / VW, s = 0.5 + 0.5 * Math.sin(breath + (x + y) * 0.04);
+    if (bayer(x, y) < s * 0.7 && !(iced && iced[i])) dot(s > 0.75 ? FOAM_B : FOAM_A, i);
+  }
+  for (const g of c.glints) {
+    const s = Math.sin(t * g[2] + g[1]);
+    if (s > 0.88 && !(iced && iced[g[0]])) dot(s > 0.97 ? GLINT : WATER_LIGHT, g[0]);
+  }
 }
 
 /* ------------------------------------------------------------ scenery */

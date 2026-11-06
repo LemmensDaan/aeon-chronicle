@@ -1,6 +1,42 @@
 # Region chapters: design
 
-2026-10-30, plan revised 2026-11-03 (two layers). Steps 1-3 of the build order are done.
+2026-10-30, plan revised 2026-11-03 (two layers). All steps are done (2026-11-06); Daan tests next.
+
+## In short (what was added, and what it changes)
+
+Below this section is the full design and build log. This is the overview.
+
+**What you can do now**
+- **Watch a chapter.** Each square of the world offers up to 6 chapters: 30-80 years around a big
+  moment (an invasion, a marriage, a trading league). It plays at 10 days a second, with seasons,
+  armies marching and besieging, plague spreading town by town, and the news of each month.
+- **Change history** (✎ Change in the playback bar): make a ruler die, start a war or a peace, a
+  revolt, a plague. The chapter is remade from that month.
+- **Play a realm** (in the same panel): give it orders (warlike / peaceful, what its wars are for),
+  and the playback stops at its big decisions (war, peace, alliance, marriage, vassals). Saying no
+  remakes the chapter without it.
+
+**What changed in the history itself**
+- **Every region's history** (not only chapters) now runs year by year with real armies and
+  sieges, plague, harvests, tribes (herder peoples with grazing land instead of borders), and
+  stronger foreign powers raiding from beyond the edge. So all region histories differ from before
+  the feature, but their totals stay close (wars, land changes and the rest within about 15%).
+- **The world map and timeline** change only through what you do: a chapter you watch to its end
+  is written back into the world from its date on (the region wins), and so are your changes in it.
+
+**What affects what**
+- Watching a chapter to its end → the world from that date on → the later chapters and the
+  neighbouring squares. Watching an earlier chapter again redoes the later write-backs.
+- Changes and decisions → only that chapter (remade) → then the world, at the chapter's end.
+- A realm you play stays played in every chapter of that square; its orders hold from the month
+  you give them, into later chapters too.
+- All of this is kept in the browser, one small entry per world (`aeon.writes.<pack>.<seed>`).
+  Nothing else is stored: chapters are computed fresh each time (so opening one takes a while).
+  "Forget watched chapters" clears it.
+
+**Where the code is**: chapters `sketch.js` + `ui.js`; month-by-month layer `campaigns.js`,
+`fastlayer.js`, `months.js`; tribes `tribes.js`; foreign powers and newcomers `region.js`;
+write-back `region.js` + `sketch.js`; changes, orders and decisions `nudges.js` + `ui.js`.
 
 ## Why
 

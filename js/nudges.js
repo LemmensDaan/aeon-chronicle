@@ -162,7 +162,7 @@ function decisions(world, pid, from, to) {
       if (t.kind === "tribute" && t.src && s > from && s <= to) out.push(t.a === pid
         ? { key: t.id + ":submit:" + t.start + ":" + other, date: s, what: "submit", other: other, text: me.name + " is about to bow to " + nm(other) + " and pay it tribute as its vassal.", ask: "Submit?", yes: "Submit", no: "Refuse", veto: refuse(t, "submit", s, "submit") }
         : { key: t.id + ":vassal:" + t.start + ":" + other, date: s, what: "vassal", other: other, text: me.name + " is about to take " + nm(other) + " as its vassal.", ask: "Take the vassal?", yes: "Take it", no: "Let it be", veto: refuse(t, "vassal", s, "vassal") });
-      if (t.kind === "tribute" && t.a === pid && t.ended === "revolt" && e != null && e > from && e <= to) out.push({ key: t.id + ":free:" + t.end, date: e, what: "free", other: other,
+      if (t.kind === "tribute" && t.a === pid && t.ended === "revolt" && e != null && e > from && e <= to) out.push({ key: t.id + ":free", date: e, what: "free", other: other,
         text: me.name + " could stop paying tribute to " + nm(other) + ".", ask: "Throw off its overlordship?", yes: "Break free", no: "Keep paying",
         veto: { kind: "veto", pid: pid, other: other, date: Math.round(e * 12) / 12, year: t.end, month: when(e).month, what: "free", a: pid, b: other, about: "free" } });
     }
@@ -175,7 +175,8 @@ function decisions(world, pid, from, to) {
     }
     if (t.kind === "alliance" && s > from && s <= to && !t.coalition) out.push({ key: t.id + ":alliance:" + t.start + ":" + other, date: s, what: "alliance", other: other,
       text: me.name + " and " + nm(other) + " are about to swear an alliance.", ask: "Swear it?", yes: "Swear it", no: "Refuse", veto: refuse(t, "alliance", s, "alliance") });
-    if (t.kind === "war" && t.peaceBy === "clock" && e != null && e > from && e <= to) out.push({ key: t.id + ":peace:" + t.end + ":" + other, date: e, what: "peace", other: other,
+    /* a war ends in peace once: its key leaves out the end year, which a remade later stretch can move */
+    if (t.kind === "war" && t.peaceBy === "clock" && e != null && e > from && e <= to) out.push({ key: t.id + ":peace:" + other, date: e, what: "peace", other: other,
       text: "Envoys come to " + nameIn(me) + " with terms of peace from " + nm(other) + ".", ask: "Make peace?", yes: "Make peace", no: "Fight on", veto: refuse(t, "peace", e, "peace") });
   }
   /* folding a vassal in (core.js vassalTick): told by an entry, not a treaty */

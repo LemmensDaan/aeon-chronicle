@@ -302,10 +302,11 @@ function hatch(g, color) {
 }
 /* the spheres as soft hatching in the tribe's colour (no border), the herds between camp and
    pasture at the seasonal speeds */
-function draw(g, world, year, sx, sy, cell, date, u) {
+function draw(g, world, year, sx, sy, cell, date, u, part) {
   if (!world.square || typeof document === "undefined") return;
   const R = world.regions;
   for (const s of spheresAt(world, year)) {
+    if (part !== "herds") {
     g.save();
     g.fillStyle = hatch(g, s.p.color || "#888");
     for (const e of s.cells) {
@@ -314,13 +315,17 @@ function draw(g, world, year, sx, sy, cell, date, u) {
       g.fillRect(Math.round(sx(r.x)), Math.round(sy(r.y)), Math.ceil(cell), Math.ceil(cell));
     }
     g.restore();
-    if (date == null || s.pasture == null) continue;
+    }
+    if (part === "spheres" || date == null || s.pasture == null) continue;
     const a = R[s.camp], b = R[s.pasture], f = herdAt(world, date), t = Date.now();
-    const x = sx(a.x + 0.5 + (b.x - a.x) * f), y = sy(a.y + 0.5 + (b.y - a.y) * f), n = 6;
+    /* each beast a 2x1 body with a head and a dark outline, so the flock shows on snow or grass */
+    const x = sx(a.x + 0.5 + (b.x - a.x) * f), y = sy(a.y + 0.5 + (b.y - a.y) * f), n = 8, v = Math.max(1, u);
     for (let i = 0; i < n; i++) {
-      const ox = Math.round((((i * 37) % 7) - 3) * u + Math.sin(t / 900 + i) * u), oy = Math.round((((i * 53) % 5) - 2) * u);
-      g.fillStyle = i % 3 ? "#efe9dc" : "#7a5a3a";
-      g.fillRect(Math.round(x + ox), Math.round(y + oy), Math.max(1, u), Math.max(1, u));
+      const ox = Math.round((((i * 37) % 9) - 4) * 1.5 * v + Math.sin(t / 900 + i) * v), oy = Math.round((((i * 53) % 5) - 2) * 1.5 * v);
+      const bx = Math.round(x + ox), by = Math.round(y + oy), left = (i + Math.floor(t / 4000)) % 2;
+      g.fillStyle = "#2a1c10"; g.fillRect(bx - 1, by - 1, 2 * v + 2, v + 2); g.fillRect(left ? bx - v - 1 : bx + 2 * v - 1, by - v - 1, v + 2, v + 2);
+      g.fillStyle = i % 3 ? "#efe9dc" : "#8a6a48";
+      g.fillRect(bx, by, 2 * v, v); g.fillRect(left ? bx - v : bx + 2 * v, by - v, v, v);
     }
     if (f > 0.95) {
       /* the summer tents */

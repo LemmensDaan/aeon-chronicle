@@ -391,9 +391,15 @@ function drawBeyond(canvas, world, year) {
     ctx.globalAlpha = 1;
     ctx.font = "600 13px Georgia, serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.lineWidth = 3; ctx.strokeStyle = "rgba(20, 12, 6, 0.85)"; ctx.fillStyle = "#f3e4c4";
+    /* the names kept on the visible map: off the window's edges, clear of the top and bottom bars
+       and of the chronicle on the right */
+    const chron = typeof document !== "undefined" && document.querySelector(".ae-chronicle");
+    const cr = chron && chron.offsetParent ? chron.getBoundingClientRect() : null;
+    const right = cr && cr.width ? Math.min(vw.cssW, cr.left - 8) : vw.cssW - 8;
     for (const a of F.at) {
       if (!a) continue;
-      const px = vw.ox + a.x * s, py = vw.oy + a.y * s;
+      const half = ctx.measureText(a.name).width / 2 + 8;
+      const px = Math.max(half, Math.min(right - half, vw.ox + a.x * s)), py = Math.max(96, Math.min(vw.cssH - 80, vw.oy + a.y * s));
       ctx.strokeText(a.name, px, py); ctx.fillText(a.name, px, py);
     }
   }

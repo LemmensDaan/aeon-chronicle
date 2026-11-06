@@ -1143,12 +1143,16 @@ function draw(canvas, world, opts) {
   };
   /* the tribes' spheres, hatched in their colours, and their herds (tribes.js) */
   if (AEON.tribes && world.square && (mode === "political" || mode === "diplomacy")) {
-    AEON.tribes.draw(ctx, world, world.year, function (gx) { return X0 + gx * cell; }, function (gy) { return v.Y0 + gy * cell; }, cell, opts.date, spriteUnit(v));
+    AEON.tribes.draw(ctx, world, world.year, function (gx) { return X0 + gx * cell; }, function (gy) { return v.Y0 + gy * cell; }, cell, opts.date, spriteUnit(v), "spheres");
   }
   if (fx) fx.draw(ctx, env, "under");
   /* the months' happenings and the armies of the wars, at the seasonal speeds (months.js, campaigns.js) */
   if (war) AEON.mapfx.months(ctx, env, opts.date, "under");
   drawOverlay(ctx, world, c, v, opts, [X0]);
+  /* the herds over the towns and hills, so they are not hidden */
+  if (AEON.tribes && world.square && (mode === "political" || mode === "diplomacy") && opts.date != null) {
+    AEON.tribes.draw(ctx, world, world.year, function (gx) { return X0 + gx * cell; }, function (gy) { return v.Y0 + gy * cell; }, cell, opts.date, spriteUnit(v), "herds");
+  }
   if (war) { AEON.mapfx.months(ctx, env, opts.date, "over"); AEON.mapfx.armies(ctx, env, opts.date); }
   if (fx) fx.draw(ctx, env, "over");
   if (sea && opts.time != null) SE.sky(ctx, c, world, v, X0, spriteUnit(v), { time: opts.time });

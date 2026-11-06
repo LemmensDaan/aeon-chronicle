@@ -395,6 +395,9 @@ Each step is checked on seed 7 at 10 days/s before the next.
      square, word comes of it ("foreign-rumour").
    - Measured (seed 7, 16 squares a pack): about 3 such events per 50 years where a power presses,
      none where none does.
+   - The names stay on the visible map (inside the window, clear of the bars and the chronicle).
+   - A raid from beyond does not shake the realm's learning (logSack would; at this rate realms
+     forgot half again as often).
 7. **Tribes.** Spheres, seasonal pastures, raids, settling into land.
    **Done 2026-11-04 (a first pass; Daan: the herder peoples are tribes, in both packs).**
    - *Who* (js/tribes.js, `pack.tribal`): a herder people placed from the sketch at its seat (the
@@ -435,8 +438,8 @@ Each step is checked on seed 7 at 10 days/s before the next.
      2 in 8 regions.
    - *Newcomers as tribes*: a herder people that the sketch brings in by migration and that
      settles arrives as a tribe, not a realm.
-   Not yet: the hatching and herds judged at full size (looked at once, seed 7 region 4,0: the
-   hatching shows faintly over snow).
+   - *On the map, checked 2026-11-06* (seed 7 region 4,0): the hatching shows; the herds, eight
+     beasts with a dark outline, are drawn over the towns and hills so they are not hidden.
 8. **The region wins** — **done 2026-11-04.**
    - *When*: leaving a chapter (to the world, to "Whole history", or to another region) after its
      playback reached the end (ui.js `writeBack`). A chapter left half-way writes nothing.

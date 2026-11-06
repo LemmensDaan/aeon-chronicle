@@ -187,10 +187,17 @@ function harbour(base, ship, light, stone, bob) {
   const q = quay(ship.w + 1 + light.w, stone), qx = base.w, qy = base.h - q.h + 1;
   return composed([[base, 0, 0], [DOT, qx + 1, qy + 2 - ship.h], [ship, qx + 1, qy + 2 - ship.h + bob], [base, 0, 0], [q, qx, qy], [light, qx + q.w - light.w, qy + 1 - light.h]], qx);
 }
-function waterSprite(kind, tier, shipKind, bob, wheel) {
+/* zoomed out, a town's or city's harbour is only a short quay, a rowboat and a small light */
+const LIGHT_XS = sprite([".k.", "kok", "kek", "kkk"], ROOF);
+function smallHarbour(base, bob) {
+  const q = quay(ROWBOAT.w + 1 + LIGHT_XS.w, false), qx = base.w, qy = base.h - q.h + 1;
+  return composed([[base, 0, 0], [DOT, qx, qy + 2 - ROWBOAT.h], [ROWBOAT, qx, qy + 2 - ROWBOAT.h + bob], [base, 0, 0], [q, qx, qy], [LIGHT_XS, qx + q.w - LIGHT_XS.w, qy + 1 - LIGHT_XS.h]], qx);
+}
+function waterSprite(kind, tier, shipKind, bob, wheel, small) {
   const B = [null, VILLAGE, TOWN, CITY][tier];
   if (kind === "sea") {
     if (tier === 1) return composed([[B, 0, 0], [DOT, 8, 2], [ROWBOAT, 8, 2 + bob]], 7);
+    if (small) return smallHarbour(B, bob);
     const ship = AEON.mapfx && AEON.mapfx.shipSprite ? AEON.mapfx.shipSprite(shipKind) : ROWBOAT;
     return tier === 2 ? harbour(B, ship, LIGHT_S, false, bob) : harbour(B, ship, LIGHT_L, true, bob);
   }
@@ -211,10 +218,10 @@ function waterSprite(kind, tier, shipKind, bob, wheel) {
   return composed([[B, 0, 0], [WALK, B.w - 1, B.h - 3], [STILT_W, B.w + 3, B.h - 9], [STILT, B.w + 10, B.h - 8], [PUNT, B.w + 16, B.h - 6], [ROWBOAT, B.w + 9, B.h]], B.w);
 }
 const WATER_SPRITES = new Map();
-function waterSpriteCached(kind, tier, shipKind, bob, wheel, left) {
-  const key = kind + tier + shipKind + bob + wheel + (left ? "L" : "R");
+function waterSpriteCached(kind, tier, shipKind, bob, wheel, left, small) {
+  const key = kind + tier + shipKind + bob + wheel + (left ? "L" : "R") + (small ? "s" : "");
   let sp = WATER_SPRITES.get(key);
-  if (!sp) { sp = waterSprite(kind, tier, shipKind, bob, wheel); if (left) sp = mirrored(sp); WATER_SPRITES.set(key, sp); }
+  if (!sp) { sp = waterSprite(kind, tier, shipKind, bob, wheel, small); if (left) sp = mirrored(sp); WATER_SPRITES.set(key, sp); }
   return sp;
 }
 /* a realm colour, darkened for the shaded side of its banner */
@@ -243,6 +250,28 @@ const WONDER_DESIGN = [
   [/temple|colonnade|bourse|charterhouse/i, "temple"],
   [/hall|basilica|cathedral|library|palace|observatory|orrery|gardens/i, "hall"],
 ];
+/* the same designs in a few pixels, for the zoomed-out map: always smaller than a city */
+const SMALL_WONDERS = {
+  ziggurat: sprite(["..kyk..", ".kkkkk.", ".kxxsk.", "kkkkkkk", "kxxbxsk", "kkkkkkk"], STONE),
+  lighthouse: sprite([".kok.", ".kkk.", ".kxk.", ".krk.", ".kxk.", "kxxsk", "kkkkk"], STONE),
+  hall: sprite(["...y...", "..kkk..", ".kxxsk.", "kkkkkkk", "kxkbkxk", "kkkkkkk"], STONE),
+  temple: sprite(["..kkk..", ".kxxxk.", "kkkkkkk", ".x.x.x.", ".x.x.x.", "kkkkkkk"], STONE),
+  colosseum: sprite([".kkkkk.", "kxkxkxk", "kxxxxsk", "kxkxkxk", "kkkkkkk"], STONE),
+  arch: sprite(["kkkkkkk", "kxxyxsk", "kxkkksk", "kxk.ksk", "kkk.kkk"], STONE),
+  colossus: sprite(["o....", "k.kk.", "kkek.", ".kek.", ".kek.", "kxxsk", "kkkkk"], STONE),
+  obelisk: sprite(["..k..", ".kyk.", ".kxk.", ".kxk.", ".kxk.", "kxxsk", "kkkkk"], STONE),
+};
+/* zoomed in far enough to show the full monuments and harbours (CSS pixels per map pixel) */
+const NEAR_PC = 6;
+/* a wonder's sprite, and the unit it is drawn at: zoomed out the small design at the map's unit;
+   zoomed in the full design, on a finer unit, so it never stands taller than the city beside it */
+function wonderLook(a, u, pc) {
+  const name = (a && a.name) || "";
+  let key = "obelisk";
+  for (const d of WONDER_DESIGN) if (d[0].test(name)) { key = d[1]; break; }
+  if (pc < NEAR_PC || u < 3) return { sp: SMALL_WONDERS[key], u: u };
+  return { sp: WONDERS[key], u: Math.max(2, Math.floor(u * 0.6)) };
+}
 function wonderSprite(a) {
   const name = (a && a.name) || "";
   for (const d of WONDER_DESIGN) if (d[0].test(name)) return WONDERS[d[1]];
@@ -997,14 +1026,14 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
       if (a.location == null || a.created > year || (a.destroyed != null && a.destroyed <= year) || seen[a.location]) continue;
       if (AEON.mapfx && AEON.mapfx.hides(a.id)) continue;      /* still rising: mapfx.js draws it */
       seen[a.location] = true;
-      const r = R[a.location], sp = wonderSprite(a);
+      const r = R[a.location], look = wonderLook(a, u, pc), sp = look.sp, wu = look.u;
       /* just right of the capital's palace on the same cell (clear of it: a marker never covers
          another), standing on the same ground line */
-      const x = Math.round(sx(r.x + 0.5) + (PALACE.w / 2 + 2) * u), y = Math.round(sy(r.y + 0.5) + 3 * u - sp.h * u);
-      const b = [x - u, y - u, x + (sp.w + 1) * u, y + (sp.h + 1) * u];
+      const x = Math.round(sx(r.x + 0.5) + (PALACE.w / 2 + 2) * u), y = Math.round(sy(r.y + 0.5) + 3 * u - sp.h * wu);
+      const b = [x - u, y - u, x + sp.w * wu + u, y + sp.h * wu + u];
       if (!free(b)) continue;
       boxes.push(b);
-      drawn.push(function (dx) { blit(ctx, sp, x + dx, y, u, null); });
+      drawn.push(function (dx) { blit(ctx, sp, x + dx, y, wu, null); });
     }
   };
   let wondersPlaced = false;
@@ -1032,7 +1061,7 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
       }
       const bob = Math.sin(time / 300 + st.r.id * 1.7) > 0.4 ? 1 : 0, wheel = Math.floor(time / 160) % 4;
       const at = function (left) {
-        const sp = waterSpriteCached(wt.kind, t3, shipKind, wt.kind === "sea" ? bob : 0, wt.kind === "mill" ? wheel : 0, left);
+        const sp = waterSpriteCached(wt.kind, t3, shipKind, wt.kind === "sea" ? bob : 0, wt.kind === "mill" ? wheel : 0, left, pc < NEAR_PC);
         /* a quay or stilts reach out from the settlement on its cell; a wheel or a bridge stands
            on the river, which runs through the cell's middle */
         const x = wt.kind === "mill" || wt.kind === "bridge" ? Math.round(cx - (sp.ax + 0.5) * u) : Math.round(cx - sp.bw * u / 2) - sp.bx * u;
@@ -1140,6 +1169,7 @@ function draw(canvas, world, opts) {
     sx: function (gx) { return X0 + gx * cell; }, sy: function (gy) { return v.Y0 + gy * cell; },
     sprites: { VILLAGE: VILLAGE, TOWN: TOWN, CITY: CITY, PALACE: PALACE, WONDER: WONDER }, blit: blit,
     wonderSprite: function (id) { return wonderSprite(baseOf(world).artifacts[id]); },
+    wonderLook: function (id) { return wonderLook(baseOf(world).artifacts[id], spriteUnit(v), v.P / v.dpr); },
   };
   /* the tribes' spheres, hatched in their colours, and their herds (tribes.js) */
   if (AEON.tribes && world.square && (mode === "political" || mode === "diplomacy")) {

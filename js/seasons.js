@@ -608,6 +608,10 @@ function sprites() {
     CAMEL: sprite(["..k....", ".kck..k", "kccckkc", "kcccck.", ".k..k.."], { k: INK, c: "#c8a060" }),
     CART: sprite(["kkkk....", "kllk.kk.", "kllkkook", ".kk.kook", ".kwk.k.k"], { k: INK, l: "#d9c08a", o: "#7a4a22", w: "#4e2f16" }),
     RIDER: sprite([".m..", ".m..", "kook", "kook", "k..k"], { k: INK, m: "#3a5a8a", o: "#6b5a4a" }),
+    /* zoomed out, a whole caravan is three beasts in a file, each with a yellow load: grey mules
+       and oxen where the land is wet, brown camels where it is dry */
+    PACK: sprite(["oy.oy.oy"], { o: "#8c8a84", y: "#e0c060" }),
+    PACK_DRY: sprite(["oy.oy.oy"], { o: "#8a6a48", y: "#e0c060" }),
     PEAK_SNOW: [null],
   };
   /* the peak whiter down its slope, a row at a time */
@@ -982,6 +986,9 @@ function life(ctx, c, w, v, X0, u, o, roads, minTier, pc) {
      elsewhere; before the snow closes their road they make for the nearer town and wait beside it */
   const snowed = function (i, s) { return snowMargin(S, i, s) > (s == null ? 0 : 0.04); };
   const crowd = [];
+  /* zoomed out (under the zoom where pixelmap.js shows full harbours and monuments, NEAR_PC) a
+     caravan is one small sprite; zoomed in, its camels, carts and riders in a file */
+  const near = pc >= 6;
   L.trails.forEach(function (tr, ri) {
     const pts = tr.pts, len = pts.length;
     const k = threat(function (s) { for (let q = 0; q < len; q += 2) if (snowed(tr.ids[q], s)) return true; return false; }, season, o.speed);
@@ -989,13 +996,13 @@ function life(ctx, c, w, v, X0, u, o, roads, minTier, pc) {
     let s = pos % (2 * len); const back = s >= len; if (back) s = 2 * len - s - 1;
     const home = s <= len / 2 ? 0 : len - 1, at = s + (home - s) * k, parked = k > 0.97;
     const dir = k > 0.02 ? (home >= s ? 1 : -1) : back ? -1 : 1;
-    for (let m = 0; m < 4; m++) {
+    for (let m = 0; m < (near ? 4 : 1); m++) {
       const sm = Math.round(at - dir * m * 4 * (1 - k * 0.6));
       if (sm < 0 || sm >= len) continue;
       const p = pts[sm], nx = pts[clamp(sm + dir, 0, len - 1)], i = tr.ids[sm];
       const ox = parked ? (m % 2) * 3 - 1 : 0, oy = parked ? Math.floor(m / 2) * 2 + 1 : 0;
       const dry = (w.regions[c.cellOf[i]].rainMm || 0) < 400;
-      crowd.push([dry ? X.CAMEL : m < 2 ? X.CART : X.RIDER, p[0] + ox, p[1] + oy + 1, dxw(p[0], nx[0], VW) < 0]);
+      crowd.push([!near ? (dry ? X.PACK_DRY : X.PACK) : dry ? X.CAMEL : m < 2 ? X.CART : X.RIDER, p[0] + ox, p[1] + oy + 1, dxw(p[0], nx[0], VW) < 0]);
     }
   });
   crowd.sort(function (a, b) { return a[2] - b[2]; });

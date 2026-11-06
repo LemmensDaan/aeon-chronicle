@@ -226,7 +226,9 @@ html .ae-app .ae-chronicle .ch-root {
 .ae-strip u { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--pp-ink, #3a2614); text-decoration: none; }
 .ae-strip-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--pp-soft, #6b4a2a); }
 /* the change-history panel in a chapter (nudges.js) */
-.ae-nudge { position: absolute; right: 12px; top: 12px; width: 280px; max-height: calc(100% - 24px); overflow: auto; z-index: 6;
+/* on the map's right, beside the chronicle and under the header and the map modes (plaques.css) */
+.ae-nudge { position: absolute; right: calc(var(--chron-w, 0px) + 2 * var(--plaque-gap, 12px) + 4px); top: calc(var(--plaque-gap, 12px) + 112px);
+  width: 280px; max-height: calc(100% - 2 * var(--plaque-gap, 12px) - 112px - 64px); overflow: auto; z-index: 8;
   background: #f3e4c4; border: 2px solid var(--pp-ink, #3a2614); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
   font-family: var(--ae-serif, Georgia, serif); color: var(--pp-ink, #3a2614); box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
 .ae-nudge-head { display: flex; justify-content: space-between; align-items: center; }
@@ -236,4 +238,7 @@ html .ae-app .ae-chronicle .ch-root {
 .ae-nudge-opts > i, .ae-nudge-made > i { font-size: 13px; font-weight: 600; font-style: normal; }
 .ae-nudge-opts .ae-btn { text-align: left; font-size: 13px; }
 .ae-nudge-made > span { font-size: 12px; }
+.ae-transport .ae-nudge-btn { white-space: nowrap; }
+/* the slider gives way first when the bar is narrow (it keeps its natural width otherwise) */
+.ae-transport .ae-scrub { min-width: 0; width: 60px; }
 .ae-stakes-go { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }

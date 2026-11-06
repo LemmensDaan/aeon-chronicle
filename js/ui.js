@@ -849,7 +849,7 @@ function buildApp() {
       onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(firstYear()); } }),
     el("button", { class: "ae-btn", text: "⏭", title: "Jump to the end",
       onclick: function () { playing = false; dom.playBtn.textContent = "▶"; setPlaybackYear(lastYear()); } }),
-    chapter && AEON.nudges ? el("button", { class: "ae-btn ae-nudge-btn", text: "Change history", title: "Change what happens to a realm, from the month shown",
+    chapter && AEON.nudges ? el("button", { class: "ae-btn ae-nudge-btn", text: "✎ Change", title: "Change history: what happens to a realm, from the month shown",
       onclick: toggleNudge }) : null);
 
   dom.chronicleHost = el("div", { class: "ae-chronicle" });

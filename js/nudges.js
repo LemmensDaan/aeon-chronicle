@@ -105,6 +105,11 @@ function apply(world, n) {
     S[p.id] = n.stance;
     p.traits.aggression = n.stance === "warlike" ? Math.max(A0[p.id], 0.85) : n.stance === "peaceful" ? Math.min(A0[p.id], 0.15) : A0[p.id];
     return;
+  } else if (n.kind === "aim") {
+    /* what its wars are for: the land, the plunder, or laying the land waste (core.js warAim) */
+    const M = world.aims || (world.aims = {});
+    if (n.aim === "own") delete M[p.id]; else M[p.id] = n.aim;
+    return;
   } else if (n.kind === "plague") {
     const r = chiefTown(world, p);
     if (!r) return;
@@ -121,6 +126,7 @@ function apply(world, n) {
 /* how much a realm the reader plays leans to war (its standing orders): a weight for its turns */
 const LEAN = { warlike: 2.5, peaceful: 0.25 };
 function warlike(world, pid) { const s = world.stances && world.stances[pid]; return (s && LEAN[s]) || 1; }
+function aimOf(world, pid) { return (world.aims && world.aims[pid]) || null; }
 /* has the reader refused this, here and now? what: "event" (a: the event's subject, ev: its id;
    in this month), "join" (a joining b's enemy b: a to war on b), "peace" or "alliance" (a and b) */
 function vetoed(world, what, a, b, ev) {
@@ -129,7 +135,7 @@ function vetoed(world, what, a, b, ev) {
   for (const n of L) {
     if (n.kind !== "veto" || n.what !== what || n.year !== world.year) continue;
     if (what === "event") { if (n.subject === a && n.ev === ev && n.month === world._month) return true; continue; }
-    if (what === "join") { if (n.a === a && n.b === b) return true; continue; }
+    if (what === "join" || what === "free" || what === "absorb") { if (n.a === a && n.b === b) return true; continue; }
     if ((n.a === a && n.b === b) || (n.a === b && n.b === a)) return true;
   }
   return false;
@@ -149,6 +155,17 @@ function decisions(world, pid, from, to) {
   };
   for (const t of world.treaties || []) {
     if (t.a !== pid && t.b !== pid) continue;
+    {
+      const other = t.a === pid ? t.b : t.a, s = t.startDate != null ? t.startDate : t.start, e = t.endDate != null ? t.endDate : t.end;
+      if (t.kind === "marriage" && t.src && s > from && s <= to) out.push({ key: t.id + ":marriage:" + t.start + ":" + other, date: s, what: "marriage", other: other,
+        text: "The ruling houses of " + nameIn(me) + " and " + nm(other) + " are about to be joined by a marriage.", ask: "Agree to the marriage?", yes: "Agree", no: "Refuse", veto: refuse(t, "marriage", s, "marriage") });
+      if (t.kind === "tribute" && t.src && s > from && s <= to) out.push(t.a === pid
+        ? { key: t.id + ":submit:" + t.start + ":" + other, date: s, what: "submit", other: other, text: me.name + " is about to bow to " + nm(other) + " and pay it tribute as its vassal.", ask: "Submit?", yes: "Submit", no: "Refuse", veto: refuse(t, "submit", s, "submit") }
+        : { key: t.id + ":vassal:" + t.start + ":" + other, date: s, what: "vassal", other: other, text: me.name + " is about to take " + nm(other) + " as its vassal.", ask: "Take the vassal?", yes: "Take it", no: "Let it be", veto: refuse(t, "vassal", s, "vassal") });
+      if (t.kind === "tribute" && t.a === pid && t.ended === "revolt" && e != null && e > from && e <= to) out.push({ key: t.id + ":free:" + t.end, date: e, what: "free", other: other,
+        text: me.name + " could stop paying tribute to " + nm(other) + ".", ask: "Throw off its overlordship?", yes: "Break free", no: "Keep paying",
+        veto: { kind: "veto", pid: pid, other: other, date: Math.round(e * 12) / 12, year: t.end, month: when(e).month, what: "free", a: pid, b: other, about: "free" } });
+    }
     const other = t.a === pid ? t.b : t.a, s = t.startDate != null ? t.startDate : t.start, e = t.endDate != null ? t.endDate : t.end;
     if (t.kind === "war" && t.a === pid && s > from && s <= to && !t.levy && !t.coalition) {
       if (!t.joined && t.src) out.push({ key: t.id + ":war:" + t.start + ":" + other, date: s, what: "war", other: other,
@@ -160,6 +177,13 @@ function decisions(world, pid, from, to) {
       text: me.name + " and " + nm(other) + " are about to swear an alliance.", ask: "Swear it?", yes: "Swear it", no: "Refuse", veto: refuse(t, "alliance", s, "alliance") });
     if (t.kind === "war" && t.peaceBy === "clock" && e != null && e > from && e <= to) out.push({ key: t.id + ":peace:" + t.end + ":" + other, date: e, what: "peace", other: other,
       text: "Envoys come to " + nameIn(me) + " with terms of peace from " + nm(other) + ".", ask: "Make peace?", yes: "Make peace", no: "Fight on", veto: refuse(t, "peace", e, "peace") });
+  }
+  /* folding a vassal in (core.js vassalTick): told by an entry, not a treaty */
+  for (const e of world._typeIndex && world._typeIndex["vassal-absorbed"] || []) {
+    const d = e.date != null ? e.date : e.year, v = e.actors[1] && e.actors[1].id;
+    if (!e.actors[0] || e.actors[0].id !== pid || d <= from || d > to) continue;
+    out.push({ key: e.id + ":absorb", date: d, what: "absorb", other: v, text: me.name + " could fold its vassal " + nm(v) + " into its own realm.", ask: "Fold it in?", yes: "Fold it in", no: "Leave it a vassal",
+      veto: { kind: "veto", pid: pid, other: v, date: Math.round(d * 12) / 12, year: e.year, month: when(d).month, what: "absorb", a: pid, b: v, about: "absorb" } });
   }
   return out.sort(function (x, y) { return x.date - y.date; });
 }
@@ -196,5 +220,5 @@ function options(world, pid, date) {
   return out;
 }
 
-AEON.nudges = { make: make, when: when, attach: attach, due: due, apply: apply, options: options, warlike: warlike, vetoed: vetoed, decisions: decisions };
+AEON.nudges = { make: make, when: when, attach: attach, due: due, apply: apply, options: options, warlike: warlike, aimOf: aimOf, vetoed: vetoed, decisions: decisions };
 })();

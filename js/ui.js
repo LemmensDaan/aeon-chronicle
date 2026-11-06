@@ -284,14 +284,17 @@ function nudgesHere() {
    alliance. Yes lets history run on; no refuses it, and the region is made again from that
    month without it. The realm played and the decisions answered are kept with the square. */
 const STANCES = { warlike: "Warlike", own: "As its rulers would", peaceful: "Peaceful" };
+/* what its wars are for (core.js warAim): the land, the plunder, or laying the land waste */
+const AIMS = { conquer: "Taking land", plunder: "Plunder", raze: "Laying waste", own: "As its generals judge" };
 let decidedTo = -Infinity;
 function playerHere() { const id = world.square && world.square.id; return (id && planet._play && planet._play[id]) || null; }
 function decidedHere() { const id = world.square.id, D = planet._decided || (planet._decided = {}); return D[id] || (D[id] = []); }
-function stanceAt(pid, date) {
+function orderAt(kind, field, pid, date) {
   let st = "own";
-  for (const n of nudgesHere()) if (n.kind === "stance" && n.pid === pid && n.date <= date + 1e-6) st = n.stance;
+  for (const n of nudgesHere().slice().sort(function (a, b) { return a.date - b.date; })) if (n.kind === kind && n.pid === pid && n.date <= date + 1e-6) st = n[field];
   return st;
 }
+function stanceAt(pid, date) { return orderAt("stance", "stance", pid, date); }
 function playSection(p, date) {
   const mine = playerHere() === p.id;
   if (!mine) return el("button", { class: "ae-btn primary", text: "Play this realm", title: "Give it standing orders, and decide its wars, peaces and alliances as they come",
@@ -302,6 +305,12 @@ function playSection(p, date) {
     el("div", { class: "ae-play-orders" }, Object.keys(STANCES).map(function (k) {
       return el("button", { class: "ae-btn" + (k === cur ? " on" : ""), text: STANCES[k], disabled: k === cur,
         onclick: function () { makeNudge({ kind: "stance", pid: p.id, stance: k, date: Math.round(date * 12) / 12, year: AEON.nudges.when(date).year, month: AEON.nudges.when(date).month }); } });
+    })),
+    el("span", { text: "Its wars are for:" }),
+    el("div", { class: "ae-play-orders" }, Object.keys(AIMS).map(function (k) {
+      const now = orderAt("aim", "aim", p.id, date);
+      return el("button", { class: "ae-btn" + (k === now ? " on" : ""), text: AIMS[k], disabled: k === now,
+        onclick: function () { makeNudge({ kind: "aim", pid: p.id, aim: k, date: Math.round(date * 12) / 12, year: AEON.nudges.when(date).year, month: AEON.nudges.when(date).month }); } });
     })),
     el("button", { class: "ae-btn", text: "Stop playing", onclick: function () { delete planet._play[world.square.id]; saveWrites(); renderNudge(); } }));
 }
@@ -377,7 +386,9 @@ function nudgeLabel(n, p) {
   return { "ruler-dies": "the ruler of " + name + " died", war: name + " went to war with " + other, peace: name + " made peace with " + other,
     revolt: "a revolt in " + name, plague: "plague in " + name,
     stance: name + " given orders: " + String(STANCES[n.stance] || n.stance).toLowerCase(),
-    veto: name + " refused " + ({ war: "to go to war", join: "an ally's call to war", peace: "peace", alliance: "an alliance" }[n.about] || "a decision") + (o ? " (" + other + ")" : "") }[n.kind] || n.kind;
+    aim: name + "'s wars made for " + String(AIMS[n.aim] || n.aim).toLowerCase(),
+    veto: name + " refused " + ({ war: "to go to war", join: "an ally's call to war", peace: "peace", alliance: "an alliance", marriage: "a marriage", submit: "to submit",
+      vassal: "a vassal", free: "to break free", absorb: "to fold in its vassal" }[n.about] || "a decision") + (o ? " (" + other + ")" : "") }[n.kind] || n.kind;
 }
 /* make the region again with the changes, and come back to the month shown */
 function remake(date) {

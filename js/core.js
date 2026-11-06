@@ -694,7 +694,10 @@ AEON.warAim = function (world, att, def, opts) {
     plunder: 0.35 * pl * (0.4 + t.aggression) * early * (opts.plunder == null ? 1 : opts.plunder),
     raze: 0.08 * pl * pl * (0.3 + t.aggression) * (opts.raze == null ? 1 : opts.raze),
   };
-  return world.rng.weighted(["conquer", "plunder", "raze"], function (x) { return w[x]; });
+  const aim = world.rng.weighted(["conquer", "plunder", "raze"], function (x) { return w[x]; });
+  /* a realm the reader plays fights for the aim it was given, where the war allows it (nudges.js) */
+  const set = AEON.nudges && AEON.nudges.aimOf(world, att.id);
+  return set && w[set] > 0 ? set : aim;
 };
 AEON.logSack = logSack;
 function logSack(world, region, att, kind) {
@@ -1597,7 +1600,8 @@ function vassalTick(world) {
     for (const x of openList(world)) if (x.end == null && x.kind === "war" && (x.a === l.id || x.b === l.id)) lordWars++;
     const lordOver = overreach(world, l);
     if (((world.year - t.start >= 20 && AEON.fieldArmy(world, v) >= 0.8 * AEON.fieldArmy(world, l)) || lordWars >= 2 ||
-         (lordOver > 1 && world.year - t.start >= 20 && rng.chance(0.15 * (lordOver - 1)))) && rng.chance(chanceTick(world, 0.2))) {
+         (lordOver > 1 && world.year - t.start >= 20 && rng.chance(0.15 * (lordOver - 1)))) && rng.chance(chanceTick(world, 0.2)) &&
+        !(AEON.nudges && AEON.nudges.vetoed(world, "free", v.id, l.id))) {
       AEON.endTreaty(world, t, "revolt");
       AEON.remember(world, l, v, -0.4, "threw off its overlordship");
       const war = rng.chance(0.5);
@@ -1609,7 +1613,8 @@ function vassalTick(world) {
       if (war) joinWar(world, l, v, { joined: false, cause: "the defection of " + nameOf(v) });
       continue;
     }
-    if (world.year - t.start >= (world.vassalYears || 30) && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && lordOver < 1 && rng.chance(chanceTick(world, (over ? 0.25 : 0.06) * (1 - lordOver) * (world.absorbRate || 1)))) {
+    if (world.year - t.start >= (world.vassalYears || 30) && v.regions.length * 3 <= l.regions.length && (l.relations[v.id] || 0) > -0.3 && lordOver < 1 && rng.chance(chanceTick(world, (over ? 0.25 : 0.06) * (1 - lordOver) * (world.absorbRate || 1))) &&
+        !(AEON.nudges && AEON.nudges.vetoed(world, "absorb", l.id, v.id))) {
       const n = provincesIn(world, v), cap = world.regions[v.capital], seat = cap && (cap.settlement ? cap.settlement.name : cap.name);
       recordEvent(world, "vassal-absorbed", { importance: 4, tags: ["vassal", "annexation", "territory", "fall", "diplomacy"],
         actors: [{ kind: "polity", id: l.id }, { kind: "polity", id: v.id }], regionId: v.capital,

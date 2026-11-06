@@ -492,8 +492,18 @@ Each step is checked on seed 7 at 10 days/s before the next.
      less; mostly peace.
    - Kept with the square (planet._play, planet._decided) and saved; histories without changes
      are exactly as before (checked).
-   Not yet: decisions on marriages and vassals; choosing a war's aims; the realm played over
-   several chapters at once.
+   - *More decisions* (2026-11-06): a marriage, bowing to another realm as its vassal, taking a
+     vassal (each when an event makes it), breaking free of a lord and folding a vassal in (core.js
+     vassalTick). Each refused the same way; checked that a refused one no longer happens.
+   - *War aims*: a standing order, what its wars are for: taking land, plunder, laying waste, or
+     as its generals judge. core.js `AEON.warAim` returns the aim given where the war allows it
+     (the dice are still thrown, so all else stays the same). Historical, the strongest realm of
+     each of 6 chapters, warlike: no plundering or razing as its generals judge; 9 towns plundered
+     for plunder, 6 razed for laying waste.
+   - *Over several chapters*: the realm played is kept with the square, so it is played in each
+     of the square's chapters where it lives; its orders hold from the month they were given on,
+     into later chapters too.
+   - Chapters open at 10 days a second (Daan, 2026-11-06).
 
 ## Open questions
 

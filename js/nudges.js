@@ -97,6 +97,14 @@ function apply(world, n) {
       break;
     }
     if (!done) rec("nudge-unrest", 2, ["unrest"], "Unrest swept " + nameIn(p) + ", but no rising came of it.");
+  } else if (n.kind === "stance") {
+    /* standing orders for a realm the reader plays: its temper moves with them (the engine's own
+       choices read it), and war weighs more or less in its turns (core.js fireOne) */
+    const S = world.stances || (world.stances = {}), A0 = world.stanceAggr || (world.stanceAggr = {});
+    if (A0[p.id] == null) A0[p.id] = p.traits.aggression;
+    S[p.id] = n.stance;
+    p.traits.aggression = n.stance === "warlike" ? Math.max(A0[p.id], 0.85) : n.stance === "peaceful" ? Math.min(A0[p.id], 0.15) : A0[p.id];
+    return;
   } else if (n.kind === "plague") {
     const r = chiefTown(world, p);
     if (!r) return;
@@ -108,6 +116,52 @@ function apply(world, n) {
     e.nudge = true;
     if (e.tags.indexOf("nudge") < 0) e.tags.push("nudge");
   }
+}
+
+/* how much a realm the reader plays leans to war (its standing orders): a weight for its turns */
+const LEAN = { warlike: 2.5, peaceful: 0.25 };
+function warlike(world, pid) { const s = world.stances && world.stances[pid]; return (s && LEAN[s]) || 1; }
+/* has the reader refused this, here and now? what: "event" (a: the event's subject, ev: its id;
+   in this month), "join" (a joining b's enemy b: a to war on b), "peace" or "alliance" (a and b) */
+function vetoed(world, what, a, b, ev) {
+  const L = world._nudges;
+  if (!L || !L.length) return false;
+  for (const n of L) {
+    if (n.kind !== "veto" || n.what !== what || n.year !== world.year) continue;
+    if (what === "event") { if (n.subject === a && n.ev === ev && n.month === world._month) return true; continue; }
+    if (what === "join") { if (n.a === a && n.b === b) return true; continue; }
+    if ((n.a === a && n.b === b) || (n.a === b && n.b === a)) return true;
+  }
+  return false;
+}
+
+/* The decisions of a realm the reader plays, in the history as worked out, between two dates:
+   going to war, answering an ally's call, making peace, swearing an alliance. Each with the
+   refusal that would undo it: [{ key, date, what, other, text, ask, yes, no, veto }] */
+function decisions(world, pid, from, to) {
+  const out = [], P = world.polities, me = P[pid];
+  if (!me) return out;
+  const nm = function (id) { const q = P[id]; return q ? nameIn(q) : "a neighbour"; };
+  const refuse = function (t, what, date, extra) {
+    const w = when(date), base = { kind: "veto", pid: pid, other: t.a === pid ? t.b : t.a, date: Math.round(date * 12) / 12, year: what === "peace" ? t.end : t.start, month: w.month };
+    if (t.src && what !== "peace" && what !== "join") return Object.assign(base, { what: "event", ev: t.src.ev, subject: t.src.subject, month: t.src.month, about: extra });
+    return Object.assign(base, { what: what, a: what === "join" ? pid : t.a, b: what === "join" ? (t.a === pid ? t.b : t.a) : t.b, about: extra });
+  };
+  for (const t of world.treaties || []) {
+    if (t.a !== pid && t.b !== pid) continue;
+    const other = t.a === pid ? t.b : t.a, s = t.startDate != null ? t.startDate : t.start, e = t.endDate != null ? t.endDate : t.end;
+    if (t.kind === "war" && t.a === pid && s > from && s <= to && !t.levy && !t.coalition) {
+      if (!t.joined && t.src) out.push({ key: t.id + ":war:" + t.start + ":" + other, date: s, what: "war", other: other,
+        text: me.name + " is about to go to war with " + nm(other) + (t.cause ? ", over " + t.cause : "") + ".", ask: "Go to war?", yes: "Go to war", no: "Keep the peace", veto: refuse(t, "war", s, "war") });
+      else if (t.joined) out.push({ key: t.id + ":join:" + t.start + ":" + other, date: s, what: "join", other: other,
+        text: me.name + " is called to war against " + nm(other) + (t.cause ? ", by " + t.cause.replace(/^the call of /, "") : "") + ".", ask: "Answer the call?", yes: "March", no: "Stay out", veto: refuse(t, "join", s, "join") });
+    }
+    if (t.kind === "alliance" && s > from && s <= to && !t.coalition) out.push({ key: t.id + ":alliance:" + t.start + ":" + other, date: s, what: "alliance", other: other,
+      text: me.name + " and " + nm(other) + " are about to swear an alliance.", ask: "Swear it?", yes: "Swear it", no: "Refuse", veto: refuse(t, "alliance", s, "alliance") });
+    if (t.kind === "war" && t.peaceBy === "clock" && e != null && e > from && e <= to) out.push({ key: t.id + ":peace:" + t.end + ":" + other, date: e, what: "peace", other: other,
+      text: "Envoys come to " + nameIn(me) + " with terms of peace from " + nm(other) + ".", ask: "Make peace?", yes: "Make peace", no: "Fight on", veto: refuse(t, "peace", e, "peace") });
+  }
+  return out.sort(function (x, y) { return x.date - y.date; });
 }
 
 /* what the reader may do to a realm at a date, read from the history's logs:
@@ -142,5 +196,5 @@ function options(world, pid, date) {
   return out;
 }
 
-AEON.nudges = { make: make, when: when, attach: attach, due: due, apply: apply, options: options };
+AEON.nudges = { make: make, when: when, attach: attach, due: due, apply: apply, options: options, warlike: warlike, vetoed: vetoed, decisions: decisions };
 })();

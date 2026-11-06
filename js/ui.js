@@ -241,7 +241,7 @@ function writeBack() {
    again when the world is opened (in the order of their years, as they were made) */
 function writesKey() { return "aeon.writes." + planet.packId + "." + planet.seed; }
 function saveWrites() {
-  try { localStorage.setItem(writesKey(), JSON.stringify({ writes: planet.sketch.writes || [], seen: planet._seen || [], nudges: planet._nudges || {} })); } catch (e) {}
+  try { localStorage.setItem(writesKey(), JSON.stringify({ writes: planet.sketch.writes || [], seen: planet._seen || [], nudges: planet._nudges || {}, play: planet._play || {}, decided: planet._decided || {} })); } catch (e) {}
 }
 function loadWrites() {
   let saved = null;
@@ -249,6 +249,8 @@ function loadWrites() {
   if (!saved) return;
   planet._seen = saved.seen || [];
   planet._nudges = saved.nudges || {};
+  planet._play = saved.play || {};
+  planet._decided = saved.decided || {};
   try { for (const w of (saved.writes || []).slice().sort(function (a, b) { return a.year - b.year; })) AEON.rewriteSketch(planet, w); }
   catch (e) { console.error("[aeon] the saved write-backs could not be made again", e); AEON.makeSketch(planet); }
 }
@@ -256,7 +258,7 @@ function loadWrites() {
 function forgetWrites() {
   if (!confirm("Forget the chapters you watched and the changes you made? The world goes back to its own history.")) return;
   try { localStorage.removeItem(writesKey()); } catch (e) {}
-  planet._seen = []; planet._nudges = {};
+  planet._seen = []; planet._nudges = {}; planet._play = {}; planet._decided = {};
   AEON.makeSketch(planet);
   regionCache = {};
   showPlanet(playbackYear, "world");
@@ -273,6 +275,66 @@ function nudgesHere() {
   const id = world.square && world.square.id;
   return id ? ((planet._nudges || (planet._nudges = {}))[id] || (planet._nudges[id] = [])) : [];
 }
+/* Playing a realm (step 9b): its standing orders (a change like any other, kind "stance": they
+   move its temper and how much war weighs in its turns), and a stop at each of its big decisions
+   (nudges.js decisions): going to war, answering an ally's call, making peace, swearing an
+   alliance. Yes lets history run on; no refuses it, and the region is made again from that
+   month without it. The realm played and the decisions answered are kept with the square. */
+const STANCES = { warlike: "Warlike", own: "As its rulers would", peaceful: "Peaceful" };
+let decidedTo = -Infinity;
+function playerHere() { const id = world.square && world.square.id; return (id && planet._play && planet._play[id]) || null; }
+function decidedHere() { const id = world.square.id, D = planet._decided || (planet._decided = {}); return D[id] || (D[id] = []); }
+function stanceAt(pid, date) {
+  let st = "own";
+  for (const n of nudgesHere()) if (n.kind === "stance" && n.pid === pid && n.date <= date + 1e-6) st = n.stance;
+  return st;
+}
+function playSection(p, date) {
+  const mine = playerHere() === p.id;
+  if (!mine) return el("button", { class: "ae-btn primary", text: "Play this realm", title: "Give it standing orders, and decide its wars, peaces and alliances as they come",
+    onclick: function () { (planet._play || (planet._play = {}))[world.square.id] = p.id; saveWrites(); decidedTo = viewTime(); followRealm(p.id); renderNudge(); } });
+  const cur = stanceAt(p.id, date);
+  return el("div", { class: "ae-play" },
+    el("span", { text: "You play " + p.name + ". Its orders:" }),
+    el("div", { class: "ae-play-orders" }, Object.keys(STANCES).map(function (k) {
+      return el("button", { class: "ae-btn" + (k === cur ? " on" : ""), text: STANCES[k], disabled: k === cur,
+        onclick: function () { makeNudge({ kind: "stance", pid: p.id, stance: k, date: Math.round(date * 12) / 12, year: AEON.nudges.when(date).year, month: AEON.nudges.when(date).month }); } });
+    })),
+    el("button", { class: "ae-btn", text: "Stop playing", onclick: function () { delete planet._play[world.square.id]; saveWrites(); renderNudge(); } }));
+}
+/* while playing: the next decision of the realm played that the playback has reached */
+function checkDecisions() {
+  const pid = playerHere();
+  if (!chapter || !pid || simulating || !AEON.nudges) return false;
+  const now = playbackYear + playOwed;
+  if (now <= decidedTo) return false;
+  const done = decidedHere(), ds = AEON.nudges.decisions(world, pid, decidedTo, now).filter(function (d) { return done.indexOf(d.key) < 0; });
+  /* just short of the decision: others on the same date come next (an answered one is in done) */
+  decidedTo = ds.length ? ds[0].date - 1e-6 : now;
+  if (!ds.length) return false;
+  playing = false; dom.playBtn.textContent = "▶";
+  showDecision(ds[0]);
+  drawMap();
+  return true;
+}
+function showDecision(d) {
+  if (dom.decision) dom.decision.remove();
+  const pk = world.pack, month = seasonName(((d.date % 1) + 1) % 1);
+  const close = function () { if (dom.decision) { dom.decision.remove(); dom.decision = null; } };
+  dom.decision = el("div", { class: "ae-stakes ae-decision" },
+    el("i", { text: "A decision, " + month + " " + pk.yearLabel(Math.floor(d.date)) }),
+    el("b", { text: d.ask }),
+    el("p", { text: d.text }),
+    el("div", { class: "ae-stakes-go" },
+      el("button", { class: "ae-btn primary", text: d.yes, onclick: function () { decidedHere().push(d.key); saveWrites(); close(); if (!playing) togglePlay(); } }),
+      el("button", { class: "ae-btn", text: d.no, onclick: function () {
+        decidedHere().push(d.key); close();
+        nudgesHere().push(d.veto);
+        remake(d.date);
+      } })));
+  dom.mapWrap.appendChild(dom.decision);
+}
+
 function toggleNudge() {
   if (dom.nudge) { dom.nudge.remove(); dom.nudge = null; return; }
   if (playing) togglePlay();
@@ -284,10 +346,11 @@ function toggleNudge() {
 function renderNudge() {
   const P = dom.nudge;
   if (!P) return;
-  const pk = world.pack, date = viewTime(), pid = realmAt(selectedRegion), p = pid && world.polities[pid];
+  /* the realm picked on the map, else the one played */
+  const pk = world.pack, date = viewTime(), pid = realmAt(selectedRegion) || playerHere(), p = pid && world.polities[pid];
   const month = SEASON_NAMES && playSpeed <= SEASON_SPEED ? seasonName(((date % 1) + 1) % 1) + " " : "";
   const opts = p && !simulating ? AEON.nudges.options(world, pid, date) : [];
-  const mine = nudgesHere().filter(function (n) { return n.date >= chapter.from - 1 && n.date <= chapter.to; });
+  const mine = nudgesHere().filter(function (n) { return n.date >= chapter.from - 1 && n.date <= chapter.to; }).sort(function (a, b) { return a.date - b.date; });
   P.replaceChildren.apply(P, [
     el("div", { class: "ae-nudge-head" },
       el("b", { text: "Change history" }),
@@ -297,6 +360,7 @@ function renderNudge() {
       : !p ? el("p", { text: "Click a realm on the map to choose what happens to it." })
       : el("div", { class: "ae-nudge-opts" },
           el("i", { text: p.name }),
+          playSection(p, date),
           opts.length ? opts.map(function (o) {
             return el("button", { class: "ae-btn", text: o.label, onclick: function () { makeNudge(AEON.nudges.make(o.kind, pid, o.other, date)); } });
           }) : el("span", { text: "It holds no land in this month." })),
@@ -306,9 +370,11 @@ function renderNudge() {
       el("button", { class: "ae-btn", text: "Undo the last change", onclick: undoNudge })) : null].filter(Boolean));
 }
 function nudgeLabel(n, p) {
-  const name = p ? p.name : "a realm", o = n.other && world.polities[n.other], other = o ? o.name.replace(/^The /, "the ") : "a neighbour";
+  const name = p ? p.name : "a realm", oid = n.other || (n.kind === "veto" ? (n.a === n.pid ? n.b : n.a) : null), o = oid && world.polities[oid], other = o ? o.name.replace(/^The /, "the ") : "a neighbour";
   return { "ruler-dies": "the ruler of " + name + " died", war: name + " went to war with " + other, peace: name + " made peace with " + other,
-    revolt: "a revolt in " + name, plague: "plague in " + name }[n.kind] || n.kind;
+    revolt: "a revolt in " + name, plague: "plague in " + name,
+    stance: name + " given orders: " + String(STANCES[n.stance] || n.stance).toLowerCase(),
+    veto: name + " refused " + ({ war: "to go to war", join: "an ally's call to war", peace: "peace", alliance: "an alliance" }[n.about] || "a decision") + (o ? " (" + other + ")" : "") }[n.kind] || n.kind;
 }
 /* make the region again with the changes, and come back to the month shown */
 function remake(date) {
@@ -388,11 +454,13 @@ function simulateAll(to) {
 
 function onSimulationComplete() {
   buildChronicle();
+  if (chapter && playerHere() && world.polities[playerHere()]) followRealm(playerHere());
   setPlaybackYear(playbackYear || world.startYear);
   /* back where the reader made a change, to the month */
   if (resumeAt != null) {
     setPlaybackYear(Math.floor(resumeAt));
     playOwed = resumeAt - Math.floor(resumeAt);
+    decidedTo = resumeAt;
     resumeAt = null;
     drawMap();
     if (dom.nudge) renderNudge();
@@ -490,7 +558,7 @@ function countAliveAt(year) {
    moment straight away (mapfx.js) */
 function setPlaybackYear(y, how) {
   playbackYear = Math.max(firstYear(), Math.min(lastYear(), y));
-  if (how !== "play") playOwed = 0;
+  if (how !== "play") { playOwed = 0; decidedTo = playbackYear; }
   const fx = AEON.mapfx && !simulating && !onPlanet() && ambientOn() ? AEON.mapfx : null;
   if (fx) {
     if (how === "play") { if (playSpeed > SEASON_SPEED) collectTo(playbackYear); }
@@ -654,6 +722,7 @@ function loop(now) {
     setPlaybackYear(playbackYear + ticks * world.timeStep, "play");
   } else { drawMap(); seasonStatus(); }                    /* the animations still move */
   if (playSpeed <= SEASON_SPEED) collectTo(viewTime());
+  if (checkDecisions()) return;
   if (playbackYear >= lastYear()) { playing = false; dom.playBtn.textContent = "▶"; drawMap(); runFx(); return; }
   rafId = requestAnimationFrame(loop);
 }

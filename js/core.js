@@ -1124,6 +1124,7 @@ AEON.treaty = function (world, kind, a, b, extra) {
     if (pact) { AEON.endTreaty(world, pact, "betrayed"); AEON.remember(world, b, a, -0.5, "betrayed their alliance"); betrayalNote(world, a, b); }
   }
   const t = { id: "t" + world._ids.treaty, kind: kind, a: a.id, b: b.id, start: world.year, end: null, ended: null, ev: world.chronicle.length };
+  if (world._firing) t.src = { ev: world._firing.ev, subject: world._firing.subject, month: world._firing.month };
   if (extra) for (const k in extra) t[k] = extra[k];
   (world.treaties || (world.treaties = [])).push(t);
   openList(world).push(t);
@@ -1263,12 +1264,16 @@ function warClock(world) {
     if (!a || !b || a.ended || b.ended) { AEON.endTreaty(world, t, "fall"); continue; }
     const years = world.year - (t.startDate != null ? t.startDate : t.start), sc = AEON.warScore(world, t);
     const lead = t.leader && (world.treaties || []).filter(function (x) { return x.id === t.leader; })[0];
-    const chance = years >= 8 || (lead && lead.end != null) ? 1 : 0.3 + 0.6 * Math.abs(sc) + (years >= 4 ? 0.35 : 0);
+    let chance = years >= 8 || (lead && lead.end != null) ? 1 : 0.3 + 0.6 * Math.abs(sc) + (years >= 4 ? 0.35 : 0);
+    /* a realm the reader plays: a warlike one is slower to make peace, a peaceful one quicker */
+    if (AEON.nudges && world._nudges && world._nudges.length) chance = Math.min(1, chance / Math.sqrt(AEON.nudges.warlike(world, a.id) * AEON.nudges.warlike(world, b.id)));
     if (!rng.chance(chanceTick(world, chance))) continue;
+    if (AEON.nudges && AEON.nudges.vetoed(world, "peace", a.id, b.id)) continue;
     concludePeace(world, t, sc);
   }
 }
 function concludePeace(world, t, sc) {
+  t.peaceBy = "clock";                                   /* a peace the reader may refuse (nudges.js) */
   t.score = Math.round(sc * 100) / 100;                  /* for the war's page: + favours side a */
   const a = world.polities[t.a], b = world.polities[t.b];
   const id = world.pack.peaceEvent || "peace-treaty";
@@ -1451,7 +1456,7 @@ function callToArms(world, t, att, def) {
   }
   /* and a lord defends its vassal, being paid to */
   const lord = AEON.lordOf(world, def);
-  if (lord && lord !== att && !AEON.treatyBetween(world, lord, att, "alliance") && world.rng.chance(0.8)) {
+  if (lord && lord !== att && !AEON.treatyBetween(world, lord, att, "alliance") && world.rng.chance(0.8) && !(AEON.nudges && AEON.nudges.vetoed(world, "join", lord.id, att.id))) {
     joinWar(world, lord, att, { leader: t.id, cause: "the defence of " + nameOf(def) });
     recordEvent(world, "lord-defends", { importance: 2, tags: ["war", "vassal", "diplomacy"],
       actors: [{ kind: "polity", id: lord.id }, { kind: "polity", id: def.id }, { kind: "polity", id: att.id }], regionId: lord.capital,
@@ -1464,7 +1469,10 @@ function callToArms(world, t, att, def) {
     const keen = (ally.relations[def.id] || 0) - (ally.relations[att.id] || 0) + (ally.traits.aggression - 0.5) * 0.4 - (AEON.treatyBetween(world, ally, att, "truce") ? 0.3 : 0);
     /* a coalition's members stand together against the realm they allied against */
     const sworn = AEON.treatyBetween(world, ally, def, "alliance");
-    if (!bound && (keen > 0.2 || (sworn && (sworn.coalition === att.id || sworn.against === att.id)))) {
+    /* a realm the reader plays: its standing orders, and its answer when asked (nudges.js) */
+    const NU = AEON.nudges && world._nudges && world._nudges.length ? AEON.nudges : null;
+    const lean = NU ? 0.3 * Math.log2(NU.warlike(world, ally.id)) / 2 : 0, refused = NU ? NU.vetoed(world, "join", ally.id, att.id) : false;
+    if (!refused && !bound && (keen + lean > 0.2 || (sworn && (sworn.coalition === att.id || sworn.against === att.id)))) {
       joinWar(world, ally, att, { leader: t.id, cause: "the call of " + nameOf(def) });
       AEON.remember(world, def, ally, 0.2, "answered its call to arms");
       recordEvent(world, "call-to-arms", { importance: 3, tags: ["war", "alliance", "diplomacy"],
@@ -1508,6 +1516,7 @@ function allianceTick(world, alive) {
       return q !== p && q !== threat && !q.ended && (p.relations[q.id] || 0) >= 0.05 && !AEON.treatyBetween(world, p, q, "alliance") && !AEON.treatyBetween(world, p, q, "war") && !AEON.treatyBetween(world, q, threat, "alliance");
     }).sort(function (x, y) { return (p.relations[y.id] || 0) - (p.relations[x.id] || 0); })[0];
     if (!friend) continue;
+    if (AEON.nudges && AEON.nudges.vetoed(world, "alliance", p.id, friend.id)) continue;
     AEON.treaty(world, "alliance", p, friend, { against: threat.id, until: world.year + 40 + 10 * rng.int(0, 4) });
     AEON.remember(world, p, friend, 0.2, "swore a defensive alliance with it");
     recordEvent(world, "alliance", { importance: 3, tags: ["alliance", "diplomacy"],
@@ -2302,22 +2311,28 @@ function fireOne(world, scope, subject, consolidateOnly) {
 
   /* in a region, war is made in the season's months only, and the more in them (campaigns.js) */
   const CP = AEON.campaigns && AEON.campaigns.on(world) ? AEON.campaigns : null, war = CP && CP.season(world);
-  const ok = defs.filter(function (d) { return (!d.campaign || !CP || war) && eligible(world, d, ctx, subjectKey); });
+  /* the reader's refusals and standing orders for a realm they play (nudges.js) */
+  const NU = AEON.nudges && world._nudges && world._nudges.length ? AEON.nudges : null;
+  const ok = defs.filter(function (d) { return (!d.campaign || !CP || war) && eligible(world, d, ctx, subjectKey) && !(NU && NU.vetoed(world, "event", subjectKey, null, d.id)); });
   if (!ok.length) return;
+  const keen = NU && subject && subject.kind === "polity" ? NU.warlike(world, subject.obj.id) : 1;
 
   /* the year's harvest (campaigns.js) makes famine likelier or rarer, a restless province
      rebellion likelier (fastlayer.js) */
   const boost = CP ? CP.climate(world, world.year).boost : 1;
   const hk = CP ? CP.harvest(world, world.year).kind : null, hunger = hk === "failed" ? 6 : hk === "poor" ? 2 : hk === "good" ? 0.3 : 1;
   const unrest = CP && AEON.fast && ctx.polity ? 1 + 0.5 * Math.min(4, AEON.fast.restless(world, ctx.polity).length) : 1;
-  const def = world.rng.weighted(ok, function (d) { return (d.weight || 1) * (d.campaign ? boost : 1) * (d.harvest ? hunger : 1) * (d.revolt ? unrest : 1); });
+  const def = world.rng.weighted(ok, function (d) { return (d.weight || 1) * (d.campaign ? boost : 1) * (d.harvest ? hunger : 1) * (d.revolt ? unrest : 1) * (d.consolidate ? keen : 1); });
   if (!def) return;
   /* an overreached realm's conquests mostly stall */
   if (def.consolidate && world.reach && subject && subject.kind === "polity" && world.rng.chance(Math.min(0.95, 0.6 * overreach(world, subject.obj)))) return;
 
   let out = null;
+  /* what is being done, for the treaties it makes (AEON.treaty: t.src), so the reader can refuse it */
+  world._firing = { ev: def.id, subject: subjectKey, month: world._month == null ? null : world._month };
   try { out = def.run(ctx); }
-  catch (e) { console.warn("[aeon] event '" + def.id + "' threw:", e); return; }
+  catch (e) { console.warn("[aeon] event '" + def.id + "' threw:", e); world._firing = null; return; }
+  world._firing = null;
   if (!out) return;
 
   if (def.cooldown) world._cooldowns[def.id + "|" + subjectKey] = world.year;

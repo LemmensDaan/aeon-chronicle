@@ -100,6 +100,10 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   `planet._nudges[squareId]`, saved with the write-backs. A chapter keeps `chapter.snap`
   (`AEON.regionSnapshot` at chapter.from - 1, taken in simulateAll); remake restores it and plays
   on. campaigns.js `setMonth` / `endYear` apply due nudges in their month.
+  **Step 9b (2026-11-06):** playing a realm. nudges.js: kind "stance" (world.stances, warlike()),
+  kind "veto" (vetoed(): fireOne, callToArms, warClock, allianceTick), decisions(). core.js marks
+  treaties with t.src (world._firing in fireOne) and t.peaceBy. ui.js: playSection, checkDecisions
+  (in loop), showDecision; planet._play / planet._decided saved with the rest.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

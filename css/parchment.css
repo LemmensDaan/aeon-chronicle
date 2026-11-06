@@ -239,6 +239,12 @@ html .ae-app .ae-chronicle .ch-root {
 .ae-nudge-opts .ae-btn { text-align: left; font-size: 13px; }
 .ae-nudge-made > span { font-size: 12px; }
 .ae-transport .ae-nudge-btn { white-space: nowrap; }
+/* playing a realm: its orders, and a decision card (an .ae-stakes) */
+.ae-play { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+.ae-play > span { font-size: 13px; }
+.ae-play-orders { display: flex; gap: 4px; flex-wrap: wrap; }
+.ae-play-orders .ae-btn.on { background: var(--pp-red, #8e1d1d); color: #f3e4c4; opacity: 1; }
+.ae-decision > b { font-size: 16px; }
 /* the slider gives way first when the bar is narrow (it keeps its natural width otherwise) */
 .ae-transport .ae-scrub { min-width: 0; width: 60px; }
 .ae-stakes-go { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }

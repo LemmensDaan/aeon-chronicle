@@ -470,8 +470,30 @@ Each step is checked on seed 7 at 10 days/s before the next.
    chronicle (tagged "nudge"), saved with the write-backs, and made again when the region is.
    At the chapter's end the outcome is written back as in step 8. A write-back that changes
    another square's world after its year drops the changes made there after it.
-   Not yet: playing a realm (9b); more kinds of change (a marriage, an alliance, a good or bad
-   harvest).
+   Not yet: more kinds of change (a marriage, an alliance, a good or bad harvest).
+   **9b, playing a realm — done 2026-11-06** (Daan: standing orders and a stop at the biggest
+   decisions, both). In the change panel, "Play this realm"; the camera follows it, and the panel
+   opens on it.
+   - *Standing orders*: warlike, as its rulers would, peaceful. A change like any other (kind
+     "stance"), from the month given: its temper (traits.aggression) moves to 0.85 or 0.15 at
+     least / most, war events weigh 2.5 or 0.25 times in its turns (core.js fireOne), it answers
+     an ally's call more or less readily, and makes peace more slowly or quickly. Measured over 12
+     realms a pack (seed 7, three squares, a chapter each): historical wars 3 (as its rulers
+     would) / 12 (warlike) / 4 (peaceful), war-years 4 / 62 / 3; fantasy wars 5 / 4 / 1,
+     war-years 29 / 47 / 8.
+   - *Decisions*: playback stops when the realm played is about to go to war (by its own event),
+     answer an ally's call, make peace (the war's end by core.js warClock) or swear an alliance
+     (allianceTick or an event), with a card: the season and year, the question, yes or no. Yes
+     plays on; no is a refusal (kind "veto": the event in that month for that realm, the call,
+     the peace or the alliance in that year), and the region is made again from the snapshot
+     without it, back to that month. A refused peace can come again the next year. Coalitions
+     and a vassal's levies are not asked. nudges.js `decisions` reads them from the treaties
+     (`t.src`, the event that made one; `t.peaceBy`). About one decision a realm a chapter or
+     less; mostly peace.
+   - Kept with the square (planet._play, planet._decided) and saved; histories without changes
+     are exactly as before (checked).
+   Not yet: decisions on marriages and vassals; choosing a war's aims; the realm played over
+   several chapters at once.
 
 ## Open questions
 

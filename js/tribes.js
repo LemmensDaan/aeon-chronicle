@@ -191,9 +191,57 @@ function settle(world, p, why) {
     text: why + ", the " + p.adjective + " herders settled the land around " + (camp && camp.settlement ? camp.settlement.name : "their camp") +
       ": their tents became houses, their chiefs lords, and " + p.name.replace(/^The /, "the ") + " a realm with borders." });
 }
+/* Tribes gather (docs/REGION_CHAPTERS.md, step 7's sequel): a tribe grazing near a stronger tribe
+   (their camps within NEAR times their two reaches: on the same plains), at peace with it, may
+   join it, about once a century, its people and herds with its own: one
+   confederation under the stronger's chief (event "tribe-confederation"; the joined ones kept on
+   p.tribe.joined). And a realm much stronger than a tribe whose sphere reaches into its land may
+   make the tribe pay for the grazing, as its vassal (event "tribe-pasture-tribute"). */
+const JOIN = 0.01, JOIN_HOLD = 0.35, PAY = 0.02, NEAR = 1.6;
+function gather(world) {
+  const R = world.regions, C = AEON._core, rng = world.rng, tribes = living(world).sort(function (a, b) { return b.population - a.population; });
+  for (const a of tribes) {
+    if (!isTribe(a)) continue;
+    const ca = R[a.capital];
+    for (const b of tribes) {
+      if (b === a || !isTribe(b) || b.population >= a.population) continue;
+      const cb = R[b.capital];
+      if (!ca || !cb || Math.hypot(ca.x - cb.x, ca.y - cb.y) > NEAR * (a.tribe.reach + b.tribe.reach)) continue;
+      if (AEON.treatyBetween(world, a, b, "war") || !rng.chance(AEON.tickShare(world) * JOIN * 5)) continue;
+      const camp = R[b.capital], place = camp && camp.settlement ? camp.settlement.name : "the camps of the " + b.adjective;
+      a.population += b.population;
+      (a.tribe.joined || (a.tribe.joined = [])).push(b.name);
+      C.recordEvent(world, "tribe-confederation", { importance: 4, tags: ["tribe", "union", "diplomacy"],
+        actors: [{ kind: "polity", id: a.id }, { kind: "polity", id: b.id }], regionId: b.capital,
+        text: "At " + place + " the chiefs of the " + b.adjective + " herders swore to follow the chief of " + a.name.replace(/^The /, "the ") +
+          ": from then on they grazed and rode as one confederation" + (a.tribe.joined.length > 1 ? ", " + (a.tribe.joined.length + 1) + " tribes strong" : "") + "." });
+      C.endPolity(world, b, "Joined the confederation of " + a.name + " in " + world.year + ".");
+    }
+  }
+  /* a strong realm makes a tribe grazing its land pay for it */
+  for (const t of living(world)) {
+    if (AEON.lordOf(world, t)) continue;
+    const seen = {};
+    for (const e of sphere(world, t)) {
+      const o = R[e[0]].owner;
+      if (!o || o === t.id || seen[o] || e[1] < JOIN_HOLD) continue;
+      seen[o] = true;
+      const q = world.polities[o];
+      if (!q || q.ended || isTribe(q) || AEON.treatyBetween(world, q, t, "war") || AEON.lordOf(world, q) === t) continue;
+      if (AEON.fieldArmy(world, q) < 2 * AEON.fieldArmy(world, t) || !rng.chance(AEON.tickShare(world) * PAY * 5)) continue;
+      AEON.makeVassal(world, t, q, { since: "pasture" });
+      C.recordEvent(world, "tribe-pasture-tribute", { importance: 3, tags: ["tribe", "vassal", "diplomacy"],
+        actors: [{ kind: "polity", id: q.id }, { kind: "polity", id: t.id }], regionId: t.capital,
+        text: q.name + " made the " + t.adjective + " herders pay for the grazing they took in its lands, and they paid it tribute from then on, in horses and hides." });
+      break;
+    }
+  }
+}
+
 function year(world) {
   if (!on(world)) return;
   const R = world.regions;
+  gather(world);
   for (const p of living(world)) {
     const t = p.tribe;
     /* has it taken land in war, a town or a few provinces? */

@@ -833,7 +833,7 @@ function drawMap() {
     });
     if (worldMode && AEON.worldView) AEON.worldView.draw(dom.canvas, world, simulating ? world.year : playbackYear, { highlight: worldPick, pick: dom.squarePlaque && dom.squarePlaque._si, ages: mapMode === "ages" });
     if (!onPlanet() && AEON.worldView) {
-      AEON.worldView.drawBeyond(dom.canvas, world);
+      AEON.worldView.drawBeyond(dom.canvas, world, simulating ? world.year : playbackYear);
       AEON.worldView.drawArrivals(dom.canvas, world, simulating ? world.year : playbackYear);
     }
   } catch (e) {

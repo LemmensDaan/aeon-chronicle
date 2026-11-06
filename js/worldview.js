@@ -327,7 +327,7 @@ function squareLine(world, si, year) {
 
 /* a region's "beyond" band (region.js): the neighbouring land, dimmed and hatched over the map,
    with a dark rule along the square's edge */
-function drawBeyond(canvas, world) {
+function drawBeyond(canvas, world, year) {
   const vw = canvas && canvas._aeonView;
   if (!vw || !world.square) return;
   const W = world.width, H = world.height;
@@ -363,6 +363,40 @@ function drawBeyond(canvas, world) {
   ctx.drawImage(world._beyondImg, vw.ox, vw.oy, W * s, H * s);
   let x0 = W, x1 = 0, y0 = H, y1 = 0;
   for (const r of world.regions) if (!r.beyond) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x + 1); y0 = Math.min(y0, r.y); y1 = Math.max(y1, r.y + 1); }
+  /* the stronger neighbours pressing on the region (region.js AEON.regionForeign): the margin on
+     their side in their colour, with their name */
+  const fs = year != null && AEON.regionForeign ? AEON.regionForeign(world, year) : [];
+  if (fs.length) {
+    const key = fs.map(function (f) { return f.people.id + f.colour; }).join("|");
+    if (!world._foreignImg || world._foreignImg.key !== key) {
+      const cv = document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      const g = cv.getContext("2d"), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, hw = Math.max(1, (x1 - x0) / 2), hh = Math.max(1, (y1 - y0) / 2), at = [];
+      for (const f of fs) {
+        g.fillStyle = f.colour;
+        let sx = 0, sy = 0, n = 0;
+        for (const r of world.regions) {
+          if (!r.beyond) continue;
+          const sc = ((r.x + 0.5 - cx) / hw) * f.dir.x + ((r.y + 0.5 - cy) / hh) * f.dir.y;
+          if (sc < 0.9) continue;
+          g.fillRect(r.x, r.y, 1, 1); sx += r.x; sy += r.y; n++;
+        }
+        at.push(n ? { x: sx / n + 0.5, y: sy / n + 0.5, name: f.people.name } : null);
+      }
+      Object.defineProperty(world, "_foreignImg", { enumerable: false, configurable: true, writable: true, value: { key: key, cv: cv, at: at } });
+    }
+    const F = world._foreignImg;
+    ctx.globalAlpha = 0.45;
+    ctx.drawImage(F.cv, vw.ox, vw.oy, W * s, H * s);
+    ctx.globalAlpha = 1;
+    ctx.font = "600 13px Georgia, serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(20, 12, 6, 0.85)"; ctx.fillStyle = "#f3e4c4";
+    for (const a of F.at) {
+      if (!a) continue;
+      const px = vw.ox + a.x * s, py = vw.oy + a.y * s;
+      ctx.strokeText(a.name, px, py); ctx.fillText(a.name, px, py);
+    }
+  }
   ctx.strokeStyle = "#3a2614"; ctx.lineWidth = 2;
   ctx.strokeRect(vw.ox + x0 * s, vw.oy + y0 * s, (x1 - x0) * s, (y1 - y0) * s);
   ctx.restore();

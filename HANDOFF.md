@@ -104,6 +104,11 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   kind "veto" (vetoed(): fireOne, callToArms, warClock, allianceTick), decisions(). core.js marks
   treaties with t.src (world._firing in fireOne) and t.peaceBy. ui.js: playSection, checkDecisions
   (in loop), showDecision; planet._play / planet._decided saved with the rest.
+  **Last pieces (2026-11-06):** more decisions (marriage, submit, vassal, free, absorb) and war
+  aims (nudges.js kind "aim", core.js warAim); chapters open at 10 days/s; foreign powers on the
+  edge (region.js regionForeign / foreignTick, worldview.js drawBeyond); tribes confederate, pay
+  pasture tribute, and herder newcomers arrive as tribes (tribes.js gather). The feature is
+  complete; Daan tests it next.
 
 - **Repo:** this folder is a git repo, `github.com/LemmensDaan/aeon-chronicle`, branch `main`. Daan wants a
   commit and a push after every finished, verified step. (`../PLAN.md` still says chronicle is not a

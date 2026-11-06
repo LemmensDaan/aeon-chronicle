@@ -279,6 +279,107 @@ function onTick(world) {
     try { contact(world, c); } catch (e) { console.warn("[aeon] region contact failed", e); }
   }
   for (const cp of S.campaigns.slice()) campaignTick(world, cp);
+  try { foreignTick(world); } catch (e) { console.warn("[aeon] foreign powers failed", e); }
+}
+
+/* ------------------------------------------------- foreign powers -- *
+   (docs/REGION_CHAPTERS.md, "The grand scheme inside a chapter".) A neighbouring square, by land
+   or a short crossing, that the sketch has far stronger than this one at the time presses on the
+   region's edge facing it: now and then its raiders plunder the frontier, it makes the realm
+   holding that side pay it tribute, or its host crosses the border and is driven back at a cost.
+   Its people's name and colour are drawn on that side of the margin (worldview.js drawBeyond).
+   And the sketch's newcomers are heard of a year or two before they come. The draws hash the
+   year and square, so the world's random stream is not touched. */
+/* PRESS: how much stronger a neighbour must be; a pressed region hears from its neighbours at
+   most FOREIGN_MAX times a year (one of them, the stronger the likelier), FOREIGN_RATE a year for
+   each a neighbour twice its strength */
+const PRESS = 2, FOREIGN_RATE = 0.015, FOREIGN_MAX = 0.06;
+function hashF(a, b, c) {
+  let h = Math.imul((a | 0) + 0x9e37, 374761393) ^ Math.imul((b | 0) + 7, 668265263) ^ Math.imul((c | 0) + 13, 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function stepAt(sk, year) { const st = (sk.years[1] - sk.years[0]) || 100; return Math.max(0, Math.min(sk.years.length - 1, Math.floor((year - sk.years[0]) / st))); }
+function leaderOf(sk, si, year) {
+  const q = sk.squares[si];
+  return q.peoples.map(function (id) { return peopleById(sk, id); }).filter(function (p) { return p && (p.arrived == null || p.arrived <= year); })
+    .sort(function (x, y) { return (y.cells || 0) - (x.cells || 0); })[0] || null;
+}
+/* the stronger neighbours pressing on a region in a year: [{ si, people, ratio, dir, colour }] */
+AEON.regionForeign = function (world, year) {
+  const planet = world.planet, sk = planet && planet.sketch, sq = world.square;
+  if (!sk || !sq || !sk.curves) return [];
+  const si = sq.index, t = stepAt(sk, year), mine = Math.max(1, sk.curves[si].power[t]), out = [];
+  for (const l of sk.links) {
+    if (l.a !== si && l.b !== si) continue;
+    if (l.kind === "sea" && l.lane > 15) continue;
+    const o = l.a === si ? l.b : l.a;
+    if (out.some(function (f) { return f.si === o; }) || !sk.squares[o].peoples.length) continue;
+    const ratio = sk.curves[o].power[t] / mine;
+    if (ratio < PRESS) continue;
+    const people = leaderOf(sk, o, year);
+    if (!people) continue;
+    const hue = Math.floor(hashF(+people.id.slice(1) || 0, 31, 7) * 360);
+    out.push({ si: o, people: people, ratio: Math.round(ratio * 100) / 100, dir: directionTo(sk, si, o), sea: l.kind === "sea", colour: "hsl(" + hue + ", 45%, 42%)" });
+  }
+  return out;
+};
+function foreignTick(world) {
+  const C = AEON._core, sk = world.planet.sketch, S = world._sketch, si = S.si, R = world.regions;
+  /* rumours of the newcomers the sketch has coming, a year or two ahead */
+  const heard = S.heard || (S.heard = {});
+  for (let k = S.next; k < S.contacts.length; k++) {
+    const c = S.contacts[k];
+    if (c.year > world.year + 2) break;
+    const key = c.year + c.kind + c.from;
+    if (heard[key] || c.to !== sk.squares[si].id || c.from === c.to || !{ invasion: 1, migration: 1, colonisation: 1, raid: 1 }[c.kind]) continue;
+    heard[key] = true;
+    const by = peopleById(sk, c.by), fi = sk.squares.findIndex(function (q) { return q.id === c.from; });
+    if (!by || fi < 0) continue;
+    const dir = directionTo(sk, si, fi);
+    record(world, "foreign-rumour", 2, c.via === "sea" || c.kind === "colonisation" || c.kind === "raid"
+      ? "Word came over the sea from the " + dir.word + " that " + by.adjective + " ships were being made ready."
+      : "Word came from beyond the " + dir.word + " border that the " + by.adjective + " were gathering.", [], null, null);
+  }
+  const land = inner(world).filter(function (r) { return r.owner; });
+  if (!land.length) return;
+  const fs = AEON.regionForeign(world, world.year), weight = function (f) { return FOREIGN_RATE * Math.min(2, f.ratio - 1); };
+  const total = fs.reduce(function (t, f) { return t + weight(f); }, 0), roll = hashF(world.year, si, 977);
+  if (!fs.length || roll >= Math.min(FOREIGN_MAX, total)) return;
+  /* which of them: by its share of the pressure */
+  let pick = hashF(world.year, si, 983) * total, chosen = fs[fs.length - 1];
+  for (const f of fs) { pick -= weight(f); if (pick <= 0) { chosen = f; break; } }
+  for (const f of [chosen]) {
+    const fid = +f.people.id.slice(1) || 0;
+    const side = facing(world, f.dir, f.sea ? land.filter(function (r) { return coastal(world, r); }) : land, 0.08);
+    if (!side.length) continue;
+    const count = {};
+    for (const r of side) count[r.owner] = (count[r.owner] || 0) + 1;
+    const pid = Object.keys(count).sort(function (a, b) { return count[b] - count[a]; })[0], p = world.polities[pid];
+    if (!p || p.ended) continue;
+    const adj = f.people.adjective, border = f.sea ? "over the sea from the " + f.dir.word : "over the " + f.dir.word + " border";
+    const roll = hashF(world.year, fid, si + 101), A = [{ kind: "polity", id: p.id }];
+    if (roll < 0.25 && f.ratio >= 2.2) {
+      const paid = Math.max(1, Math.round(1.5 * (p.income || 1)));
+      p.treasury = Math.round((p.treasury || 0) - paid);
+      p.traits.stability = clamp(p.traits.stability - 0.03, 0, 1);
+      record(world, "foreign-tribute", 3, p.name + " paid tribute to " + f.people.name + ", whose power reached " + border.replace(/^over /, "across ") + ", to keep its raiders away.", A, p.capital, null);
+    } else if (roll < 0.4) {
+      const at = side.filter(function (r) { return r.owner === p.id; })[Math.floor(hashF(world.year, fid, 7) * side.length) % Math.max(1, side.filter(function (r) { return r.owner === p.id; }).length)] || side[0];
+      p.armyDebt = Math.round((p.armyDebt || 0) + 0.2 * AEON.armyOf(world, p));
+      record(world, "foreign-clash", 3, "A " + adj + " host came " + border + ". " + p.name + " met it near " + placeName(at, world) + " and drove it back, at a heavy cost.", A, at.id, null);
+    } else {
+      const towns = side.filter(function (r) { return r.owner === p.id && r.settlement; }).slice(0, 1 + Math.floor(hashF(world.year, fid, 11) * 2));
+      const hit = towns.length ? towns : side.filter(function (r) { return r.owner === p.id; }).slice(0, 1);
+      /* a raid from beyond leaves a realm's learning alone (logSack would shake it, and these come
+         often enough to make realms forget half again as often) */
+      const shock = [p.techShock, p.techCause, p.techCauseAt];
+      for (const r of hit) { AEON.logSack(world, r, null, "plundered"); r.population = Math.round((r.population || 0) * 0.7); }
+      p.techShock = shock[0]; p.techCause = shock[1]; p.techCauseAt = shock[2];
+      p.population = Math.max(60, Math.round(p.population * 0.99));
+      record(world, "foreign-raid", 2, adj + " raiders came " + border + " and plundered " + hit.map(function (r) { return placeName(r, world); }).join(" and ") + ", in the lands of " + nameIn(p) + ".", A, hit[0] && hit[0].id, null);
+    }
+  }
 }
 
 function record(world, type, importance, text, actors, regionId, c) {
@@ -343,7 +444,10 @@ function contact(world, c) {
   /* a share of the land people hold (and a little of the empty land round it): an early conquest
      of a thinly settled land is a small one */
   const settled = land.filter(function (r) { return r.owner; }).length;
-  const groups = spread(world, entry, Math.round(share * Math.max(settled, 0.1 * land.length)));
+  /* herders who come to settle among the people of the land come as a tribe (tribes.js): a camp
+     and the grazing round it, no land taken */
+  const tribe = c.kind === "migration" && c.outcome === "settled" && AEON.tribes && AEON.tribes.make(world, p);
+  const groups = tribe ? [] : spread(world, entry, Math.round(share * Math.max(settled, 0.1 * land.length)));
   /* TURNS are five-year turns: as many ticks as fit in them */
   const turns = Math.max(1, Math.round((TURNS[c.outcome] || 4) / AEON.tickShare(world)));
   world._sketch.campaigns.push({ c: c, people: people, p: p, entry: entry, groups: groups, cells: [].concat.apply([], groups), turns: turns,

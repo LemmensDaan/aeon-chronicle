@@ -382,8 +382,19 @@ Each step is checked on seed 7 at 10 days/s before the next.
      alliances +21%/+7%, largest realm -9%/+17%, the rest within 10% (historical/fantasy);
      compute about +3% (fastlayer). Region 4,2: 0.4-1.25 told happenings a month, a third to two
      thirds of the months quiet.
-   Not yet: regencies as engine events, foreign powers pressing on the edge (only their arrivals
-   are announced).
+   Not yet: regencies as engine events.
+   **Foreign powers on the edge — done 2026-11-06.** (region.js `AEON.regionForeign`, `foreignTick`)
+   - *Who*: a square linked to this one (by land, or by a sea lane of 15 or less) whose sketch
+     power is at least twice this square's, at that date. Its people's name and colour lie over
+     the margin on its side of the map (worldview.js `drawBeyond`).
+   - *What they do*: at most once a year, with a chance that grows with how much stronger they are
+     (6% a year at most), the realm holding the most land on their side suffers one of: raiders
+     plunder one or two of its towns ("foreign-raid"), a host comes over the border and is driven
+     back at a cost ("foreign-clash"), or it pays them tribute ("foreign-tribute", only against a
+     much stronger power). Two years before a sketch invasion, migration, colony or raid reaches the
+     square, word comes of it ("foreign-rumour").
+   - Measured (seed 7, 16 squares a pack): about 3 such events per 50 years where a power presses,
+     none where none does.
 7. **Tribes.** Spheres, seasonal pastures, raids, settling into land.
    **Done 2026-11-04 (a first pass; Daan: the herder peoples are tribes, in both packs).**
    - *Who* (js/tribes.js, `pack.tribal`): a herder people placed from the sketch at its seat (the
@@ -414,9 +425,18 @@ Each step is checked on seed 7 at 10 days/s before the next.
      driven from their camps), 4 fantasy ones (all settled within a few centuries). Seed 7: a
      tribe in 10 of its squares, most settled by 1000 BC. Over 32 regions against 6b everything
      within 8% in both packs.
-   Not yet: tribes uniting into a confederation, a realm making a tribe pay tribute for its
-   pastures, newcomers arriving as tribes; the hatching and herds have not yet been judged at full
-   size (a camp on a region's edge has half a sphere).
+   **More of the tribes — done 2026-11-06.** (tribes.js `gather`, region.js `contact`)
+   - *Confederations* ("tribe-confederation"): a smaller tribe whose camp lies near a larger one's
+     (within 1.6 times their two reaches together), not at war with it, may join it: its people
+     add to the larger tribe's and it ends. Measured: in 2 of the 6 regions where two tribes lived
+     at once.
+   - *Pasture tribute* ("tribe-pasture-tribute"): a realm that holds land deep in a tribe's sphere
+     and has twice its army may make it pay for the grazing; the tribe becomes its vassal. About
+     2 in 8 regions.
+   - *Newcomers as tribes*: a herder people that the sketch brings in by migration and that
+     settles arrives as a tribe, not a realm.
+   Not yet: the hatching and herds judged at full size (looked at once, seed 7 region 4,0: the
+   hatching shows faintly over snow).
 8. **The region wins** — **done 2026-11-04.**
    - *When*: leaving a chapter (to the world, to "Whole history", or to another region) after its
      playback reached the end (ui.js `writeBack`). A chapter left half-way writes nothing.

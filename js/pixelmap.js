@@ -46,11 +46,12 @@ const P = {
   snow: ["#c3cddb", "#e3eaf2", "#ffffff"],
 };
 /* stepped ramps for the data modes, in the parchment-and-ink family */
-/* Each data mode is one hue, light to dark, so more always reads as darker. Elevation keeps its
-   land-colour ramp. */
+/* Each data mode is one hue, light to dark, so more always reads as darker. Elevation is the
+   relief map's rainbow instead (Daan, 2026-11-06, after an elevation map of the Low Countries):
+   green lowland, yellow, orange, red uplands, pink and white peaks, at the heights ELEV_STOPS. */
 const RAMPS = {
   population:   ["#efe2bf", "#e2c493", "#d4a06e", "#c27a52", "#a5523d", "#80302a", "#581818"],
-  elevation:    ["#3f7a3a", "#7d9b4c", "#b9ab68", "#a0805a", "#7a6656", "#e8e4dc"],
+  elevation:    ["#3ddc84", "#4fd64a", "#8fe03e", "#cbe63a", "#f0e23a", "#f5c03a", "#f39a3a", "#ef6f3b", "#e84b3e", "#e5677a", "#ee93a6", "#f5c6cf", "#fcedf0"],
   habitability: ["#efe6c8", "#dfe0a8", "#bfd38a", "#93be6e", "#64a258", "#3e8044", "#245c32"],
 };
 AEON.mapRamps = RAMPS;
@@ -663,6 +664,59 @@ function buildTerrain(world) {
     const m = su / W;
     return (m < 0 ? -1 : 1) * Math.max(0.35, Math.min(1, Math.abs(m)));
   };
+  /* the world map's own clouds (drawClouds), from its climate: how wet each cell is in January
+     and in July (the generated rain over land; over the sea, the rain belts by latitude that the
+     generator uses, which follow the sun six degrees north and south), the low decks over the cold
+     water off the western coasts of the subtropics, the rising air on the windward side of the
+     mountains (and the clear lee behind them), and how warm it is, which makes the clouds heaped
+     and towering instead of layered. Not on a region's map, which is drawn too close for them. */
+  let sky = null;
+  if (!sq) {
+    const lat = function (i) { return (0.5 - (Math.floor(i / W) + 0.5) / H) * 150; };
+    const RAIN_LAT = [[0, 2.3], [8, 2.0], [15, 1.0], [25, 0.32], [35, 0.45], [45, 0.95], [58, 1.1], [70, 0.7], [90, 0.4]];
+    const pJ = gen && gen.pJan, pU = gen && gen.pJul, landP = [];
+    if (pJ && pU) for (let i = 0; i < NC; i++) if (!ocean[i]) landP.push(Math.max(pJ[i], pU[i]));
+    landP.sort(function (a, b) { return a - b; });
+    const p90 = landP.length ? Math.max(1e-6, landP[Math.floor(landP.length * 0.9)]) : 1;
+    let wetJan = new Float32Array(NC), wetJul = new Float32Array(NC);
+    const strat = new Float32Array(NC), oro = new Float32Array(NC), warm = new Float32Array(NC), su = new Float32Array(NC), sv = new Float32Array(NC);
+    for (let i = 0; i < NC; i++) {
+      const la = lat(i), x = i % W, y = (i - x) / W;
+      su[i] = windU[i] * 0.45; sv[i] = windV[i] * 0.45;
+      warm[i] = Math.max(0, Math.min(1, ((R[i].tempC != null ? R[i].tempC : 10) - 14) / 12));
+      if (ocean[i] || !(pJ && pU)) {
+        wetJan[i] = Math.min(1, tableAt(RAIN_LAT, Math.abs(la + 6)) / 2.2);
+        wetJul[i] = Math.min(1, tableAt(RAIN_LAT, Math.abs(la - 6)) / 2.2);
+      } else { wetJan[i] = Math.min(1, pJ[i] / p90); wetJul[i] = Math.min(1, pU[i] / p90); }
+      if (ocean[i]) {
+        /* cold water off a western coast in the subtropics (land close to the east): stratocumulus */
+        const deg = Math.abs(la), sub = deg < 12 || deg > 40 ? 0 : Math.min(1, Math.min(deg - 12, 40 - deg) / 6);
+        if (sub) for (let d = 1; d <= 14; d++) if (!ocean[y * W + (x + d) % W]) { strat[i] = sub * Math.exp(-(d - 1) / 5); break; }
+      } else if (gen && gen.Hm) {
+        /* the wind blowing up the slope wrings out cloud; blowing down it, clears it */
+        const h = function (xx, yy) { return gen.Hm[Math.max(0, Math.min(H - 1, yy)) * W + ((xx % W) + W) % W] || 0; };
+        const up = windU[i] * (h(x + 1, y) - h(x - 1, y)) / 2 + windV[i] * (h(x, y + 1) - h(x, y - 1)) / 2;
+        oro[i] = Math.max(-0.5, Math.min(1, up / 350));
+      }
+    }
+    /* soften the step at the coasts, where the rain over land meets the belts over the sea */
+    for (let pass = 0; pass < 2; pass++) {
+      const bj = new Float32Array(NC), bu = new Float32Array(NC);
+      for (let i = 0; i < NC; i++) {
+        const x = i % W, y = (i - x) / W;
+        let a = 0, b = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= H) continue;
+          const j = yy * W + (x + dx + W) % W;
+          a += wetJan[j]; b += wetJul[j]; n++;
+        }
+        bj[i] = a / n; bu[i] = b / n;
+      }
+      wetJan = bj; wetJul = bu;
+    }
+    sky = { W: W, H: H, u: su, v: sv, wetJan: wetJan, wetJul: wetJul, strat: strat, oro: oro, warm: warm };
+  }
   for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
     const i = y * VW + x;
     if (land[i] || lake[i]) continue;
@@ -703,7 +757,7 @@ function buildTerrain(world) {
   frame.width = VW; frame.height = VH;
   return {
     W: W, H: H, VW: VW, VH: VH, land: land, cellOf: cellOf, terrain: terrain, props: props, propLayer: null,
-    foam: foam, glints: glints, openSea: openSea, clouds: clouds, water: water, lake: lake, pxB: pxB, pxL: pxL,
+    foam: foam, glints: glints, openSea: openSea, sky: sky, clouds: clouds, water: water, lake: lake, pxB: pxB, pxL: pxL,
     terrainPx: g.getImageData(0, 0, VW, VH).data,
     frame: frame, fctx: frame.getContext("2d"), fimg: frame.getContext("2d").createImageData(VW, VH), key: null,
   };
@@ -713,6 +767,9 @@ function buildTerrain(world) {
    200-500, 500-1,000, 1,000-2,000, 2,000-3,000, above 3,000 (one ramp colour each) */
 const ELEV_BANDS = [200, 500, 1000, 2000, 3000];
 AEON.elevBands = ELEV_BANDS;
+/* the heights in metres of the elevation mode's colours (RAMPS.elevation), blended between */
+const ELEV_STOPS = [0, 60, 150, 300, 500, 750, 1000, 1300, 1700, 2200, 2800, 3500, 4500];
+function heightOf(r) { return r.heightM != null ? r.heightM : Math.max(0, (r.elevation - 0.5015) / 0.4985) * 5000; }
 function elevBand(r) {
   const h = r.heightM != null ? r.heightM : Math.max(0, (r.elevation - 0.5015) / 0.4985) * 5000;
   let k = 0;
@@ -758,9 +815,29 @@ function compose(c, w, mode, roads, contest, focus, provOf, sea) {
       if (logs.length) { lo = logs[Math.floor(logs.length * 0.05)]; hi = logs[Math.floor((logs.length - 1) * 0.99)]; }
       if (hi <= lo) hi = lo + 1;
     }
+    /* elevation: each pixel's height blended between the cells' centres (the sea counts as nought),
+       and its colour blended between the two stops it falls between, like a relief map */
+    let hs = null;
+    if (mode === "elevation") {
+      hs = new Float32Array(R.length);
+      for (const r of R) hs[r.id] = r.barren && !r.lake ? 0 : Math.max(0, heightOf(r));
+    }
+    const CW = w.width, CH = w.height;
     for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
       const i = y * VW + x;
       if (!land[i]) continue;
+      if (hs) {
+        const fx = (x + 0.5) / PPC - 0.5, fy = Math.max(0, Math.min(CH - 1, (y + 0.5) / PPC - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, y1 = Math.min(y0 + 1, CH - 1);
+        const xa = ((x0 % CW) + CW) % CW, xb = (xa + 1) % CW;
+        const h = (hs[y0 * CW + xa] * (1 - tx) + hs[y0 * CW + xb] * tx) * (1 - ty) + (hs[y1 * CW + xa] * (1 - tx) + hs[y1 * CW + xb] * tx) * ty;
+        let k = 0;
+        while (k < n - 2 && h >= ELEV_STOPS[k + 1]) k++;
+        const f = Math.max(0, Math.min(1, (h - ELEV_STOPS[k]) / (ELEV_STOPS[k + 1] - ELEV_STOPS[k]))), c0 = ramp[k], c1 = ramp[k + 1], a = 0.86;
+        d[i * 4] += (c0[0] + (c1[0] - c0[0]) * f - d[i * 4]) * a;
+        d[i * 4 + 1] += (c0[1] + (c1[1] - c0[1]) * f - d[i * 4 + 1]) * a;
+        d[i * 4 + 2] += (c0[2] + (c1[2] - c0[2]) * f - d[i * 4 + 2]) * a;
+        continue;
+      }
       const r = R[cellOf[i]];
       const t = mode === "population" ? (popOf[r.id] > 0 ? 0.08 + 0.92 * (Math.log(popOf[r.id]) - lo) / (hi - lo) : 0)
               : mode === "elevation" ? 0 : (r.habitability || 0);
@@ -921,7 +998,8 @@ function drawAmbient(ctx, c, v, X0, now, rivers, season) {
   ctx.beginPath(); ctx.rect(X0, Y0, VW * P, c.VH * P); ctx.clip();
   drawWater(ctx, c, v, X0, now, rivers, season);
   ctx.fillStyle = "rgba(10, 14, 40, .2)";
-  for (const cl of c.clouds) {
+  /* the old drifting shadows only where the world's own clouds are not drawn (drawClouds) */
+  if (!(c.sky && c.skyOn)) for (const cl of c.clouds) {
     /* each cloud drifts east or west with the wind along its row (s carries the sign) */
     const cx = ((((cl.x + t * cl.s) % (VW + 80)) + VW + 80) % (VW + 80)) - 40;
     for (let j = 0; j < 10; j++) for (let i = 0; i < cl.w; i++) {
@@ -1078,6 +1156,86 @@ function drawSea(c, dot, t) {
     const s = Math.sin(t * g[2] + g[1]);
     if (s > 0.88 && !(iced && iced[g[0]])) dot(s > 0.97 ? GLINT : WATER_LIGHT, g[0]);
   }
+}
+
+/* The world map's clouds (Daan, 2026-11-09): how much cloud each cell has comes from its climate
+   in the shown season (buildTerrain's sky: rain, the cold-water decks, the windward slopes), and
+   what kind from where it is: heaped, towering clusters where it is warm and wet, broad layered
+   sheets in the cooler belts, a flat dithered deck over the cold water off the western coasts.
+   The cover drifts with the world's own winds (flowNoise over its cells) and is drawn at map
+   resolution, see-through, over everything on the map but the names, with a shadow on the ground
+   under the heaped and layered kinds. Only when switched on (the clouds button, ui.js: c.skyOn). */
+function packRGBA(h, a) { const q = rgb(h); return ((a << 24) | (q[2] << 16) | (q[1] << 8) | q[0]) >>> 0; }
+/* by kind (0 heaped, 1 layered, 2 deck): the lit top, the body, the edge, the underside */
+const CLOUD_KINDS = [
+  [packRGBA("#ffffff", 255), packRGBA("#eef2f9", 255), packRGBA("#e2e8f3", 255), packRGBA("#a9b4cc", 255)],
+  [packRGBA("#eef2f9", 255), packRGBA("#dde4f0", 255), packRGBA("#d3dbe9", 255), packRGBA("#c0cadc", 255)],
+  [packRGBA("#dbe1ec", 255), packRGBA("#d2d9e6", 255), packRGBA("#c9d1df", 255), packRGBA("#d2d9e6", 255)],
+];
+const CLOUD_SHADOW = ((70 << 24) | (40 << 16) | (14 << 8) | 10) >>> 0;
+function drawClouds(ctx, c, v, X0, now, season) {
+  const S = c.sky;
+  if (!S || !c.skyOn) return;
+  const W = S.W, H = S.H, VW = c.VW, VH = c.VH, t = now / 1000, NC = W * H;
+  if (!S.layer) {
+    S.layer = document.createElement("canvas"); S.layer.width = VW; S.layer.height = VH;
+    S.img = S.layer.getContext("2d").createImageData(VW, VH); S.buf = new Uint32Array(S.img.data.buffer);
+    S.cov = new Float32Array(NC); S.amt = new Float32Array(NC); S.kind = new Uint8Array(NC); S.season = -1;
+  }
+  /* how much cloud each cell has in this season, and of which kind (worked out when the season moves) */
+  const sk = season == null ? 0.5 : Math.round(season * 100) / 100;
+  if (S.season !== sk) {
+    S.season = sk;
+    const wJul = season == null ? 0.5 : (1 - Math.cos((season - 0.04) * 2 * Math.PI)) / 2;
+    for (let i = 0; i < NC; i++) {
+      const wet = S.wetJan[i] + (S.wetJul[i] - S.wetJan[i]) * wJul;
+      S.amt[i] = Math.max(0, Math.min(1, wet * 0.85 + S.strat[i] * 0.7 + S.oro[i] * 0.35));
+      S.kind[i] = S.strat[i] > 0.35 && S.strat[i] > wet ? 2 : S.warm[i] * wet > 0.3 ? 0 : 1;
+    }
+  }
+  /* each cell's cover, above nought where there is cloud: a pattern of the kind's size, carried downwind */
+  const cov = S.cov, buf = S.buf, amt = S.amt, kind = S.kind;
+  for (let i = 0; i < NC; i++) {
+    const a = amt[i];
+    if (a < 0.05) { cov[i] = -1; continue; }
+    const x = i % W, y = (i - x) / W, k = kind[i];
+    const n = k === 0 ? flowNoise(x, y, S.u[i], S.v[i], t, 24, 0.22, 0.22) * 0.5 + flowNoise(x + 40, y + 40, S.u[i], S.v[i], t, 24, 0.6, 0.6) * 0.5
+            : k === 1 ? flowNoise(x, y, S.u[i], S.v[i], t, 24, 0.13, 0.13) * 0.75 + flowNoise(x + 40, y + 40, S.u[i], S.v[i], t, 24, 0.4, 0.4) * 0.25
+            : flowNoise(x, y, S.u[i], S.v[i], t, 30, 0.3, 0.3);
+    cov[i] = n - (0.8 - a * 0.5);
+  }
+  const at = function (px, py) {
+    const fx = (px + 0.5) / PPC - 0.5, fy = Math.max(0, Math.min(H - 1, (py + 0.5) / PPC - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, y1 = Math.min(y0 + 1, H - 1);
+    const xa = ((x0 % W) + W) % W, xb = (xa + 1) % W;
+    return (cov[y0 * W + xa] * (1 - tx) + cov[y0 * W + xb] * tx) * (1 - ty) + (cov[y1 * W + xa] * (1 - tx) + cov[y1 * W + xb] * tx) * ty;
+  };
+  buf.fill(0);
+  for (let cy = 0; cy < H; cy++) for (let cx = 0; cx < W; cx++) {
+    /* skip the cells with no cloud in or beside them (a shadow falls a cell away at most) */
+    let m = -1;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const yy = cy + dy;
+      if (yy >= 0 && yy < H) m = Math.max(m, cov[yy * W + ((cx + dx + W) % W)]);
+    }
+    if (m < -0.02) continue;
+    const K = CLOUD_KINDS[kind[cy * W + cx]], deck = kind[cy * W + cx] === 2;
+    for (let j = 0; j < PPC; j++) for (let k = 0; k < PPC; k++) {
+      const px = cx * PPC + k, py = cy * PPC + j, i = py * VW + px, d = at(px, py), b = bayer(px, py);
+      if (d > 0) {
+        if (deck) { if (b < 0.4 + d * 6) buf[i] = d > 0.05 ? K[1] : K[2]; }
+        else if (d < 0.035) { if (b < 0.5) buf[i] = K[2]; }
+        else if (at(px + 2, py + 2) < 0.02) buf[i] = K[3];
+        else if (at(px - 2, py - 2) < 0.02) buf[i] = K[0];
+        else buf[i] = K[1];
+      }
+      if (!buf[i] && !deck && at(px - 3, py - 4) > 0.02 && b < 0.75) buf[i] = CLOUD_SHADOW;
+    }
+  }
+  S.layer.getContext("2d").putImageData(S.img, 0, 0);
+  ctx.save();
+  ctx.globalAlpha = 0.78;
+  ctx.drawImage(S.layer, X0, v.Y0, VW * v.P, VH * v.P);
+  ctx.restore();
 }
 
 /* ------------------------------------------------------------ scenery */
@@ -1353,9 +1511,8 @@ function draw(canvas, world, opts) {
   ctx.fillStyle = INK;
   ctx.fillRect(X0 - 1, v.Y0 - 1, mw + 2, mh + 2);
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
+  c.skyOn = !!opts.clouds;
   if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time, !dataMode, opts.season);
-  /* the weather: snowfall, the monsoon's rain, plankton blooms, hurricanes, the dust of tornadoes */
-  if (sea && opts.time != null) SE.weather(ctx, c, world, v, X0, { season: opts.season, day: opts.day, speed: opts.speed, time: opts.time });
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
   const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null, war = AEON.mapfx && opts.date != null && !dataMode;
   const cell = PPC * v.P, env = (fx || war) && {
@@ -1379,6 +1536,10 @@ function draw(canvas, world, opts) {
   }
   if (war) { AEON.mapfx.months(ctx, env, opts.date, "over"); AEON.mapfx.armies(ctx, env, opts.date); }
   if (fx) fx.draw(ctx, env, "over");
+  /* the sky over everything on the map, so it hides what is under it: the weather (snowfall, the
+     monsoon's rain, plankton blooms, hurricanes, the dust of tornadoes), the clouds, the spouts */
+  if (sea && opts.time != null) SE.weather(ctx, c, world, v, X0, { season: opts.season, day: opts.day, speed: opts.speed, time: opts.time });
+  if (opts.time != null && !dataMode) drawClouds(ctx, c, v, X0, opts.time, opts.season);
   if (sea && opts.time != null) SE.sky(ctx, c, world, v, X0, spriteUnit(v), { time: opts.time });
 }
 

@@ -51,6 +51,8 @@ let pace = "some", followed = null;
 /* the camera follows the action: while a great moment holds the year, the map zooms in (to at
    least CAM_P device pixels a map pixel) and glides over to it */
 let camera = true;
+/* clouds over the world map (pixelmap.js drawClouds): off by default, the choice remembered */
+let clouds = (function () { try { return localStorage.getItem("aeon.clouds") === "1"; } catch (e) { return false; } })();
 const CAM_P = 3;
 let rafId = 0;
 let mapMode = "political";
@@ -762,7 +764,7 @@ function startAmbient() {
 const LEGENDS = {
   population: ["People", "few", "many"],
   habitability: ["Habitability", "harsh", "kind"],
-  elevation: ["Elevation", "0 m", "3,000 m +"],
+  elevation: ["Elevation", "0 m", "4,500 m +"],
 };
 function realmAt(rid) { const r = rid != null && shown().regions[rid]; return r && r.owner != null ? r.owner : null; }
 /* the realm the diplomacy map is about: the one under the cursor, else the selected land's, else
@@ -808,6 +810,8 @@ function updateLegend() {
 function drawMap() {
   if (!world || !AEON.render) return;
   updateLegend();
+  /* the clouds are the world map's only */
+  if (dom.cloudBtn) dom.cloudBtn.classList.toggle("hidden", !onPlanet());
   clampView();
   try {
     const worldMode = sketchMode();
@@ -823,6 +827,7 @@ function drawMap() {
       selectedRegion: selectedRegion,
       showRivers: true,
       showRoads: true,
+      clouds: clouds,
       time: ambientOn() ? performance.now() : null,
       season: season(),
       /* the date in days and the speed in days a second, for the storms and the ships (seasons.js) */
@@ -921,11 +926,18 @@ function buildApp() {
   dom.follow = el("div", { class: "ae-follow hidden" });
   const camBtn = el("button", { class: "ae-btn on", text: "◎", title: "The map follows the action (great moments)",
     onclick: function () { camera = !camera; camBtn.classList.toggle("on", camera); } });
+  /* the world map's clouds (pixelmap.js drawClouds): off unless switched on, remembered */
+  const cloudBtn = dom.cloudBtn = el("button", { class: "ae-btn" + (clouds ? " on" : ""), text: "☁", title: "Clouds over the world map",
+    onclick: function () {
+      clouds = !clouds; cloudBtn.classList.toggle("on", clouds);
+      try { localStorage.setItem("aeon.clouds", clouds ? "1" : "0"); } catch (e) {}
+      drawMap();
+    } });
 
   dom.status = el("div", { class: "ae-status" });
 
   const transport = el("div", { class: "ae-transport" },
-    dom.playBtn, dom.scrub, dom.follow, speedSel, paceSel, camBtn,
+    dom.playBtn, dom.scrub, dom.follow, speedSel, paceSel, camBtn, cloudBtn,
     el("button", { class: "ae-btn", text: "‹", title: "Previous great moment", onclick: function () { jumpMoment(-1); } }),
     el("button", { class: "ae-btn", text: "›", title: "Next great moment", onclick: function () { jumpMoment(1); } }),
     el("button", { class: "ae-btn", text: "⏮", title: "Back to the beginning",

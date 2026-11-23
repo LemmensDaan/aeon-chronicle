@@ -101,11 +101,12 @@ function Heap(n) {
 
 /* priority-flood from the sea: Ef = depression-filled surface; parent = the downstream
    neighbour; order = pop order (low to high). Guarantees drainage. */
-function floodFill(N, NB8, E, sea, runoff) {
+/* outlet (optional): land cells the water leaves by, as it leaves by the sea */
+function floodFill(N, NB8, E, sea, runoff, outlet) {
   const Ef = new Float32Array(N), parent = new Int32Array(N).fill(-1), order = new Int32Array(N);
   const done = new Uint8Array(N), heap = Heap(N * 8 + 8);
   let o = 0;
-  for (let i = 0; i < N; i++) if (E[i] <= sea) { Ef[i] = E[i]; heap.push(E[i], i); done[i] = 1; }
+  for (let i = 0; i < N; i++) if (E[i] <= sea || (outlet && outlet[i])) { Ef[i] = E[i]; heap.push(E[i], i); done[i] = 1; }
   while (heap.size()) {
     const c = heap.pop();
     order[o++] = c;
@@ -783,7 +784,7 @@ function finish(world, pack, L) {
   for (let i = 0; i < N; i++) {
     if (isOcean(i)) continue;
     /* (not on a planet river's course in a region, where the swell would dam it) */
-    const calm = L.bed ? 1 - L.bed[i] : 1;
+    const calm = L.bed ? (L.bed[i] >= 0.5 ? 0 : 1 - L.bed[i]) : 1;
     if (T[i] < 0.4 && E[i] < eOfM(1100)) Eh[i] += (L.nf3(i, 0.5, 2, 0.5) + 0.5) * 0.012 * clamp((0.4 - T[i]) / 0.06, 0, 1) * calm;
     Eh[i] += (L.nf2(i, 0.3, 3, 0.5) + 0.5) * 0.012 * calm;
   }
@@ -796,7 +797,7 @@ function finish(world, pack, L) {
   for (let i = 0; i < N; i++) runoff[i] = isOcean(i) ? 0 : Math.max(0.002, P[i] * (1.05 - 0.75 * T[i]));
   if (L.area !== 1) for (let i = 0; i < N; i++) runoff[i] *= L.area;
   if (L.inflow) for (let i = 0; i < N; i++) if (!isOcean(i)) runoff[i] += L.inflow[i];
-  const hyd = floodFill(N, NB8, Eh, 0.5, runoff);
+  const hyd = floodFill(N, NB8, Eh, 0.5, runoff, L.outlet);
 
   /* depressions hold water up to the level where what evaporates from the lake matches what flows
      in: the lowest cells fill first. A depression that more than fills spills over its rim and
@@ -838,12 +839,16 @@ function finish(world, pack, L) {
         if (hinted >= Math.max(4, (L.minLake || 1) / 4)) {
           for (const c of cells) {
             if (L.lakeHint[c] > 0.35) { lake[c] = 1; lakeLevel[c] = level; }
-            else if (term) basin[c] = 1;
+            /* (a planet river's course into it stays river, not salt flat) */
+            else if (term && !(L.bed && L.bed[c] >= 0.5)) basin[c] = 1;
             if (term) terminal[c] = 1;
           }
           continue;
         }
       }
+      /* a hollow of the region's own on a planet river's course is no dead end: the planet's
+         river runs on through it (unless the planet ends that river in a closed lake here) */
+      if (L.bed && cells.some((c) => L.bed[c] >= 0.5 && !L.termHint[c])) continue;
       cells.sort((a, b) => Eh[a] - Eh[b]);
       let evap = 0, n = 0;
       while (n < cells.length && evap < inflow) { evap += L.area * Math.max(0.03, 1.3 * T[cells[n]] - 0.4); n++; }
@@ -880,7 +885,9 @@ function finish(world, pack, L) {
       const c = hyd.order[k];
       if (isOcean(c)) continue;
       acc2[c] += runoff[c];
-      if (!terminal[c] && hyd.parent[c] >= 0) acc2[hyd.parent[c]] += acc2[c];
+      /* (a planet river's course runs on through the dry floor round a closed lake, into the lake) */
+      const runsOn = !terminal[c] || (L.bed && L.bed[c] >= 0.5 && !lake[c]);
+      if (runsOn && hyd.parent[c] >= 0) acc2[hyd.parent[c]] += acc2[c];
     }
     hyd.acc = acc2;
   }
@@ -1206,30 +1213,45 @@ function region(world, si) {
                  /* the planet's mountains stand a little above the plateaus around them */
                  + (Ec[i] > 0.55 ? (cubic(mtnInd, FX[i], FY[i]) - 0.3) * 0.05 : 0), 0, 1);
   }
+  /* sea only where it joins the planet's sea: a pocket the noise dug under sea level on a low
+     plain is land (the water drained into such pockets and big rivers ended far inland) */
+  {
+    const sea = new Uint8Array(N), q = [];
+    for (let i = 0; i < N; i++) if (E[i] <= 0.5 && g.E[near(i)] <= 0.5) { sea[i] = 1; q.push(i); }
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h];
+      for (let k = 0; k < 4; k++) { const n = NB4[c * 4 + k]; if (n >= 0 && !sea[n] && E[n] <= 0.5) { sea[n] = 1; q.push(n); } }
+    }
+    for (let i = 0; i < N; i++) if (E[i] <= 0.5 && !sea[i]) E[i] = 0.5003;
+  }
+
   /* the planet's rivers run where the planet has them: each river cell's course to the next is a
      valley in the region, meandering with noise, its floor falling from the one cell's height to
      the next and its sides rising with distance, so the region's water finds the same way down */
   const bed = new Float32Array(N);         /* 1 on a planet river's course, fading over half a cell */
+  /* each planet river cell's course to the next, and which of them a region cell lies on */
+  const segs = [], segOf = new Int32Array(N).fill(-1), segT = new Float32Array(N);
   {
-    const segs = [];
     for (let y = Math.max(0, py0 - 1); y < Math.min(PH, py1 + 1); y++) for (let x = px0 - 1; x <= px1; x++) {
-      const r = world.regions[y * PW + pwx(x)];
+      const c = y * PW + pwx(x), r = world.regions[c];
       if (!(r.river > 0) || r.flowTo < 0) continue;
       const t = world.regions[r.flowTo];
       let d = t.x - pwx(x); if (d > PW / 2) d -= PW; if (d < -PW / 2) d += PW;
-      segs.push([x, y, x + d, t.y, r.elevation, t.barren && !t.lake ? 0.5 : t.elevation]);
+      segs.push([x, y, x + d, t.y, r.elevation, t.barren && !t.lake ? 0.5 : t.elevation, c, r.flowTo]);
     }
     if (segs.length) for (let i = 0; i < N; i++) {
       if (E[i] <= 0.5) continue;
       const mx = FX[i] + nfr(nzC, i, 0.6, 2, 0.5) * 0.5, my = FY[i] + nfr(nzB, i, 0.6, 2, 0.5) * 0.5;
-      let best = 4, floor = 0;
-      for (const s of segs) {
+      let best = 4, floor = 0, bs = -1, bt = 0;
+      for (let k = 0; k < segs.length; k++) {
+        const s = segs[k];
         const vx = s[2] - s[0], vy = s[3] - s[1], t = clamp(((mx - s[0]) * vx + (my - s[1]) * vy) / (vx * vx + vy * vy || 1), 0, 1);
         const ex = s[0] + vx * t - mx, ey = s[1] + vy * t - my, d2 = ex * ex + ey * ey;
-        if (d2 < best) { best = d2; floor = lerp(s[4], s[5], t); }
+        if (d2 < best) { best = d2; floor = lerp(s[4], s[5], t); bs = k; bt = t; }
       }
       if (best < 1) E[i] = Math.min(E[i], Math.max(0.5003, floor - 0.002) + 0.06 * best);
       bed[i] = clamp(1 - Math.sqrt(best) / 0.5, 0, 1);
+      if (bed[i] >= 0.5) { segOf[i] = bs; segT[i] = bt; }
     }
   }
   /* the rivers cut their valleys, the bigger the deeper */
@@ -1262,6 +1284,50 @@ function region(world, si) {
       /* (a planet lake below sea level sits on land just above the sea: its bowl stays land) */
       if (bowl) E[i] = Math.max(0.5003, E[i] - 0.014 * bowl * bowl * (3 - 2 * bowl));
     }
+  }
+
+  /* the planet's rivers keep their whole course: along each one a channel a little lower than
+     the land beside it and never rising downstream, so the region's water cannot leave it for a
+     lower way of its own (in flat lowlands the noise can drop beside the valley floor, and the
+     river's lower course was lost). Worked from the sources down, segment by segment. */
+  if (segs.length) {
+    const cells = segs.map(() => []);
+    for (let i = 0; i < N; i++) if (segOf[i] >= 0 && E[i] > 0.5) cells[segOf[i]].push(i);
+    const segAt = new Map(), ups = segs.map(() => []);
+    segs.forEach((s, k) => segAt.set(s[6], k));
+    segs.forEach((s, k) => { const d = segAt.get(s[7]); if (d != null) ups[d].push(k); });
+    /* steps to the river's end, so the sources come first */
+    const steps = new Int32Array(segs.length).fill(-1);
+    for (let k = 0; k < segs.length; k++) {
+      const path = []; let j = k;
+      while (j != null && steps[j] < 0 && path.length <= segs.length) { path.push(j); j = segAt.get(segs[j][7]); }
+      let n = j != null && steps[j] >= 0 ? steps[j] : 0;
+      for (let p = path.length - 1; p >= 0; p--) steps[path[p]] = ++n;
+    }
+    const order = segs.map((s, k) => k).sort((a, b) => steps[b] - steps[a]);
+    const endLevel = new Float32Array(segs.length).fill(1);
+    for (const k of order) {
+      let m = 1;
+      for (const u of ups[k]) m = Math.min(m, endLevel[u]);
+      cells[k].sort((a, b) => segT[a] - segT[b]);
+      for (const i of cells[k]) {
+        let side = 1;
+        for (let q = 0; q < 8; q++) { const n = NB8[i * 8 + q]; if (n >= 0 && segOf[n] < 0 && E[n] > 0.5) side = Math.min(side, E[n]); }
+        m = Math.max(0.50005, Math.min(m, E[i], side - 2e-4));
+        E[i] = m;
+      }
+      endLevel[k] = m;
+    }
+  }
+  /* where a planet river leaves the window its channel is an outlet, as the sea is (otherwise
+     the window's edge dams it and its water spills out some other way) */
+  const outlet = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    if (segOf[i] < 0) continue;
+    const x = i % W, y = (i / W) | 0;
+    if (x > 0 && y > 0 && x < W - 1 && y < H - 1) continue;
+    const s = segs[segOf[i]], tx = s[2], ty = s[3];
+    if (tx < px0 || tx >= px1 || ty < py0 || ty >= py1) outlet[i] = 1;
   }
 
   /* ----- climate from the planet ----- */
@@ -1339,7 +1405,7 @@ function region(world, si) {
     uplift: uplift, stress: stress, srcAmp: srcAmp, plateOf: plateOf, cont: cont, geo: geo,
     nf2: (i, f, o, gn) => nfr(nzA, i, f, o, gn), nf3: (i, f, o, gn) => nfr(nzB, i, f, o, gn),
     K: K, area: 1 / (K * K), minLen: 2 * K, inflow: inflow, mtnOffset: mtnOffset, riverT: 0.35, minLake: K * K,
-    lakeHint: lakeHint, termHint: termHint, bed: bed,
+    lakeHint: lakeHint, termHint: termHint, bed: bed, outlet: outlet,
   });
   /* the square itself; the margin around it is "beyond", the neighbours' land */
   for (const r of out.regions) {

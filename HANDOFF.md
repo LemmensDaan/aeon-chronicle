@@ -590,6 +590,21 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   hint > 0.55) is always lake, and the region's broad relief is gentle on the plains (±100 m) and
   strong only in hills and at the shore. region-report: `planetRiverKept` 0.59 -> 0.91,
   `planetLakeKept` 0.55 -> 0.93 (medians over 54 regions).
+- **Region rivers keep the planet's whole course (2026-11-23, region maps and histories change,
+  planet histories not):** about 1 in 10 cells of the biggest planet rivers had no region river
+  near it. Causes and fixes in `region()` / `finish()` (js/planetgen.js): (1) the noise dug sea
+  pockets under sea level on low coastal plains and rivers drained into them far inland; sea now
+  only where it joins the planet's sea, other pockets are land at 0.5003. (2) Beside the valley
+  floor the noise could lie lower, so the water left it; each planet river now gets a channel
+  (cells with bed >= 0.5, `segOf`) a little below the land beside it and never rising downstream,
+  worked segment by segment from the sources, with no swell on it in finish(). (3) Where a planet
+  river leaves the window the edge dammed it; those channel cells are now outlets (`floodFill`'s
+  new `outlet`). (4) A region hollow on a planet river's course is never a dead end, and a course
+  into a closed planet lake stays river, not salt flat. Measured over every lived square of 18
+  seeds (planet river cells with a region river in or next to them): smallest half 95% -> 98%,
+  biggest 10% about 90% -> 99-100%. Region-report medians: planetRiverKept 0.91 -> 0.94, region
+  lake cells 499 -> 452 (fewer dead-end hollows), lakeOverlap 0.21 -> 0.27; coast, biomes,
+  deserts and mountains unchanged; same speed (~540 ms a region).
 - **Waiting on Daan:** feedback on round 2 of `samples/animations.html` (`?t=ms` freezes a frame,
   `?only=N` shows panel N large). Round 1 feedback, now applied there: use the map's own cell borders
   (no straight lines); expansion in steps, not smooth; a split promotes a town to the new capital;

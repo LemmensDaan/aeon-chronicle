@@ -564,9 +564,9 @@ function buildTerrain(world) {
     const lat = (0.5 - fy / PHd) * 150, deg = Math.abs(lat);
     windU[i] = tableAt(WIND_U, deg); windV[i] = tableAt(WIND_V, deg) * (lat >= 0 ? -1 : 1);
   }
-  /* the surface currents, from that wind: turned a little (to the right in the north, the left in
-     the south), smoothed over the open sea, and steered along the coasts, so the trades and the
-     westerlies close into gyres and run up and down the shores they meet */
+  /* the surface currents: the world's own from planetgen (below); for a world made without them,
+     a guess from that wind: turned a little (to the right in the north, the left in the south),
+     smoothed over the open sea, and steered along the coasts */
   const ocean = new Uint8Array(NC), cDist = new Uint8Array(NC).fill(9), cq = [];
   for (let i = 0; i < NC; i++) { ocean[i] = R[i].barren && !R[i].lake ? 1 : 0; if (!ocean[i]) { cDist[i] = 0; cq.push(i); } }
   for (let h = 0; h < cq.length; h++) {
@@ -576,12 +576,25 @@ function buildTerrain(world) {
     for (const j of nb) if (j >= 0 && cDist[j] > nd) { cDist[j] = nd; cq.push(j); }
   }
   let curU = new Float32Array(NC), curV = new Float32Array(NC);
+  /* the world's own currents when planetgen made them (planetgen.js oceanCurrents, the same ones
+     its climate uses): read off the planet's grid, and on a region only steered along its finer
+     coasts; otherwise the old guess from the wind, smoothed and steered */
+  const stored = !!(gen && gen.CU);
   for (let i = 0; i < NC; i++) {
     if (!ocean[i]) continue;
+    if (stored) {
+      const x = i % W, y = (i - x) / W, fx = sq && pl ? sq.px0 + (x + 0.5) / sq.K : x + 0.5, fy = sq && pl ? sq.py0 + (y + 0.5) / sq.K : y + 0.5;
+      curU[i] = planetAt(gen.CU, fx, fy); curV[i] = planetAt(gen.CV, fx, fy);
+      /* drawn with the speeds pressed together (square root), so the slow middle of a gyre
+         still drifts instead of lying still */
+      const s = Math.hypot(curU[i], curV[i]);
+      if (s > 1e-6) { curU[i] /= Math.sqrt(s); curV[i] /= Math.sqrt(s); }
+      continue;
+    }
     const south = (sq && pl ? sq.py0 + (Math.floor(i / W) + 0.5) / sq.K : Math.floor(i / W) + 0.5) >= PHd / 2, a = south ? -0.45 : 0.45;
     curU[i] = windU[i] * Math.cos(a) - windV[i] * Math.sin(a); curV[i] = windU[i] * Math.sin(a) + windV[i] * Math.cos(a);
   }
-  for (let pass = 0; pass < 10; pass++) {
+  for (let pass = 0, passes = !stored ? 10 : sq ? 3 : 0; pass < passes; pass++) {
     const nu = new Float32Array(NC), nv = new Float32Array(NC);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = y * W + x;

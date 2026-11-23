@@ -246,12 +246,19 @@ function writeBack() {
    again when the world is opened (in the order of their years, as they were made) */
 function writesKey() { return "aeon.writes." + planet.packId + "." + planet.seed; }
 function saveWrites() {
-  try { localStorage.setItem(writesKey(), JSON.stringify({ writes: planet.sketch.writes || [], seen: planet._seen || [], nudges: planet._nudges || {}, play: planet._play || {}, decided: planet._decided || {} })); } catch (e) {}
+  try { localStorage.setItem(writesKey(), JSON.stringify({ gen: AEON.GEN_VERSION, writes: planet.sketch.writes || [], seen: planet._seen || [], nudges: planet._nudges || {}, play: planet._play || {}, decided: planet._decided || {} })); } catch (e) {}
 }
 function loadWrites() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(writesKey()) || "null"); } catch (e) {}
   if (!saved) return;
+  /* kept for this seed when it made a different world (planetgen.js GEN_VERSION): it would not
+     fit this one's history, so it is dropped */
+  if ((saved.gen || 1) !== AEON.GEN_VERSION) {
+    console.info("[aeon] the watched chapters and changes kept for this seed were made on an older version of its world, and are dropped");
+    try { localStorage.removeItem(writesKey()); } catch (e) {}
+    return;
+  }
   planet._seen = saved.seen || [];
   planet._nudges = saved.nudges || {};
   planet._play = saved.play || {};

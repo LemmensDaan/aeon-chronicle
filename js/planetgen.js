@@ -615,23 +615,65 @@ function generate(world, pack, rng) {
   const U = new Float32Array(N), Vv = new Float32Array(N), rainF = new Float32Array(N);
   winds(0, U, Vv, rainF);
 
-  /* ocean gyres. Along each row: land close to the east is an eastern boundary (cold upwelling
-     in the subtropics, Canary and California; the warm drift in the subpolar gyre, Norway and
-     Alaska); land close to the west a western boundary (the warm Gulf Stream and Kuroshio in
-     the subtropics; the cold Labrador and Oyashio currents further poleward) */
+  /* ----- ocean currents (docs/OCEAN_CURRENTS.md): this world's own, from its winds, coasts and
+     sea floor, and the warmth or cold they carry ----- */
   const T = new Float32Array(N), SST = new Float32Array(N), sstA = new Float32Array(N);
   for (let i = 0; i < N; i++) T[i] = T0(latRad[i]);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x;
-    if (!isOcean(i)) continue;
-    let dE = 0, dW = 0;
-    const kx = KX[y];
-    for (let d = 1; d <= Math.min(60, Math.ceil(16 / kx)) && !dE; d++) if (!isOcean(y * W + wx(x + d))) dE = d;
-    for (let d = 1; d <= Math.min(40, Math.ceil(10 / kx)) && !dW; d++) if (!isOcean(y * W + wx(x - d))) dW = d;
-    const e = dE ? Math.exp(-(dE - 1) * kx / 6) : 0, w = dW ? Math.exp(-(dW - 1) * kx / 3) : 0;
-    const deg = Math.abs(DEGL[i]), sub = band(deg, 10, 20, 34, 42), pol = band(deg, 38, 48, 62, 72);
-    sstA[i] = CT * (sub * (-6 * e + 4 * w) + pol * (10 * e - 6 * w));
-    SST[i] = T[i] + sstA[i];
+  const cur = oceanCurrents(W, H, N, KX, DEGL, wx, isOcean, hm, U, Vv, blurWrap);
+  const CU = cur.U, CV = cur.V, upwell = cur.up;
+  /* the water's temperature: each step a sea cell takes the water from upstream on the current,
+     mixes a little with its neighbours, and gives part of its warmth or cold to the air (falls
+     back towards its latitude's level); where the wind drives the surface water off the coast,
+     cold water wells up from below. Run to a steady state, so a fast current carries tropical
+     warmth far poleward (Gulf Stream, Kuroshio) and one from high latitudes carries cold the
+     other way (Canary, California, Humboldt, Labrador). */
+  {
+    const base = new Float32Array(N), seaL = [];
+    for (let i = 0; i < N; i++) { base[i] = T[i] - CUR_UP * CT * upwell[i]; if (isOcean(i)) seaL.push(i); }
+    /* the upstream point of every sea cell is fixed, so its corners and weights are worked out
+       once; water only comes from water: a land corner stands for the cell itself */
+    const S = seaL.length, UPI = new Int32Array(S * 4), UPW = new Float32Array(S * 4), NBI = new Int32Array(S * 4).fill(-1);
+    for (let s = 0; s < S; s++) {
+      const i = seaL[s], x = i % W, y = (i / W) | 0;
+      const ux = x - CU[i] * CUR_DT / KX[y], uy = clamp(y - CV[i] * CUR_DT, 0, H - 1);
+      const x0 = Math.floor(ux), y0 = Math.floor(uy), tx = ux - x0, ty = uy - y0, y1 = Math.min(y0 + 1, H - 1);
+      const cs = [y0 * W + wx(x0), y0 * W + wx(x0 + 1), y1 * W + wx(x0), y1 * W + wx(x0 + 1)];
+      const ws = [(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty];
+      for (let k = 0; k < 4; k++) { UPI[s * 4 + k] = isOcean(cs[k]) ? cs[k] : i; UPW[s * 4 + k] = ws[k]; }
+      let n = 0;
+      for (let k = 0; k < 4; k++) { const j = NB4[i * 4 + k]; if (j >= 0 && isOcean(j)) NBI[s * 4 + n++] = j; }
+    }
+    let a = Float32Array.from(base), b = Float32Array.from(base);
+    for (let it = 0; it < CUR_HEAT_STEPS; it++) {
+      for (let s = 0; s < S; s++) {
+        const i = seaL[s], k = s * 4;
+        let v = a[UPI[k]] * UPW[k] + a[UPI[k + 1]] * UPW[k + 1] + a[UPI[k + 2]] * UPW[k + 2] + a[UPI[k + 3]] * UPW[k + 3];
+        let sm = 0, n = 0;
+        for (let m = 0; m < 4; m++) { const j = NBI[k + m]; if (j < 0) break; sm += a[j]; n++; }
+        if (n) v += (sm / n - v) * CUR_MIX;
+        b[i] = v + (base[i] - v) * CUR_XCHG;
+      }
+      const t = a; a = b; b = t;
+    }
+    /* T0 is fitted to Earth's zonal means, which already hold the ocean's poleward heat
+       transport; so the currents only decide where along each latitude the water is warm or
+       cold: each row's mean anomaly (over the rows either side, so a row with little sea
+       does not swing) is taken out. Then the open sea's own zonal level goes back on: at high
+       latitudes it is warmer than the air's zonal mean (it keeps the summer's warmth through
+       the winter), a little cooler in the trade-wind belt (CUR_ZONAL, deg C) */
+    const rs = new Float32Array(H), rn = new Float32Array(H);
+    for (const i of seaL) { const y = (i / W) | 0; rs[y] += a[i] - T[i]; rn[y]++; }
+    for (let y = 0; y < H; y++) {
+      let s = 0, n = 0;
+      for (let k = -2; k <= 2; k++) { const yy = clamp(y + k, 0, H - 1); s += rs[yy]; n += rn[yy]; }
+      const m = n ? s / n : 0, zl = CT * tab(CUR_ZONAL, Math.abs(DEGL[y * W]));
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (!isOcean(i)) continue;
+        sstA[i] = CUR_GAIN * (a[i] - T[i] - m) + zl;
+        SST[i] = T[i] + sstA[i];
+      }
+    }
   }
 
   /* sea air carried inland on the wind: `marine` is how much of it a cell still feels (1 at sea,
@@ -756,7 +798,7 @@ function generate(world, pack, rng) {
   /* debug layers for the inspector page; not enumerable so nothing copies them */
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
+    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, CU, CV, psi: cur.psi, upwell, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
              riverT: fin.riverT, mtnOffset: fin.mtnOffset, precip, stress, srcAmp, ms: Date.now() - t0 },
   });
 }
@@ -1420,6 +1462,117 @@ function region(world, si) {
   return out;
 }
 
+/* ======================================================= ocean currents === */
+/* The world's ocean currents (docs/OCEAN_CURRENTS.md), from its own winds, coasts and sea floor.
+   Stommel's model of the wind-driven circulation, on the planet's grid: a stream function psi
+   over the sea, 0 on every coast (the water flows along the shore, never into it), with
+     r lap(psi) + beta d(psi)/dx - k psi = curl(wind)
+   - curl(wind): the spin the winds give the water; the trades and westerlies together turn the
+     subtropical oceans clockwise in the north, anticlockwise in the south
+   - beta: how fast the Coriolis effect grows northward (cos latitude); it squeezes each gyre's
+     return flow into a narrow fast current along its western shore (Gulf Stream, Kuroshio,
+     Brazil, Agulhas) and spreads the rest slow and wide over the basin
+   - k: drag on the shallow sea floor; shelves and shallow straits carry little, so a strait or
+     ridge can cut one basin's flow off from another's
+   The current is (dpsi/dy, -dpsi/dx / cos) in grid cells, scaled so most of the sea moves under
+   1. Also the coastal upwelling: where the wind drives the surface water off a coast (the
+   Ekman drift, to the right of the wind in the north, the left in the south), cold water rises
+   (Canary, Benguela, California, Humboldt). Returns { U, V, psi, up }. */
+const CUR_BETA = 0.5;          /* Coriolis growth: the western currents' width is ~1/(beta cos) cells */
+const CUR_SHELF = 6;           /* drag on a shelf (k at the shallowest) */
+const CUR_UP = 7;              /* deg C the strongest upwelling cools the water at the coast */
+const CUR_DT = 1.2;            /* cells a full-speed current carries water in one heat step */
+const CUR_XCHG = 0.035;        /* share of its anomaly the water gives the air each heat step */
+const CUR_MIX = 0.25;          /* sideways mixing each heat step */
+const CUR_GAIN = 1.2;            /* scale on the warmth or cold the currents carry */
+const CUR_HEAT_STEPS = 160;
+const CUR_ZONAL = [[0, 0], [15, -0.5], [30, -0.2], [40, 0.8], [50, 4], [60, 4], [70, 3], [75, 2.5]];
+function oceanCurrents(W, H, N, KX, DEGL, wx, isOcean, hm, U, V, blurWrap) {
+  const sea = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { const y = (i / W) | 0; sea[i] = isOcean(i) && y > 0 && y < H - 1 ? 1 : 0; }
+  /* the winds smoothed a little, so the noise in them bends the gyres without speckling them */
+  const Us = blurWrap(U, W, H, 2, KX), Vs = blurWrap(V, W, H, 2, KX);
+  /* the wind's curl, north up: d(tau_n)/dx_east - d(tau_e)/dy_north, with tau_n = -V (V is +south) */
+  const F = new Float32Array(N);
+  for (let y = 1; y < H - 1; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (!sea[i]) continue;
+    F[i] = -(Vs[y * W + wx(x + 1)] - Vs[y * W + wx(x - 1)]) / (2 * KX[y]) + (Us[i + W] - Us[i - W]) / 2;
+  }
+  /* drag from the sea floor: none in the deep ocean, strong on the shelves */
+  const kd = new Float32Array(N);
+  for (let i = 0; i < N; i++) if (sea[i]) { const d = clamp((-hm[i] - 150) / 1800, 0, 1); kd[i] = CUR_SHELF * (1 - d) * (1 - d); }
+  /* solve by over-relaxation. Per row, with dx = KX (r = 1): the east neighbour is upwind for
+     the beta term (it carries the solution westward, piling it up at the western shores) */
+  const psi = new Float32Array(N), cells = [];
+  for (let i = 0; i < N; i++) if (sea[i]) cells.push(i);
+  const C = cells.length, cI = Int32Array.from(cells), cE = new Int32Array(C), cW = new Int32Array(C);
+  const aE = new Float32Array(C), aW = new Float32Array(C), aP = new Float32Array(C), cF = new Float32Array(C);
+  for (let s = 0; s < C; s++) {
+    const i = cI[s], x = i % W, y = (i / W) | 0, ex = 1 / (KX[y] * KX[y]);
+    cE[s] = y * W + wx(x + 1); cW[s] = y * W + wx(x - 1);
+    aE[s] = ex + CUR_BETA; aW[s] = ex; aP[s] = 1 / (2 * ex + 2 + CUR_BETA + kd[i]); cF[s] = F[i];
+  }
+  const OM = 1.75;
+  for (let it = 0; it < 1500; it++) {
+    let dmax = 0;
+    for (let s = 0; s < C; s++) {
+      const i = cI[s];
+      const d = (aE[s] * psi[cE[s]] + aW[s] * psi[cW[s]] + psi[i - W] + psi[i + W] - cF[s]) * aP[s] - psi[i];
+      psi[i] += OM * d;
+      if (d > dmax) dmax = d; else if (-d > dmax) dmax = -d;
+    }
+    if (dmax < 1e-6) break;
+  }
+  /* the velocity, x east and y south, in grid cells */
+  const CU = new Float32Array(N), CV = new Float32Array(N), sp = [];
+  for (let y = 1; y < H - 1; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (!sea[i]) continue;
+    CU[i] = (psi[i + W] - psi[i - W]) / 2;
+    CV[i] = -(psi[y * W + wx(x + 1)] - psi[y * W + wx(x - 1)]) / (2 * KX[y]);
+    sp.push(Math.hypot(CU[i], CV[i]));
+  }
+  sp.sort((a, b) => a - b);
+  const p90 = sp.length ? Math.max(1e-9, sp[Math.floor(sp.length * 0.9)]) : 1;
+  for (let i = 0; i < N; i++) {
+    CU[i] /= p90; CV[i] /= p90;
+    const s = Math.hypot(CU[i], CV[i]);
+    if (s > 2.5) { CU[i] *= 2.5 / s; CV[i] *= 2.5 / s; }
+  }
+  /* coastal upwelling: the Ekman drift (wind turned 90 degrees, right in the north, left in the
+     south; weak at the equator, where the Coriolis effect vanishes, and in the high latitudes,
+     where the winds turn) against the direction away from the land, at the coast and fading
+     two cells out */
+  const up = new Float32Array(N), dist = new Uint8Array(N).fill(9), q = [];
+  for (let i = 0; i < N; i++) if (!isOcean(i)) { dist[i] = 0; q.push(i); }
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h], cx = c % W, cy = (c / W) | 0;
+    if (dist[c] >= 3) continue;
+    for (const j of [cy * W + wx(cx + 1), cy * W + wx(cx - 1), cy > 0 ? c - W : -1, cy < H - 1 ? c + W : -1])
+      if (j >= 0 && dist[j] > dist[c] + 1) { dist[j] = dist[c] + 1; q.push(j); }
+  }
+  for (let y = 1; y < H - 1; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (!isOcean(i) || dist[i] > 3) continue;
+    /* away from the land: the sum of directions to the sea neighbours minus the land ones */
+    let gx = 0, gy = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const j = (y + dy) * W + wx(x + dx), l = isOcean(j) ? 0 : 1, len = Math.hypot(dx * KX[y], dy);
+      gx -= l * dx * KX[y] / len; gy -= l * dy / len;
+    }
+    const gl = Math.hypot(gx, gy);
+    if (gl < 1e-6) continue;
+    const deg = Math.abs(DEGL[i]), north = DEGL[i] >= 0;
+    const lat = deg <= 4 ? 0 : deg < 12 ? (deg - 4) / 8 : deg <= 35 ? 1 : deg < 45 ? (45 - deg) / 10 : 0;
+    const mx = north ? -Vs[i] : Vs[i], my = north ? Us[i] : -Us[i];
+    const off = (mx * gx + my * gy) / gl;
+    if (off > 0) up[i] = Math.min(1, off / 0.6) * lat * [1, 1, 0.6, 0.3][dist[i] - 1];
+  }
+  return { U: CU, V: CV, psi: psi, up: up };
+}
+
 /* separable box blur that wraps in x; with kx (a row's column width) it reaches r / kx columns
    east and west, the same distance on the ground in every row */
 function blurWrap(src, W, H, r, kx) {
@@ -1441,6 +1594,10 @@ function blurWrap(src, W, H, r, kx) {
 }
 
 AEON.planetgen = { generate: generate, region: region };
+/* raised whenever a change here makes the same seed a different world (its land, climate or
+   biomes, and so its history): what the browser kept for a world of an older version is
+   dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). */
+AEON.GEN_VERSION = 2;
 AEON.regiongen = region;
 
 })();

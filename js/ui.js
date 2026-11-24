@@ -795,7 +795,7 @@ function specialLegend(L) {
       L.appendChild(el("span", { text: "sea level", title: "The coast, drawn in ink" }));
       L.appendChild(ramp(R.elevation));
       L.appendChild(el("span", { text: "4,500 m +" }));
-      L.appendChild(el("span", { text: "· contours 200, 500, 1,000, 1,500, 2,000, 3,000, 4,000 m; under the sea every 1,000 m", title: "Thin lines join places of the same height" }));
+      L.appendChild(el("span", { text: "· contours 200, 500, 1,000, 1,500, 2,000, 3,000, 4,000 m; under the sea 50, 100, 200 m, then every 1,000 m", title: "Thin lines join places of the same height" }));
     }
     L.classList.remove("hidden");
     return true;

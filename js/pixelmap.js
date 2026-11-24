@@ -64,11 +64,11 @@ const RAMPS = {
   currents:     ["#4f86b8", "#3f6fa3", "#355c8c", "#2f4d78", "#2e4266", "#4a3f61", "#6e4253", "#924a44", "#b4583a"],
 };
 const CUR_SPAN = 7;
-const DEPTH_STOPS = [0, -60, -200, -500, -1000, -2000, -3000, -4000, -5500];
+const DEPTH_STOPS = [0, -30, -80, -150, -300, -1000, -2500, -4000, -5500];
 const TEMP_STOPS = [-30, -20, -10, 0, 8, 15, 21, 26, 32];
 const RAIN_STOPS = [0, 100, 250, 450, 700, 1000, 1500, 2200, 3200];
 /* contour lines in the elevation mode: on land and under the sea, in metres */
-const CONTOURS_LAND = [200, 500, 1000, 1500, 2000, 3000, 4000], CONTOURS_SEA = [-200, -1000, -2000, -3000, -4000, -5000];
+const CONTOURS_LAND = [200, 500, 1000, 1500, 2000, 3000, 4000], CONTOURS_SEA = [-50, -100, -200, -1000, -2000, -3000, -4000, -5000];
 /* the Koppen climates in the usual atlas colours (Peel, Finlayson and McMahon 2007), and their names */
 const KOPPEN = {
   Af: ["#0000fe", "tropical rainforest"], Am: ["#0077ff", "tropical monsoon"], Aw: ["#46a9fa", "tropical savanna"], As: ["#46a9fa", "tropical savanna, dry summer"],

@@ -69,10 +69,10 @@ let chapter = null;
 function firstYear() { return chapter ? chapter.from : world.startYear; }
 function lastYear() { return chapter ? chapter.to : world.endYear; }
 function onPlanet() { return !!planet && world === planet; }
-const PLANET_MODES = ["world", "ages", "biome", "elevation", "habitability"];
+const PLANET_MODES = ["world", "ages", "biome", "elevation", "habitability", "currents"];
 /* the modes drawn from the world sketch */
 function sketchMode() { return mapMode === "world" || mapMode === "ages"; }
-const REGION_MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
+const REGION_MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "currents"];
 let view = { zoom: 1, panX: 0, panY: 0 };
 let hoverRegion = null, selectedRegion = null;
 
@@ -772,6 +772,7 @@ const LEGENDS = {
   population: ["People", "few", "many"],
   habitability: ["Habitability", "harsh", "kind"],
   elevation: ["Elevation", "0 m", "4,500 m +"],
+  currents: ["Sea", "colder", "warmer"],
 };
 function realmAt(rid) { const r = rid != null && shown().regions[rid]; return r && r.owner != null ? r.owner : null; }
 /* the realm the diplomacy map is about: the one under the cursor, else the selected land's, else
@@ -811,6 +812,12 @@ function updateLegend() {
   L.appendChild(el("span", { text: spec[1] }));
   L.appendChild(bar);
   L.appendChild(el("span", { text: spec[2] }));
+  /* the currents mode: what its lines and stipple mean */
+  if (mapMode === "currents" && AEON.currentColors) {
+    const K = AEON.currentColors, line = function (k, t) { const i = el("i", { class: "ae-legend-chip" }); i.style.background = K[k]; L.appendChild(i); L.appendChild(el("span", { text: t })); };
+    L.appendChild(el("b", { text: "Currents" }));
+    line("warm", "warm"); line("cold", "cold"); line("up", "upwelling");
+  }
   L.classList.remove("hidden");
 }
 

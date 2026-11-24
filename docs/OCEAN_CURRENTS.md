@@ -28,6 +28,24 @@ Generation takes no longer.
 the biomes), so watched chapters and changes kept in the browser for a seed are dropped once
 (`AEON.GEN_VERSION`, now 2).
 
+## The currents map mode
+
+A **Currents** button sits with the other map modes, on the world map and in regions
+(`js/pixelmap.js`: `currentsField`, `currentLines`, `drawCurrents`; legend in `js/ui.js`). It
+follows how ocean-current maps are usually drawn (atlases, NASA's flow maps, earth.nullschool):
+
+- **The sea's colour** is the water's temperature against its latitude's level, on a muted
+  diverging scale: blue colder, red warmer (`RAMPS.currents`, +/-7 °C at the ends). Land is
+  greyed and its trees left out, so the sea reads first.
+- **The currents** are evenly spaced streamlines (after Jobard and Lefer) rather than a grid of
+  arrows, which clutters and hides the gyres. Every line is the same width, with filled
+  arrowheads of one size along it, on a dark casing so it reads over any sea. Each stretch is red
+  where it carries warm water and blue where cold (the atlas convention). A line keeps clear of
+  itself and closes into a ring where it comes back to its start; short stubs and the slow little
+  rings at the hearts of the gyres are left out. The map is still: the lines are drawn once into
+  an image and kept until the zoom changes, so this mode costs about as much as the others.
+- **Upwelling** is stippled in teal along the coasts where cold water rises.
+
 ## The model
 
 **1. The circulation** (`oceanCurrents`). Stommel's model of the wind-driven ocean, solved for a

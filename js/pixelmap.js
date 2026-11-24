@@ -27,7 +27,7 @@ function tableAt(t, d) {
   for (let k = 1; k < t.length; k++) if (d <= t[k][0]) return t[k - 1][1] + (t[k][1] - t[k - 1][1]) * (d - t[k - 1][0]) / (t[k][0] - t[k - 1][0]);
   return t[t.length - 1][1];
 }
-const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability"];
+const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "currents"];
 /* the diplomacy mode's colours: how each realm stands with the realm in focus (AEON.stancesAt) */
 /* (Daan, 2026-10-24: truce silver, trade gold; the realm in focus a pale cream wash, so it is never
    mistaken for one of the stances; he tried a thick ink border round it and dropped it) */
@@ -53,7 +53,15 @@ const RAMPS = {
   population:   ["#efe2bf", "#e2c493", "#d4a06e", "#c27a52", "#a5523d", "#80302a", "#581818"],
   elevation:    ["#3ddc84", "#4fd64a", "#8fe03e", "#cbe63a", "#f0e23a", "#f5c03a", "#f39a3a", "#ef6f3b", "#e84b3e", "#e5677a", "#ee93a6", "#f5c6cf", "#fcedf0"],
   habitability: ["#efe6c8", "#dfe0a8", "#bfd38a", "#93be6e", "#64a258", "#3e8044", "#245c32"],
+  /* the currents mode's sea: the water against its latitude's level, cold blue to warm red, as the
+     atlases draw it, kept muted so the currents drawn over it stand out (CUR_SPAN deg C at the ends) */
+  currents:     ["#4f86b8", "#3f6fa3", "#355c8c", "#2f4d78", "#2e4266", "#4a3f61", "#6e4253", "#924a44", "#b4583a"],
 };
+const CUR_SPAN = 7;
+/* the currents drawn over it: warm water red, cold blue (the atlas convention), on a dark casing
+   so they read over any sea */
+const CUR_LINE = { warm: "#ff8a4c", cold: "#6cc8ff", casing: "rgba(8,14,30,0.6)", up: "#7fe0cf" };
+AEON.currentColors = CUR_LINE;
 AEON.mapRamps = RAMPS;
 const INK = "#2a1a0e", DESK = "#2a1d12";
 const RIBBON = "#8e1d1d", CURSOR = "#fff8e1";   /* selection and hover brackets */
@@ -790,6 +798,208 @@ function elevBand(r) {
   return k;
 }
 
+/* ------------------------------------------------------------ the currents mode */
+/* the world's ocean currents (planetgen.js oceanCurrents) on this map's cells, once per world:
+   u, v (east, south; 1 = most of the sea's speed), a (the water against its latitude's level, deg
+   C), up (coastal upwelling, 0..1), sea (1 on the open sea). A region reads them off the planet's
+   grid; the anomaly only from the planet's sea cells, so the coast keeps its water's colour. */
+function currentsField(c, w) {
+  if (c.cur !== undefined) return c.cur;
+  const sq = w.square, pl = w.planet, g = (pl || w)._gen;
+  c.cur = null;
+  if (!g || !g.CU || !g.sstA) return null;
+  const W = w.width, H = w.height, N = W * H, R = w.regions;
+  const PW = pl ? pl.width : W, PH = pl ? pl.height : H;
+  const u = new Float32Array(N), v = new Float32Array(N), a = new Float32Array(N), up = new Float32Array(N), sea = new Uint8Array(N);
+  const pSea = function (j) { return g.E[j] <= 0.5; };
+  for (let i = 0; i < N; i++) {
+    sea[i] = R[i].barren && !R[i].lake ? 1 : 0;
+    if (!sea[i]) continue;
+    if (!sq || !pl) { u[i] = g.CU[i]; v[i] = g.CV[i]; a[i] = g.sstA[i] * 55.6; up[i] = g.upwell[i]; continue; }
+    const x = i % W, y = (i - x) / W;
+    const fx = sq.px0 + (x + 0.5) / sq.K - 0.5, fy = Math.max(0, Math.min(PH - 1, sq.py0 + (y + 0.5) / sq.K - 0.5));
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, y1 = Math.min(y0 + 1, PH - 1);
+    let su = 0, sv = 0, sa = 0, sp = 0, wa = 0;
+    for (const [px, py, wt] of [[x0, y0, (1 - tx) * (1 - ty)], [x0 + 1, y0, tx * (1 - ty)], [x0, y1, (1 - tx) * ty], [x0 + 1, y1, tx * ty]]) {
+      const j = py * PW + ((px % PW) + PW) % PW;
+      su += g.CU[j] * wt; sv += g.CV[j] * wt; sp += g.upwell[j] * wt;
+      if (pSea(j)) { sa += g.sstA[j] * wt; wa += wt; }
+    }
+    u[i] = su; v[i] = sv; up[i] = sp; a[i] = wa > 0 ? sa / wa * 55.6 : 0;
+  }
+  c.cur = { u: u, v: v, a: a, up: up, sea: sea, W: W, H: H, wrap: !sq };
+  return c.cur;
+}
+
+/* the streamlines of the currents, evenly spaced (after Jobard and Lefer): seeds on a grid, each
+   traced both ways along the flow until it slows, leaves the sea or comes too near another line.
+   Kept in cell units as one path per colour and speed class (Path2D), with chevrons along them. */
+function currentLines(c, w) {
+  if (c.curLines !== undefined) return c.curLines;
+  c.curLines = null;
+  const F = currentsField(c, w);
+  if (!F || typeof Path2D === "undefined") return null;
+  const W = F.W, H = F.H, DSEP = 2.4, DTEST = 1.3, STEP = 0.3, SLOW = 0.1, RES = 2;
+  const OW = W * RES, OH = H * RES, occ = new Uint8Array(OW * OH);
+  const wxc = function (x) { return F.wrap ? ((x % W) + W) % W : x; };
+  const at = function (A, x, y) {
+    x = x - 0.5; y = Math.max(0, Math.min(H - 1, y - 0.5));
+    const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0, y1 = Math.min(y0 + 1, H - 1);
+    const xa = Math.max(0, Math.min(W - 1, wxc(x0))), xb = Math.max(0, Math.min(W - 1, wxc(x0 + 1)));
+    return (A[y0 * W + xa] * (1 - tx) + A[y0 * W + xb] * tx) * (1 - ty) + (A[y1 * W + xa] * (1 - tx) + A[y1 * W + xb] * tx) * ty;
+  };
+  const inSea = function (x, y) {
+    if (y < 0 || y >= H || (!F.wrap && (x < 0 || x >= W))) return false;
+    return F.sea[Math.floor(y) * W + Math.floor(wxc(x))] === 1;
+  };
+  const free = function (x, y) {
+    const ox = Math.floor(wxc(x) * RES), oy = Math.floor(y * RES);
+    return oy < 0 || oy >= OH || !occ[oy * OW + ((ox % OW) + OW) % OW];
+  };
+  const mark = function (x, y) {
+    const r = Math.ceil(DTEST * RES), cx = Math.floor(wxc(x) * RES), cy = Math.floor(y * RES);
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dy * dy > r * r) continue;
+      const yy = cy + dy;
+      if (yy < 0 || yy >= OH) continue;
+      occ[yy * OW + (((cx + dx) % OW) + OW) % OW] = 1;
+    }
+  };
+  /* a line also keeps clear of itself: in a closed gyre it would otherwise circle round and round,
+     its loops bunched into rings. Each line stamps its own points (with their step along it) and
+     stops where it comes back within reach of a point more than SELF steps away; if that point is
+     where it started, the loop is closed into a ring instead (closed: set by trace). */
+  const ownId = new Int32Array(OW * OH), ownStep = new Int32Array(OW * OH), SELF = 14;
+  let lineId = 0, closed = false;
+  const markOwn = function (x, y, step) {
+    const r = Math.ceil(DTEST * 0.8 * RES), cx = Math.floor(wxc(x) * RES), cy = Math.floor(y * RES);
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dy * dy > r * r) continue;
+      const yy = cy + dy;
+      if (yy < 0 || yy >= OH) continue;
+      const j = yy * OW + (((cx + dx) % OW) + OW) % OW;
+      if (ownId[j] !== lineId || Math.abs(ownStep[j]) > Math.abs(step)) { ownId[j] = lineId; ownStep[j] = step; }
+    }
+  };
+  const selfFree = function (x, y, step) {
+    const ox = Math.floor(wxc(x) * RES), oy = Math.floor(y * RES);
+    if (oy < 0 || oy >= OH) return true;
+    const j = oy * OW + ((ox % OW) + OW) % OW;
+    return ownId[j] !== lineId || Math.abs(ownStep[j] - step) <= SELF;
+  };
+  /* one direction of a line from (x, y): sgn 1 along the flow, -1 against it */
+  const trace = function (x, y, sgn) {
+    const pts = [], x0 = x, y0 = y;
+    closed = false;
+    for (let k = 0; k < 220; k++) {
+      const u1 = at(F.u, x, y), v1 = at(F.v, x, y), s1 = Math.hypot(u1, v1);
+      if (s1 < SLOW) break;
+      const mx = x + sgn * STEP * 0.5 * u1 / s1, my = y + sgn * STEP * 0.5 * v1 / s1;
+      const u2 = at(F.u, mx, my), v2 = at(F.v, mx, my), s2 = Math.hypot(u2, v2);
+      if (s2 < SLOW) break;
+      const nx = x + sgn * STEP * u2 / s2, ny = y + sgn * STEP * v2 / s2;
+      if (!inSea(nx, ny) || !free(nx, ny)) break;
+      /* back where it started: a closed loop, joined into a ring */
+      if (k > 2 * SELF && Math.hypot(nx - x0, ny - y0) < STEP * 2.5) { pts.push([x0, y0, s2, at(F.a, x0, y0)]); closed = true; break; }
+      if (!selfFree(nx, ny, sgn * (k + 1))) break;
+      x = nx; y = ny;
+      markOwn(x, y, sgn * (k + 1));
+      pts.push([x, y, s2, at(F.a, x, y)]);
+    }
+    return pts;
+  };
+  /* seeds on a grid, in a fixed shuffled order so the lines start all over the sea */
+  const seeds = [];
+  for (let y = DSEP / 2; y < H; y += DSEP) for (let x = DSEP / 2; x < W; x += DSEP) seeds.push([x, y, cellRand(Math.floor(y) * W + Math.floor(x), 77)]);
+  seeds.sort(function (p, q) { return p[2] - q[2]; });
+  const lines = [];
+  for (const s of seeds) {
+    const x = s[0], y = s[1];
+    if (!inSea(x, y) || !free(x, y) || Math.hypot(at(F.u, x, y), at(F.v, x, y)) < SLOW * 1.5) continue;
+    lineId++; markOwn(x, y, 0);
+    const fwd = trace(x, y, 1), ring = closed, back = ring ? [] : trace(x, y, -1).reverse();
+    const pts = back.concat([[x, y, Math.hypot(at(F.u, x, y), at(F.v, x, y)), at(F.a, x, y)]], fwd);
+    /* short pieces (under ~5 cells) only clutter, and the slow little rings at the hearts of the
+       gyres (under ~4 cells across) read as stray circles: both dropped */
+    let ms = 0, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of pts) { ms += p[2]; x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+    if (pts.length < 16 || (ms / pts.length < 0.25 && Math.hypot(x1 - x0, y1 - y0) < 4)) continue;
+    for (const p of pts) mark(p[0], p[1]);
+    lines.push(pts);
+  }
+  /* each line into two paths, warm and cold, stretch by stretch: red where it carries water
+     warmer than its latitude's level, blue where colder (switching only once the water is CUR_TINT
+     deg C past even, so it does not flicker), as the atlases draw them. Every line is the same
+     width, with a filled arrowhead of one size every CUR_HEAD points (~5 cells), none near its ends. */
+  const CUR_TINT = 0.5, CUR_HEAD = 18, HL = 0.75, HW = 0.42;
+  const paths = { warm: { col: "warm", p: new Path2D(), h: new Path2D(), seam: false }, cold: { col: "cold", p: new Path2D(), h: new Path2D(), seam: false } };
+  for (const pts of lines) {
+    /* the anomaly smoothed along the line over a few points first */
+    const A = pts.map(function (_, k) { let s = 0, n = 0; for (let j = Math.max(0, k - 4); j <= Math.min(pts.length - 1, k + 4); j++) { s += pts[j][3]; n++; } return s / n; });
+    let col = A[0] >= 0 ? "warm" : "cold";
+    const C = pts.map(function (_, k) { if (col === "warm" ? A[k] < -CUR_TINT : A[k] > CUR_TINT) col = A[k] > 0 ? "warm" : "cold"; return col; });
+    let P = paths[C[0]].p, seam = false;
+    P.moveTo(pts[0][0], pts[0][1]);
+    for (let k = 1; k < pts.length; k++) {
+      const a0 = pts[k - 1], a1 = pts[k];
+      if (a1[0] < 0 || a1[0] > W) seam = true;
+      if (Math.abs(a1[0] - a0[0]) > W / 2) { P = paths[C[k]].p; P.moveTo(a1[0], a1[1]); continue; }
+      P.lineTo(a1[0], a1[1]);
+      if (C[k] !== C[k - 1]) { P = paths[C[k]].p; P.moveTo(a1[0], a1[1]); }
+    }
+    for (let k = 10; k < pts.length - 8; k += CUR_HEAD) {
+      const a0 = pts[k - 3], a1 = pts[k];
+      if (Math.abs(a1[0] - a0[0]) > W / 2) continue;
+      const dx = a1[0] - a0[0], dy = a1[1] - a0[1], l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
+      const tx = a1[0] + ux * HL * 0.5, ty = a1[1] + uy * HL * 0.5, bx = a1[0] - ux * HL * 0.5, by = a1[1] - uy * HL * 0.5;
+      const Hd = paths[C[k]].h;
+      Hd.moveTo(tx, ty); Hd.lineTo(bx - uy * HW, by + ux * HW); Hd.lineTo(bx + uy * HW, by - ux * HW); Hd.closePath();
+    }
+    /* a line that runs past the map's edge (the world wraps) is drawn again a map's width over */
+    if (F.wrap && seam) { paths.warm.seam = true; paths.cold.seam = true; }
+  }
+  c.curLines = [paths.cold, paths.warm];
+  return c.curLines;
+}
+
+/* the currents over the map: a dark casing, the lines and their arrowheads, all one width. Still:
+   drawn once into an image at the view's scale and kept until the zoom changes, so each frame
+   only lays that image down; the copies a map's width over only for lines that cross the edge. */
+function drawCurrents(ctx, c, w, v, X0) {
+  const L = currentLines(c, w);
+  if (!L) return;
+  const cell = PPC * v.P, mw = c.VW * v.P, mh = c.VH * v.P, px = 1 / cell;
+  const lw = Math.max(1, v.dpr) * Math.max(1, Math.min(2, cell / 8));
+  const wrap = !!(c.cur && c.cur.wrap);
+  const strokeAll = function (g, x0, y0) {
+    g.lineJoin = "round"; g.lineCap = "round";
+    for (const o of wrap ? [0, -mw, mw] : [0]) {
+      g.setTransform(cell, 0, 0, cell, x0 + o, y0);
+      for (const q of L) if (!o || q.seam) {
+        g.strokeStyle = CUR_LINE.casing; g.lineWidth = lw * 2.6 * px; g.stroke(q.p); g.stroke(q.h);
+      }
+      for (const q of L) if (!o || q.seam) {
+        g.strokeStyle = CUR_LINE[q.col]; g.fillStyle = CUR_LINE[q.col]; g.lineWidth = lw * px;
+        g.stroke(q.p); g.fill(q.h);
+      }
+    }
+  };
+  const key = mw + "|" + mh + "|" + lw;
+  if (L.key !== key) {
+    L.key = key; L.img = null;
+    if (typeof document !== "undefined" && mw * mh <= 4096 * 4096) {
+      const cv = document.createElement("canvas");
+      cv.width = mw; cv.height = mh;
+      strokeAll(cv.getContext("2d"), 0, 0);
+      L.img = cv;
+    }
+  }
+  ctx.save();
+  ctx.beginPath(); ctx.rect(X0, v.Y0, mw, mh); ctx.clip();
+  if (L.img) ctx.drawImage(L.img, X0, v.Y0); else strokeAll(ctx, X0, v.Y0);
+  ctx.restore();
+}
+
 /* ------------------------------------------------------------ the frame for a year and mode */
 /* contest (from mapfx.js), when given: regions changing hands, { rid: { from, to, phase } }. They
    keep the old owner's borders while their 2-pixel blocks, border pixels too (most such land is a
@@ -859,6 +1069,35 @@ function compose(c, w, mode, roads, contest, focus, provOf, sea) {
       /* keep a whisper of the terrain shading underneath */
       const col = ramp[k], a = 0.82;
       d[i * 4] += (col[0] - d[i * 4]) * a; d[i * 4 + 1] += (col[1] - d[i * 4 + 1]) * a; d[i * 4 + 2] += (col[2] - d[i * 4 + 2]) * a;
+    }
+  }
+
+  /* currents: the land greyed under a whisper of its shading; the sea in the ramp by its water's
+     warmth against its latitude, blended between the sea cells' centres and dithered; the cold
+     water welling up at the coasts stippled over it. The currents themselves are drawn later. */
+  const F = mode === "currents" ? currentsField(c, w) : null;
+  if (mode === "currents") {
+    const ramp = RAMPS.currents.map(rgb), n = ramp.length, grey = rgb("#b9b19a"), upc = rgb(CUR_LINE.up);
+    const CW = w.width, CH = w.height;
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x;
+      if (land[i] || c.lake[i] || !F) {
+        if (land[i]) { const g = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3 / 255; for (let k = 0; k < 3; k++) d[i * 4 + k] = Math.round(grey[k] * (0.72 + 0.4 * g)); }
+        continue;
+      }
+      const fx = (x + 0.5) / PPC - 0.5, fy = Math.max(0, Math.min(CH - 1, (y + 0.5) / PPC - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, y1 = Math.min(y0 + 1, CH - 1);
+      let sa = 0, su = 0, ws = 0;
+      for (const [cx, cy, wt] of [[x0, y0, (1 - tx) * (1 - ty)], [x0 + 1, y0, tx * (1 - ty)], [x0, y1, (1 - tx) * ty], [x0 + 1, y1, tx * ty]]) {
+        const j = cy * CW + (F.wrap ? ((cx % CW) + CW) % CW : Math.max(0, Math.min(CW - 1, cx)));
+        if (!F.sea[j] || wt <= 0) continue;
+        sa += F.a[j] * wt; su += F.up[j] * wt; ws += wt;
+      }
+      const an = ws > 0 ? sa / ws : 0, upw = ws > 0 ? su / ws : 0;
+      const t = Math.max(0, Math.min(1, an / (2 * CUR_SPAN) + 0.5));
+      const k = Math.max(0, Math.min(n - 1, Math.floor(t * (n - 1) + bayer(x, y))));
+      let col = ramp[k];
+      if (upw > 0.12 && bayer(x + 1, y + 2) < Math.min(0.7, upw)) col = upc;
+      d[i * 4] = col[0]; d[i * 4 + 1] = col[1]; d[i * 4 + 2] = col[2];
     }
   }
 
@@ -1364,7 +1603,8 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   const drawn = [];
   const sx = function (gx) { return tiles[0] + gx * cell; }, sy = function (gy) { return v.Y0 + gy * cell; };
   const sea = opts.sea || null;
-  drawScenery(ctx, c, v, u, tiles[0], w, sea);
+  /* (not in the currents mode, which is about the sea: the trees only clutter its grey land) */
+  if (opts.mode !== "currents") drawScenery(ctx, c, v, u, tiles[0], w, sea);
 
   /* settlements: capitals always; towns and villages appear as the map is zoomed in */
   const capitals = {};
@@ -1511,7 +1751,7 @@ function draw(canvas, world, opts) {
   const fxOn = AEON.mapfx && AEON.mapfx.live(), mode = opts.mode || "political";
   /* the seasons (seasons.js): on the ground in the realm modes, on the sprites and in the weather
      everywhere but the data modes; the season quantised for the caches */
-  const dataMode = mode === "population" || mode === "elevation" || mode === "habitability";
+  const dataMode = mode === "population" || mode === "elevation" || mode === "habitability" || mode === "currents";
   const SE = AEON.seasons && !dataMode && opts.season !== undefined ? AEON.seasons : null;
   const sea = SE ? { season: opts.season, ground: SE.key(opts, 2), key: SE.key(opts, 1) } : null;
   opts = Object.assign({}, opts, { sea: sea });
@@ -1525,7 +1765,9 @@ function draw(canvas, world, opts) {
   ctx.fillRect(X0 - 1, v.Y0 - 1, mw + 2, mh + 2);
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
   c.skyOn = !!opts.clouds;
-  if (opts.time != null) drawAmbient(ctx, c, v, X0, opts.time, !dataMode, opts.season);
+  if (opts.time != null && mode !== "currents") drawAmbient(ctx, c, v, X0, opts.time, !dataMode, opts.season);
+  /* the currents mode: the world's currents over its sea */
+  if (mode === "currents") drawCurrents(ctx, c, world, v, X0);
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
   const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null, war = AEON.mapfx && opts.date != null && !dataMode;
   const cell = PPC * v.P, env = (fx || war) && {

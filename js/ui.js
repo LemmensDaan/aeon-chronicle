@@ -69,10 +69,10 @@ let chapter = null;
 function firstYear() { return chapter ? chapter.from : world.startYear; }
 function lastYear() { return chapter ? chapter.to : world.endYear; }
 function onPlanet() { return !!planet && world === planet; }
-const PLANET_MODES = ["world", "ages", "biome", "elevation", "habitability", "currents"];
+const PLANET_MODES = ["world", "ages", "biome", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents"];
 /* the modes drawn from the world sketch */
 function sketchMode() { return mapMode === "world" || mapMode === "ages"; }
-const REGION_MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "currents"];
+const REGION_MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents"];
 let view = { zoom: 1, panX: 0, panY: 0 };
 let hoverRegion = null, selectedRegion = null;
 
@@ -772,9 +772,60 @@ const LEGENDS = {
   population: ["People", "few", "many"],
   habitability: ["Habitability", "harsh", "kind"],
   elevation: ["Elevation", "0 m", "4,500 m +"],
+  temperature: ["Yearly mean", "-30 °C", "32 °C +"],
+  rainfall: ["Rain a year", "0 mm", "3,200 mm +"],
   currents: ["Sea", "colder", "warmer"],
 };
 function realmAt(rid) { const r = rid != null && shown().regions[rid]; return r && r.owner != null ? r.owner : null; }
+/* the legends that are more than one ramp: elevation (sea depths, sea level and the land, with
+   its contours), climate zones (the climates this map has) and winds; true when it drew one */
+function specialLegend(L) {
+  const R = AEON.mapRamps, chip = function (col, t, tip, bg) {
+    const i = el("i", { class: "ae-legend-chip" }); i.style.background = bg || col; L.appendChild(i);
+    L.appendChild(el("span", { text: t, title: tip || "" }));
+  };
+  const ramp = function (cols) { const bar = el("span", { class: "ae-legend-ramp" }); for (const c of cols) { const i = el("i"); i.style.background = c; bar.appendChild(i); } return bar; };
+  const key = mapMode + "|" + (world.square ? world.square.id : "w") + "|" + world.seed;
+  if (mapMode === "elevation" && R && R.depth) {
+    if (L._mode !== key) {
+      L._mode = key; L.textContent = "";
+      L.appendChild(el("b", { text: "Elevation" }));
+      L.appendChild(el("span", { text: "5,500 m deep" }));
+      L.appendChild(ramp(R.depth.slice().reverse()));
+      L.appendChild(el("span", { text: "sea level", title: "The coast, drawn in ink" }));
+      L.appendChild(ramp(R.elevation));
+      L.appendChild(el("span", { text: "4,500 m +" }));
+      L.appendChild(el("span", { text: "· contours 200, 500, 1,000, 1,500, 2,000, 3,000, 4,000 m; under the sea every 1,000 m", title: "Thin lines join places of the same height" }));
+    }
+    L.classList.remove("hidden");
+    return true;
+  }
+  if (mapMode === "climate" && AEON.koppen) {
+    if (L._mode !== key) {
+      L._mode = key; L.textContent = "";
+      L.appendChild(el("b", { text: "Climate" }));
+      const seen = {};
+      for (const r of world.regions) if (r.climate && !r.barren) seen[r.climate] = (seen[r.climate] || 0) + 1;
+      Object.keys(AEON.koppen).filter(function (k) { return seen[k]; }).forEach(function (k) { chip(AEON.koppen[k][0], k, AEON.koppen[k][1]); });
+    }
+    L.classList.remove("hidden");
+    return true;
+  }
+  if (mapMode === "winds" && AEON.windColors) {
+    if (L._mode !== key) {
+      L._mode = key; L.textContent = "";
+      L.appendChild(el("b", { text: "Winds" }));
+      const WC = AEON.windColors;
+      chip(WC.trade, "trade winds", "Easterlies between the tropics and about 30 degrees, blowing toward the equator");
+      chip(WC.west, "westerlies", "Winds from the west in the middle latitudes, and wherever else the wind blows from the west");
+      chip(WC.polar, "polar easterlies", "Cold winds from the east poleward of about 50 degrees");
+      L.appendChild(el("span", { text: "· the sea lighter where it blows harder" }));
+    }
+    L.classList.remove("hidden");
+    return true;
+  }
+  return false;
+}
 /* the realm the diplomacy map is about: the one under the cursor, else the selected land's, else
    the followed realm (null: none, and the map shows every war and vassal) */
 function diploFocus() {
@@ -784,6 +835,7 @@ function diploFocus() {
 function updateLegend() {
   const L = dom.legend, spec = LEGENDS[mapMode], ramp = AEON.mapRamps && AEON.mapRamps[mapMode];
   if (!L) return;
+  if (specialLegend(L)) return;
   if (sketchMode() && AEON.worldView) {
     if (L._mode !== mapMode) { L._mode = mapMode; AEON.worldView.fillLegend(L, world, el, mapMode === "ages"); }
     L.classList.remove("hidden");

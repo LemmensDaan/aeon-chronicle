@@ -87,7 +87,10 @@ html, body { font-family: var(--ae-serif); }
 .ae-overlay.on { color: var(--pp-ink); }
 /* the data-mode legend, a small plaque in the map's lower left corner */
 .ae-legend {
-  position: absolute; left: 12px; bottom: 12px; z-index: 6; display: flex; align-items: center; gap: 7px; pointer-events: none;
+  position: absolute; left: 12px; bottom: 12px; z-index: 6; display: flex; align-items: center; gap: 3px 7px;
+  /* it wraps (the climate legend is long; the map runs on under the side panel, hence the cap),
+     and takes the pointer so its names show on hover */
+  flex-wrap: wrap; max-width: min(calc(100% - 24px), 880px); box-sizing: border-box; pointer-events: auto;
   padding: 4px 9px; background: #f3e4c4; border: 2px solid var(--pp-ink); box-shadow: 2px 2px 0 rgba(0, 0, 0, .35);
   font-family: var(--ae-pixel); font-size: 13px; color: var(--pp-soft);
 }

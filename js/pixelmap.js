@@ -27,7 +27,7 @@ function tableAt(t, d) {
   for (let k = 1; k < t.length; k++) if (d <= t[k][0]) return t[k - 1][1] + (t[k][1] - t[k - 1][1]) * (d - t[k - 1][0]) / (t[k][0] - t[k - 1][0]);
   return t[t.length - 1][1];
 }
-const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "currents"];
+const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents"];
 /* the diplomacy mode's colours: how each realm stands with the realm in focus (AEON.stancesAt) */
 /* (Daan, 2026-10-24: truce silver, trade gold; the realm in focus a pale cream wash, so it is never
    mistaken for one of the stances; he tried a thick ink border round it and dropped it) */
@@ -51,13 +51,41 @@ const P = {
    green lowland, yellow, orange, red uplands, pink and white peaks, at the heights ELEV_STOPS. */
 const RAMPS = {
   population:   ["#efe2bf", "#e2c493", "#d4a06e", "#c27a52", "#a5523d", "#80302a", "#581818"],
-  elevation:    ["#3ddc84", "#4fd64a", "#8fe03e", "#cbe63a", "#f0e23a", "#f5c03a", "#f39a3a", "#ef6f3b", "#e84b3e", "#e5677a", "#ee93a6", "#f5c6cf", "#fcedf0"],
+  elevation:    ["#3ddc84", "#4fd64a", "#8fe03e", "#cbe63a", "#f0e23a", "#f5c03a", "#f39a3a", "#ef6f3b", "#e84b3e", "#c94a44", "#a63b47", "#82344a", "#5f2d47"],
+  /* the sea's depths in the elevation mode, shallow to deep, at the depths DEPTH_STOPS */
+  depth:        ["#a7d6e8", "#86c3e2", "#64abd8", "#4a90c8", "#3976b4", "#2d5f9d", "#244b85", "#1c3a6d", "#152c57"],
+  /* the yearly mean temperature, at TEMP_STOPS deg C: violet cold to dark red hot, as climate atlases */
+  temperature:  ["#3b2a6b", "#41509f", "#4f86c6", "#8fc3e0", "#dfe9c6", "#f2d083", "#ec9a52", "#d75e39", "#a8322b"],
+  /* the yearly rain, at RAIN_STOPS mm: dry tan through green to deep blue-green */
+  rainfall:     ["#c4995e", "#d8bb80", "#e6d8a2", "#c9d991", "#97c477", "#5ea562", "#2f8a63", "#1f6d6e", "#1d507c"],
   habitability: ["#efe6c8", "#dfe0a8", "#bfd38a", "#93be6e", "#64a258", "#3e8044", "#245c32"],
   /* the currents mode's sea: the water against its latitude's level, cold blue to warm red, as the
      atlases draw it, kept muted so the currents drawn over it stand out (CUR_SPAN deg C at the ends) */
   currents:     ["#4f86b8", "#3f6fa3", "#355c8c", "#2f4d78", "#2e4266", "#4a3f61", "#6e4253", "#924a44", "#b4583a"],
 };
 const CUR_SPAN = 7;
+const DEPTH_STOPS = [0, -60, -200, -500, -1000, -2000, -3000, -4000, -5500];
+const TEMP_STOPS = [-30, -20, -10, 0, 8, 15, 21, 26, 32];
+const RAIN_STOPS = [0, 100, 250, 450, 700, 1000, 1500, 2200, 3200];
+/* contour lines in the elevation mode: on land and under the sea, in metres */
+const CONTOURS_LAND = [200, 500, 1000, 1500, 2000, 3000, 4000], CONTOURS_SEA = [-200, -1000, -2000, -3000, -4000, -5000];
+/* the Koppen climates in the usual atlas colours (Peel, Finlayson and McMahon 2007), and their names */
+const KOPPEN = {
+  Af: ["#0000fe", "tropical rainforest"], Am: ["#0077ff", "tropical monsoon"], Aw: ["#46a9fa", "tropical savanna"], As: ["#46a9fa", "tropical savanna, dry summer"],
+  BWh: ["#fe0000", "hot desert"], BWk: ["#fe9695", "cold desert"], BSh: ["#f5a301", "hot steppe"], BSk: ["#ffdb63", "cold steppe"],
+  Csa: ["#ffff00", "Mediterranean, hot summer"], Csb: ["#c6c700", "Mediterranean, warm summer"], Csc: ["#969600", "Mediterranean, cool summer"],
+  Cwa: ["#96ff96", "subtropical, dry winter"], Cwb: ["#63c764", "highland, dry winter"], Cwc: ["#329633", "subpolar oceanic, dry winter"],
+  Cfa: ["#c6ff4e", "humid subtropical"], Cfb: ["#66ff33", "oceanic"], Cfc: ["#33c701", "subpolar oceanic"],
+  Dsa: ["#ff00fe", "continental, dry hot summer"], Dsb: ["#c600c7", "continental, dry warm summer"], Dsc: ["#963295", "subarctic, dry summer"], Dsd: ["#966495", "subarctic, dry summer, very cold winter"],
+  Dwa: ["#abb1ff", "continental, dry winter, hot summer"], Dwb: ["#5a77db", "continental, dry winter, warm summer"], Dwc: ["#4c51b5", "subarctic, dry winter"], Dwd: ["#320087", "subarctic, dry winter, very cold"],
+  Dfa: ["#00ffff", "continental, hot summer"], Dfb: ["#38c7ff", "continental, warm summer"], Dfc: ["#007e7d", "subarctic"], Dfd: ["#00455e", "subarctic, very cold winter"],
+  ET: ["#b2b2b2", "tundra"], EF: ["#686868", "ice cap"],
+};
+AEON.koppen = KOPPEN;
+/* the winds mode: the prevailing winds as cream lines on a dark casing */
+/* the winds by belt: the trade winds gold, the westerlies cream, the polar easterlies ice blue */
+const WIND_LINE = { trade: "#ffc24d", west: "#f4ecd8", polar: "#93d3ff", casing: "rgba(20,14,8,0.6)" };
+AEON.windColors = WIND_LINE;
 /* the currents drawn over it: warm water red, cold blue (the atlas convention), on a dark casing
    so they read over any sea */
 const CUR_LINE = { warm: "#ff8a4c", cold: "#6cc8ff", casing: "rgba(8,14,30,0.6)", up: "#7fe0cf" };
@@ -694,7 +722,6 @@ function buildTerrain(world) {
   let sky = null;
   if (!sq) {
     const lat = function (i) { return (0.5 - (Math.floor(i / W) + 0.5) / H) * 150; };
-    const RAIN_LAT = [[0, 2.3], [8, 2.0], [15, 1.0], [25, 0.32], [35, 0.45], [45, 0.95], [58, 1.1], [70, 0.7], [90, 0.4]];
     const pJ = gen && gen.pJan, pU = gen && gen.pJul, landP = [];
     if (pJ && pU) for (let i = 0; i < NC; i++) if (!ocean[i]) landP.push(Math.max(pJ[i], pU[i]));
     landP.sort(function (a, b) { return a - b; });
@@ -788,6 +815,8 @@ function buildTerrain(world) {
    200-500, 500-1,000, 1,000-2,000, 2,000-3,000, above 3,000 (one ramp colour each) */
 const ELEV_BANDS = [200, 500, 1000, 2000, 3000];
 AEON.elevBands = ELEV_BANDS;
+/* a cell's height in metres, the sea floor below nought (the elevation mode) */
+function heightOf2(r) { return r.heightM != null ? r.heightM : (r.elevation - 0.5) / 0.5 * (r.elevation > 0.5 ? 5000 : 7000); }
 /* the heights in metres of the elevation mode's colours (RAMPS.elevation), blended between */
 const ELEV_STOPS = [0, 60, 150, 300, 500, 750, 1000, 1300, 1700, 2200, 2800, 3500, 4500];
 function heightOf(r) { return r.heightM != null ? r.heightM : Math.max(0, (r.elevation - 0.5015) / 0.4985) * 5000; }
@@ -835,9 +864,106 @@ function currentsField(c, w) {
    traced both ways along the flow until it slows, leaves the sea or comes too near another line.
    Kept in cell units as one path per colour and speed class (Path2D), with chevrons along them. */
 function currentLines(c, w) {
-  if (c.curLines !== undefined) return c.curLines;
-  c.curLines = null;
-  const F = currentsField(c, w);
+  if (c.curLines === undefined) c.curLines = flowLines(currentsField(c, w));
+  return c.curLines;
+}
+/* the rain belts over the sea by latitude (the generator models rain over land only): the wet
+   tropics, the dry subtropics, the stormy middle latitudes and the drier poles; they follow the sun
+   six degrees north and south. As mm a year these are SEA_RAIN_MM times the table. */
+const RAIN_LAT = [[0, 2.3], [8, 2.0], [15, 1.0], [25, 0.32], [35, 0.45], [45, 0.95], [58, 1.1], [70, 0.7], [90, 0.4]];
+const SEA_RAIN_MM = 1100;
+/* the sea's own start by latitude (seaRainField), flatter than RAIN_LAT: the narrow wet band of
+   the tropics comes from where the winds meet instead */
+const SEA_RAIN_LAT = [[0, 1.5], [8, 1.35], [15, 0.95], [25, 0.62], [35, 0.72], [45, 1.0], [58, 0.95], [70, 0.5], [90, 0.3]];
+/* the yearly rain over the sea in mm, on the planet's grid (kept on its _gen). The generator rains
+   only over land, so the sea's is built here from what drives it on Earth:
+   - the belts by latitude (RAIN_LAT) as the start;
+   - where the winds meet (they converge) the air rises and rains, the narrow wet band of the
+     tropics; where they spread apart it sinks and stays dry;
+   - warm water gives the air more moisture, cold water less;
+   - water colder than its latitude's level (the eastern sides of the oceans, the cold currents)
+     sits under sinking air and low cloud and stays dry; warmer water (the western sides, the warm
+     currents) is wet; upwelling coasts are driest of all.
+   Smoothed a little so it reads as broad bands. */
+function seaRainField(world) {
+  const pl = world.planet || world, g = pl._gen;
+  if (!g || !g.U || !g.SST) return null;
+  if (g.seaRain) return g.seaRain;
+  const W = pl.width, H = pl.height, N = W * H, U = g.U, V = g.V;
+  const at = function (x, y) { return Math.max(0, Math.min(H - 1, y)) * W + ((x % W) + W) % W; };
+  const blur = function (A, n) {
+    for (let p = 0; p < n; p++) {
+      const B = new Float32Array(N);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        let s = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) s += A[at(x + dx, y + dy)];
+        B[y * W + x] = s / 9;
+      }
+      A = B;
+    }
+    return A;
+  };
+  let conv = new Float32Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+    conv[y * W + x] = -((U[at(x + 1, y)] - U[at(x - 1, y)]) / 2 + (V[at(x, y + 1)] - V[at(x, y - 1)]) / 2);
+  conv = blur(conv, 2);
+  let out = new Float32Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, la = (0.5 - (y + 0.5) / H) * 150;
+    const belt = (tableAt(SEA_RAIN_LAT, Math.abs(la + 6)) + tableAt(SEA_RAIN_LAT, Math.abs(la - 6))) / 2;
+    const sstC = -22.4 + 55.6 * g.SST[i], aC = Math.max(-8, Math.min(8, 55.6 * (g.sstA ? g.sstA[i] : 0)));
+    const lift = Math.max(0.25, Math.min(2.2, 1 + 12 * conv[i]));
+    let r = SEA_RAIN_MM * belt * Math.exp(0.03 * (Math.max(-5, sstC) - 20)) * Math.exp(0.12 * aC) * lift;
+    if (g.upwell && g.upwell[i]) r *= 0.5;
+    out[i] = Math.min(4500, r);
+  }
+  g.seaRain = blur(out, 1);
+  return g.seaRain;
+}
+/* a field of the planet's grid (planetgen.js _gen) read at each cell of this map: the field itself
+   on the world map, blended between the planet cells for a region */
+function genSample(w, A) {
+  const sq = w.square, pl = w.planet;
+  const W = w.width, H = w.height, N = W * H, out = new Float32Array(N);
+  if (!sq || !pl) { out.set(A.subarray(0, N)); return out; }
+  const PW = pl.width, PH = pl.height;
+  for (let i = 0; i < N; i++) {
+    const x = i % W, y = (i - x) / W;
+    const fx = sq.px0 + (x + 0.5) / sq.K - 0.5, fy = Math.max(0, Math.min(PH - 1, sq.py0 + (y + 0.5) / sq.K - 0.5));
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, y1 = Math.min(y0 + 1, PH - 1);
+    const j00 = y0 * PW + ((x0 % PW) + PW) % PW, j10 = y0 * PW + (((x0 + 1) % PW) + PW) % PW;
+    const j01 = y1 * PW + ((x0 % PW) + PW) % PW, j11 = y1 * PW + (((x0 + 1) % PW) + PW) % PW;
+    out[i] = (A[j00] * (1 - tx) + A[j10] * tx) * (1 - ty) + (A[j01] * (1 - tx) + A[j11] * tx) * ty;
+  }
+  return out;
+}
+/* the latitude in degrees at a map row y (cells, fractional): the planet spans 75 N to 75 S */
+function latAt(w, y) {
+  const sq = w.square, pl = w.planet, PH = pl && sq ? pl.height : w.height;
+  const py = pl && sq ? sq.py0 + y / sq.K : y;
+  return (0.5 - py / PH) * 150;
+}
+/* the winds mode's field: the planet's yearly-mean winds (planetgen.js winds) at each cell; lines
+   may cross land and sea alike (sea: all 1). a is the wind's eastward part, which with the latitude
+   sorts each stretch into its belt (F.belts) */
+function windField(c, w) {
+  if (c.windF !== undefined) return c.windF;
+  const pl = w.planet, g = (pl || w)._gen;
+  c.windF = null;
+  if (!g || !g.U) return null;
+  const W = w.width, H = w.height, N = W * H;
+  const u = genSample(w, g.U), v = genSample(w, g.V), sp = new Float32Array(N);
+  for (let i = 0; i < N; i++) sp[i] = Math.hypot(u[i], v[i]);
+  c.windF = { u: u, v: v, a: u, sp: sp, sea: new Uint8Array(N).fill(1), W: W, H: H, wrap: !w.square,
+              belts: true, lat: function (y) { return latAt(w, y); } };
+  return c.windF;
+}
+function windLines(c, w) {
+  if (c.windLines === undefined) c.windLines = flowLines(windField(c, w));
+  return c.windLines;
+}
+/* the streamlines of a flow (the currents, or the winds: F.belts), evenly spaced */
+function flowLines(F) {
   if (!F || typeof Path2D === "undefined") return null;
   const W = F.W, H = F.H, DSEP = 2.4, DTEST = 1.3, STEP = 0.3, SLOW = 0.1, RES = 2;
   const OW = W * RES, OH = H * RES, occ = new Uint8Array(OW * OH);
@@ -932,12 +1058,21 @@ function currentLines(c, w) {
      deg C past even, so it does not flicker), as the atlases draw them. Every line is the same
      width, with a filled arrowhead of one size every CUR_HEAD points (~5 cells), none near its ends. */
   const CUR_TINT = 0.5, CUR_HEAD = 18, HL = 0.75, HW = 0.42;
-  const paths = { warm: { col: "warm", p: new Path2D(), h: new Path2D(), seam: false }, cold: { col: "cold", p: new Path2D(), h: new Path2D(), seam: false } };
+  const mk = function (col) { return { col: col, p: new Path2D(), h: new Path2D(), seam: false }; };
+  const paths = F.belts ? { trade: mk("trade"), west: mk("west"), polar: mk("polar") } : { warm: mk("warm"), cold: mk("cold") };
+  /* the winds' belt at a point: blowing from the west the westerlies, from the east the trade
+     winds, or the polar easterlies poleward of 50 degrees */
+  const beltOf = function (east, y) { return east ? "west" : Math.abs(F.lat(y)) > 50 ? "polar" : "trade"; };
   for (const pts of lines) {
     /* the anomaly smoothed along the line over a few points first */
     const A = pts.map(function (_, k) { let s = 0, n = 0; for (let j = Math.max(0, k - 4); j <= Math.min(pts.length - 1, k + 4); j++) { s += pts[j][3]; n++; } return s / n; });
-    let col = A[0] >= 0 ? "warm" : "cold";
-    const C = pts.map(function (_, k) { if (col === "warm" ? A[k] < -CUR_TINT : A[k] > CUR_TINT) col = A[k] > 0 ? "warm" : "cold"; return col; });
+    let col = A[0] >= 0 ? "warm" : "cold", east = A[0] >= 0;
+    const C = pts.map(function (_, k) {
+      /* the winds switch belt only once the wind is clearly from the other side, so it does not flicker */
+      if (F.belts) { if (east ? A[k] < -0.04 : A[k] > 0.04) east = A[k] > 0; return beltOf(east, pts[k][1]); }
+      if (col === "warm" ? A[k] < -CUR_TINT : A[k] > CUR_TINT) col = A[k] > 0 ? "warm" : "cold";
+      return col;
+    });
     let P = paths[C[0]].p, seam = false;
     P.moveTo(pts[0][0], pts[0][1]);
     for (let k = 1; k < pts.length; k++) {
@@ -956,30 +1091,32 @@ function currentLines(c, w) {
       Hd.moveTo(tx, ty); Hd.lineTo(bx - uy * HW, by + ux * HW); Hd.lineTo(bx + uy * HW, by - ux * HW); Hd.closePath();
     }
     /* a line that runs past the map's edge (the world wraps) is drawn again a map's width over */
-    if (F.wrap && seam) { paths.warm.seam = true; paths.cold.seam = true; }
+    if (F.wrap && seam) for (const k in paths) paths[k].seam = true;
   }
-  c.curLines = [paths.cold, paths.warm];
-  return c.curLines;
+  const out = Object.keys(paths).map(function (k) { return paths[k]; });
+  out.wrap = F.wrap;
+  return out;
 }
 
 /* the currents over the map: a dark casing, the lines and their arrowheads, all one width. Still:
    drawn once into an image at the view's scale and kept until the zoom changes, so each frame
    only lays that image down; the copies a map's width over only for lines that cross the edge. */
-function drawCurrents(ctx, c, w, v, X0) {
-  const L = currentLines(c, w);
+function drawCurrents(ctx, c, w, v, X0) { drawFlow(ctx, c, v, X0, currentLines(c, w), CUR_LINE); }
+function drawWinds(ctx, c, w, v, X0) { drawFlow(ctx, c, v, X0, windLines(c, w), WIND_LINE); }
+function drawFlow(ctx, c, v, X0, L, COLS) {
   if (!L) return;
   const cell = PPC * v.P, mw = c.VW * v.P, mh = c.VH * v.P, px = 1 / cell;
   const lw = Math.max(1, v.dpr) * Math.max(1, Math.min(2, cell / 8));
-  const wrap = !!(c.cur && c.cur.wrap);
+  const wrap = !!L.wrap;
   const strokeAll = function (g, x0, y0) {
     g.lineJoin = "round"; g.lineCap = "round";
     for (const o of wrap ? [0, -mw, mw] : [0]) {
       g.setTransform(cell, 0, 0, cell, x0 + o, y0);
       for (const q of L) if (!o || q.seam) {
-        g.strokeStyle = CUR_LINE.casing; g.lineWidth = lw * 2.6 * px; g.stroke(q.p); g.stroke(q.h);
+        g.strokeStyle = COLS.casing; g.lineWidth = lw * 2.6 * px; g.stroke(q.p); g.stroke(q.h);
       }
       for (const q of L) if (!o || q.seam) {
-        g.strokeStyle = CUR_LINE[q.col]; g.fillStyle = CUR_LINE[q.col]; g.lineWidth = lw * px;
+        g.strokeStyle = COLS[q.col]; g.fillStyle = COLS[q.col]; g.lineWidth = lw * px;
         g.stroke(q.p); g.fill(q.h);
       }
     }
@@ -1016,7 +1153,7 @@ function compose(c, w, mode, roads, contest, focus, provOf, sea) {
   if (seasonal) AEON.seasons.ground(c, w, d, sea.season);
   else if (c.sea) c.sea.hasIce = false;
 
-  if (mode === "population" || mode === "elevation" || mode === "habitability") {
+  if (mode === "population" || mode === "habitability") {
     const ramp = RAMPS[mode].map(rgb), n = ramp.length;
     /* population in the shown year: each realm's people (from its history) spread over the land it
        held then by AEON.popWeight, on a log scale stretched between the 5th and 99th percentile
@@ -1069,6 +1206,150 @@ function compose(c, w, mode, roads, contest, focus, provOf, sea) {
       /* keep a whisper of the terrain shading underneath */
       const col = ramp[k], a = 0.82;
       d[i * 4] += (col[0] - d[i * 4]) * a; d[i * 4 + 1] += (col[1] - d[i * 4 + 1]) * a; d[i * 4 + 2] += (col[2] - d[i * 4 + 2]) * a;
+    }
+  }
+
+  /* the climate modes read a value per cell, blended between the cells' centres for each pixel
+     (only over the cells mask allows, when given), and colour it from a ramp at stops, dithered */
+  const CW = w.width, CH = w.height;
+  const pixelVal = function (A, x, y, mask) {
+    const fx = (x + 0.5) / PPC - 0.5, fy = Math.max(0, Math.min(CH - 1, (y + 0.5) / PPC - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, y1 = Math.min(y0 + 1, CH - 1);
+    let s = 0, ws = 0;
+    for (let q = 0; q < 4; q++) {
+      const cx = q & 1 ? x0 + 1 : x0, cy = q & 2 ? y1 : y0, wt = (q & 1 ? tx : 1 - tx) * (q & 2 ? ty : 1 - ty);
+      if (wt <= 0) continue;
+      const j = cy * CW + (w.square ? Math.max(0, Math.min(CW - 1, cx)) : ((cx % CW) + CW) % CW);
+      if (mask && !mask[j]) continue;
+      s += A[j] * wt; ws += wt;
+    }
+    return ws > 0 ? s / ws : null;
+  };
+  const rampAt = function (ramp, stops, h, x, y) {
+    const n = ramp.length;
+    if (h <= stops[0]) return ramp[0];
+    if (h >= stops[n - 1]) return ramp[n - 1];
+    let k = 0;
+    while (k < n - 2 && h >= stops[k + 1]) k++;
+    const f = (h - stops[k]) / (stops[k + 1] - stops[k]);
+    return ramp[bayer(x, y) < f ? k + 1 : k];
+  };
+  const setPx = function (i, col, a) {
+    if (a == null || a >= 1) { d[i * 4] = col[0]; d[i * 4 + 1] = col[1]; d[i * 4 + 2] = col[2]; return; }
+    d[i * 4] += (col[0] - d[i * 4]) * a; d[i * 4 + 1] += (col[1] - d[i * 4 + 1]) * a; d[i * 4 + 2] += (col[2] - d[i * 4 + 2]) * a;
+  };
+  /* the coast in ink: every land pixel with sea (not a lake) beside it on any of its four sides */
+  const inkCoast = function () {
+    const ink = rgb(INK);
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x;
+      if (!land[i]) continue;
+      const nb = [y * VW + (x + 1) % VW, y * VW + (x + VW - 1) % VW, y > 0 ? i - VW : -1, y < VH - 1 ? i + VW : -1];
+      for (const j of nb) if (j >= 0 && !land[j] && !c.lake[j]) { setPx(i, ink, 0.75); break; }
+    }
+  };
+  const greyLand = function (i) {
+    const grey = [185, 177, 154], g = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3 / 255;
+    for (let k = 0; k < 3; k++) d[i * 4 + k] = Math.round(grey[k] * (0.72 + 0.4 * g));
+  };
+
+  /* elevation: a relief map of land and sea floor alike. Each pixel's height in metres blended
+     between the cells' centres (land kept at or above sea level, sea below it), coloured from the
+     land's ramp or the sea's depths; contour lines where a pixel's band differs from its right or
+     lower neighbour's (CONTOURS_LAND, CONTOURS_SEA), and the coast, sea level, drawn in ink */
+  if (mode === "elevation") {
+    const HS = new Float32Array(R.length), PH = new Float32Array(VW * VH), BAND = new Int8Array(VW * VH);
+    for (const r of R) HS[r.id] = heightOf2(r);
+    const LR = RAMPS.elevation.map(rgb), DR = RAMPS.depth.map(rgb);
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x;
+      if (c.lake[i]) { BAND[i] = -99; continue; }
+      let h = pixelVal(HS, x, y, null);
+      if (land[i]) h = Math.max(0, h); else h = Math.min(-5, h);
+      PH[i] = h;
+      if (land[i]) { let b = 0; while (b < CONTOURS_LAND.length && h >= CONTOURS_LAND[b]) b++; BAND[i] = b; }
+      else { let b = 0; while (b < CONTOURS_SEA.length && h <= CONTOURS_SEA[b]) b++; BAND[i] = -1 - b; }
+      if (land[i]) {
+        const n = LR.length;
+        let k = 0;
+        while (k < n - 2 && h >= ELEV_STOPS[k + 1]) k++;
+        const f = Math.max(0, Math.min(1, (h - ELEV_STOPS[k]) / (ELEV_STOPS[k + 1] - ELEV_STOPS[k]))), c0 = LR[k], c1 = LR[k + 1];
+        setPx(i, [c0[0] + (c1[0] - c0[0]) * f, c0[1] + (c1[1] - c0[1]) * f, c0[2] + (c1[2] - c0[2]) * f], 0.86);
+      } else {
+        const n = DR.length;
+        let k = 0;
+        while (k < n - 2 && h <= DEPTH_STOPS[k + 1]) k++;
+        const f = Math.max(0, Math.min(1, (h - DEPTH_STOPS[k]) / (DEPTH_STOPS[k + 1] - DEPTH_STOPS[k]))), c0 = DR[k], c1 = DR[k + 1];
+        setPx(i, [c0[0] + (c1[0] - c0[0]) * f, c0[1] + (c1[1] - c0[1]) * f, c0[2] + (c1[2] - c0[2]) * f]);
+      }
+    }
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x, b = BAND[i];
+      if (b === -99) continue;
+      const jr = y * VW + (x + 1) % VW, jd = y < VH - 1 ? i + VW : -1;
+      const br = BAND[jr], bd = jd >= 0 ? BAND[jd] : b;
+      const coast = (br !== -99 && (b >= 0) !== (br >= 0)) || (bd !== -99 && (b >= 0) !== (bd >= 0));
+      if (coast) continue;
+      if ((br !== -99 && br !== b) || (bd !== -99 && bd !== b)) setPx(i, b >= 0 ? [60, 40, 28] : [10, 24, 52], b >= 0 ? 0.35 : 0.3);
+    }
+    inkCoast();
+  }
+
+  /* temperature: the yearly mean in deg C on land and sea, the sea a little darker so the coasts read */
+  if (mode === "temperature") {
+    const TV = new Float32Array(R.length), ramp = RAMPS.temperature.map(rgb);
+    for (const r of R) TV[r.id] = r.tempC != null ? r.tempC : 10;
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x, h = pixelVal(TV, x, y, null), col = rampAt(ramp, TEMP_STOPS, h, x, y);
+      setPx(i, land[i] || c.lake[i] ? col : [col[0] * 0.8, col[1] * 0.8, col[2] * 0.8], land[i] ? 0.88 : 1);
+    }
+    inkCoast();
+  }
+
+  /* rainfall: the yearly rain in mm on land and sea, the sea a little darker so the coasts read.
+     The land's from its cells; the sea's from seaRainField */
+  if (mode === "rainfall") {
+    const RV = new Float32Array(R.length), ramp = RAMPS.rainfall.map(rgb), SRP = seaRainField(w);
+    const SR = SRP ? (c.seaRain || (c.seaRain = genSample(w, SRP))) : null;
+    for (const r of R) {
+      if (r.lake || r.rainMm > 0 || heightOf2(r) >= 50) { RV[r.id] = r.rainMm || 0; continue; }
+      RV[r.id] = SR ? SR[r.id] : 0;
+    }
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x, h = pixelVal(RV, x, y, null), col = rampAt(ramp, RAIN_STOPS, h, x, y);
+      setPx(i, land[i] || c.lake[i] ? col : [col[0] * 0.8, col[1] * 0.8, col[2] * 0.8], land[i] ? 0.88 : 1);
+    }
+    inkCoast();
+  }
+
+  /* climate zones: each land cell's Koppen climate in its atlas colour, a little toned to the map */
+  if (mode === "climate") {
+    const cols = {};
+    for (const k in KOPPEN) cols[k] = rgb(KOPPEN[k][0]);
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x;
+      if (!land[i]) continue;
+      /* the cell is picked among the four around the pixel by their weights against a dither, so
+         the borders between climates fray like the other maps' blends instead of stepping */
+      const fx = (x + 0.5) / PPC - 0.5, fy = Math.max(0, Math.min(CH - 1, (y + 0.5) / PPC - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy);
+      const cx = bayer(x, y) < fx - x0 ? x0 + 1 : x0, cy = bayer(x + 2, y + 1) < fy - y0 ? Math.min(CH - 1, y0 + 1) : y0;
+      const j = cy * CW + (w.square ? Math.max(0, Math.min(CW - 1, cx)) : ((cx % CW) + CW) % CW);
+      let r = R[j];
+      if (!r || (r.barren && !r.lake) || !cols[r.climate]) r = R[cellOf[i]];
+      const col = r && cols[r.climate];
+      if (col) setPx(i, col, 0.8);
+    }
+  }
+
+  /* winds: the land greyed and the sea a flat dark blue, both a step lighter where the wind is
+     stronger; the winds themselves are drawn later (drawWinds) */
+  if (mode === "winds") {
+    const WF = windField(c, w), seaR = RAMPS.currents.map(rgb).slice(2, 5).reverse();
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x;
+      if (land[i]) { greyLand(i); continue; }
+      if (c.lake[i]) continue;
+      const s2 = WF ? pixelVal(WF.sp, x, y, null) : 0.5;
+      setPx(i, seaR[Math.max(0, Math.min(2, Math.floor(s2 * 2.2 + bayer(x, y) * 0.9)))]);
     }
   }
 
@@ -1410,12 +1691,16 @@ function drawSea(c, dot, t) {
   }
 }
 
-/* the currents mode's only motion: drawSea's long swells alone (they drift with the world's ocean
-   currents), as faint pale specks over its coloured sea, in a layer of their own; no surf, shallows,
-   cat's paws, foam or glints, which would hide the water's colours */
-const SWELL_FAINT = "#dfeaff", SWELL_ALPHA = 70;
-function drawSwells(ctx, c, v, X0, now) {
-  const Sw = c.openSea && c.openSea.swell;
+/* the statistics modes' only motion (BARE_MODES): drawSea's long swells (they drift with the
+   world's ocean currents) and its small cat's paws (with its winds, out on the open sea), as faint
+   pale specks over the coloured sea, the paws fainter still, in a layer of their own; no surf,
+   foam or glints, which would hide the water's colours */
+const SWELL_FAINT = "#dfeaff", SWELL_ALPHA = 70, PAW_ALPHA = 42;
+/* over a blue sea (the climate, habitability and elevation modes) the specks are a lighter blue,
+   so they melt into the water instead of standing out pale */
+const SWELL_BLUE = "#6f9de0";
+function drawSwells(ctx, c, v, X0, now, blue) {
+  const Sw = c.openSea && c.openSea.swell, Pw = c.openSea && c.openSea.paws;
   if (!Sw || typeof document === "undefined") return;
   const VW = c.VW, VH = c.VH, t = now / 1000, B = Sw.blocks;
   if (!c.swellLayer) {
@@ -1423,13 +1708,24 @@ function drawSwells(ctx, c, v, X0, now) {
     c.swellImg = c.swellLayer.getContext("2d").createImageData(VW, VH);
     c.swellBuf = new Uint32Array(c.swellImg.data.buffer); c.swellSet = [];
   }
-  const buf = c.swellBuf, set = c.swellSet, col = packRGBA(SWELL_FAINT, SWELL_ALPHA);
+  const buf = c.swellBuf, set = c.swellSet, col = packRGBA(blue ? SWELL_BLUE : SWELL_FAINT, SWELL_ALPHA), pcol = packRGBA(blue ? SWELL_BLUE : SWELL_FAINT, PAW_ALPHA);
+  const iced = c.sea && c.sea.hasIce ? c.sea.iced : null;
   for (let k = 0; k < set.length; k++) buf[set[k]] = 0;
   set.length = 0;
   for (let k = 0; k < B.x.length; k++) B.val[k] = flowNoise(B.x[k], B.y[k], B.u[k], B.v[k], t, 10, 0.07, 0.07);
+  if (Pw) {
+    const PB = Pw.blocks;
+    for (let k = 0; k < PB.x.length; k++) PB.val[k] = flowNoise(PB.x[k], PB.y[k], PB.u[k], PB.v[k], t, 6, 0.15, 0.15);
+    for (let k = 0; k < Pw.px.length; k++) {
+      const i = Pw.px[k];
+      if (PB.val[Pw.bk[k]] <= Pw.th[k] || (iced && iced[i])) continue;
+      buf[i] = pcol; set.push(i);
+    }
+  }
   for (let k = 0; k < Sw.px.length; k++) {
-    if (B.val[Sw.bk[k]] <= Sw.th[k]) continue;
-    buf[Sw.px[k]] = col; set.push(Sw.px[k]);
+    const i = Sw.px[k];
+    if (B.val[Sw.bk[k]] <= Sw.th[k] || (iced && iced[i])) continue;
+    buf[i] = col; set.push(i);
   }
   c.swellLayer.getContext("2d").putImageData(c.swellImg, 0, 0);
   ctx.save();
@@ -1631,8 +1927,10 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   const drawn = [];
   const sx = function (gx) { return tiles[0] + gx * cell; }, sy = function (gy) { return v.Y0 + gy * cell; };
   const sea = opts.sea || null;
-  /* (not in the currents mode, which is about the sea: the trees only clutter its grey land) */
-  if (opts.mode !== "currents") drawScenery(ctx, c, v, u, tiles[0], w, sea);
+  /* the statistics modes (BARE_MODES) show their data alone: no trees, peaks, settlements,
+     wonders or ruins over it, only the hover and selection */
+  if (!BARE_MODES[opts.mode]) {
+  drawScenery(ctx, c, v, u, tiles[0], w, sea);
 
   /* settlements: capitals always; towns and villages appear as the map is zoomed in */
   const capitals = {};
@@ -1739,6 +2037,7 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
 
 
   if (!wondersPlaced) placeWonders();
+  }
 
   /* hover and selection: pixel corner brackets round the cell, with a drop shadow (as in the
      game project). The selection sits one pixel further out, so both show on the same cell. */
@@ -1763,6 +2062,9 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
   for (const f of drawn) f(0);
 }
 
+/* the statistics modes: drawn without sprites (drawOverlay), with only the sea's swells moving */
+const BARE_MODES = { elevation: 1, habitability: 1, temperature: 1, rainfall: 1, climate: 1, winds: 1, currents: 1 };
+
 /* ------------------------------------------------------------ public API */
 function draw(canvas, world, opts) {
   opts = opts || {};
@@ -1779,7 +2081,8 @@ function draw(canvas, world, opts) {
   const fxOn = AEON.mapfx && AEON.mapfx.live(), mode = opts.mode || "political";
   /* the seasons (seasons.js): on the ground in the realm modes, on the sprites and in the weather
      everywhere but the data modes; the season quantised for the caches */
-  const dataMode = mode === "population" || mode === "elevation" || mode === "habitability" || mode === "currents";
+  const dataMode = mode === "population" || mode === "elevation" || mode === "habitability" || mode === "currents" ||
+    mode === "temperature" || mode === "rainfall" || mode === "climate" || mode === "winds";
   const SE = AEON.seasons && !dataMode && opts.season !== undefined ? AEON.seasons : null;
   const sea = SE ? { season: opts.season, ground: SE.key(opts, 2), key: SE.key(opts, 1) } : null;
   opts = Object.assign({}, opts, { sea: sea });
@@ -1793,12 +2096,14 @@ function draw(canvas, world, opts) {
   ctx.fillRect(X0 - 1, v.Y0 - 1, mw + 2, mh + 2);
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
   c.skyOn = !!opts.clouds;
-  if (opts.time != null && mode !== "currents") drawAmbient(ctx, c, v, X0, opts.time, !dataMode, opts.season);
-  /* the currents mode: the sea's swells, faint, drifting along the currents; then the currents */
-  if (mode === "currents" && opts.time != null) drawSwells(ctx, c, v, X0, opts.time);
+  /* the sea's motion: in full, or in the statistics modes only its swells and cat's paws, faint
+     (the surf, foam and glints would cover their colours) */
+  if (opts.time != null && !BARE_MODES[mode]) drawAmbient(ctx, c, v, X0, opts.time, !dataMode, opts.season);
+  if (opts.time != null && BARE_MODES[mode]) drawSwells(ctx, c, v, X0, opts.time, mode === "climate" || mode === "habitability" || mode === "elevation");
   if (mode === "currents") drawCurrents(ctx, c, world, v, X0);
+  if (mode === "winds") drawWinds(ctx, c, world, v, X0);
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
-  const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null, war = AEON.mapfx && opts.date != null && !dataMode;
+  const fx = AEON.mapfx && AEON.mapfx.live() && !BARE_MODES[mode] ? AEON.mapfx : null, war = AEON.mapfx && opts.date != null && !dataMode;
   const cell = PPC * v.P, env = (fx || war) && {
     world: world, c: c, P: v.P, X0: X0, Y0: v.Y0, u: spriteUnit(v), pc: v.P / v.dpr, mode: opts.mode || "political",
     sx: function (gx) { return X0 + gx * cell; }, sy: function (gy) { return v.Y0 + gy * cell; },

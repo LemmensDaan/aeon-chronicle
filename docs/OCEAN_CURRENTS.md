@@ -44,6 +44,9 @@ follows how ocean-current maps are usually drawn (atlases, NASA's flow maps, ear
   itself and closes into a ring where it comes back to its start; short stubs and the slow little
   rings at the hearts of the gyres are left out. The map is still: the lines are drawn once into
   an image and kept until the zoom changes, so this mode costs about as much as the others.
+- **The swells** of the sea's animation are the mode's only motion: faint pale specks drifting
+  along the currents (`drawSwells`). The surf, shallows, foam and glints are left out, so the
+  water's colours stay clear.
 - **Upwelling** is stippled in teal along the coasts where cold water rises.
 
 ## The model

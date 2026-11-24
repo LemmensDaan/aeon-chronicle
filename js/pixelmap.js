@@ -1410,6 +1410,34 @@ function drawSea(c, dot, t) {
   }
 }
 
+/* the currents mode's only motion: drawSea's long swells alone (they drift with the world's ocean
+   currents), as faint pale specks over its coloured sea, in a layer of their own; no surf, shallows,
+   cat's paws, foam or glints, which would hide the water's colours */
+const SWELL_FAINT = "#dfeaff", SWELL_ALPHA = 70;
+function drawSwells(ctx, c, v, X0, now) {
+  const Sw = c.openSea && c.openSea.swell;
+  if (!Sw || typeof document === "undefined") return;
+  const VW = c.VW, VH = c.VH, t = now / 1000, B = Sw.blocks;
+  if (!c.swellLayer) {
+    c.swellLayer = document.createElement("canvas"); c.swellLayer.width = VW; c.swellLayer.height = VH;
+    c.swellImg = c.swellLayer.getContext("2d").createImageData(VW, VH);
+    c.swellBuf = new Uint32Array(c.swellImg.data.buffer); c.swellSet = [];
+  }
+  const buf = c.swellBuf, set = c.swellSet, col = packRGBA(SWELL_FAINT, SWELL_ALPHA);
+  for (let k = 0; k < set.length; k++) buf[set[k]] = 0;
+  set.length = 0;
+  for (let k = 0; k < B.x.length; k++) B.val[k] = flowNoise(B.x[k], B.y[k], B.u[k], B.v[k], t, 10, 0.07, 0.07);
+  for (let k = 0; k < Sw.px.length; k++) {
+    if (B.val[Sw.bk[k]] <= Sw.th[k]) continue;
+    buf[Sw.px[k]] = col; set.push(Sw.px[k]);
+  }
+  c.swellLayer.getContext("2d").putImageData(c.swellImg, 0, 0);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(c.swellLayer, X0, v.Y0, VW * v.P, VH * v.P);
+  ctx.restore();
+}
+
 /* The world map's clouds (Daan, 2026-11-09): how much cloud each cell has comes from its climate
    in the shown season (buildTerrain's sky: rain, the cold-water decks, the windward slopes), and
    what kind from where it is: heaped, towering clusters where it is warm and wet, broad layered
@@ -1766,7 +1794,8 @@ function draw(canvas, world, opts) {
   ctx.drawImage(frame, X0, v.Y0, mw, mh);
   c.skyOn = !!opts.clouds;
   if (opts.time != null && mode !== "currents") drawAmbient(ctx, c, v, X0, opts.time, !dataMode, opts.season);
-  /* the currents mode: the world's currents over its sea */
+  /* the currents mode: the sea's swells, faint, drifting along the currents; then the currents */
+  if (mode === "currents" && opts.time != null) drawSwells(ctx, c, v, X0, opts.time);
   if (mode === "currents") drawCurrents(ctx, c, world, v, X0);
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
   const fx = AEON.mapfx && AEON.mapfx.live() ? AEON.mapfx : null, war = AEON.mapfx && opts.date != null && !dataMode;

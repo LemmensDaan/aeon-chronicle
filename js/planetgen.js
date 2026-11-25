@@ -270,11 +270,11 @@ function generate(world, pack, rng) {
   /* effAmp is the effect's strength on the old unitless scale (what later stages read as
      `uplift`); effM is its height in metres, which builds the elevation */
   const effAmp = new Float32Array(N), effM = new Float32Array(N), effW = new Float32Array(N), effPeak = new Float32Array(N), effOther = new Int16Array(N);
-  const isSource = new Uint8Array(N), ridge = new Uint8Array(N);
+  const isSource = new Uint8Array(N), ridge = new Uint8Array(N), effArc = new Uint8Array(N);
   const stress = new Float32Array(N);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x, A = plates[plateOf[i]];
-    let best = 0, bm = 0, bw = 0, bp = 0, bo = 0;
+    let best = 0, bm = 0, bw = 0, bp = 0, bo = 0, ba = 0;
     for (let k = 0; k < 4; k++) {
       const j = NB4[i * 4 + k];
       if (j < 0 || plateOf[j] === plateOf[i]) continue;
@@ -283,22 +283,25 @@ function generate(world, pack, rng) {
       const nx = dxw(x, jx), ny = jy - y;
       const c = clamp((A.vx - B.vx) * nx + (A.vy - B.vy) * ny, -1.6, 1.6);   /* + = converging */
       const ci = cont[i], cj = cont[j];
-      let amp = 0, m = 0, w = 1, pk = 0;
+      let amp = 0, m = 0, w = 1, pk = 0, arc = 0;
       if (c > 0) {
         if (ci && cj) { amp = 0.44 * c; m = 4800 * c; w = 4.5; pk = 1; }                   /* collision orogeny */
         else if (ci && !cj) { amp = 0.36 * c; m = 4400 * c; w = 2.6; pk = 2; }             /* andean margin */
         else if (!ci && cj) { amp = -0.17 * c; m = -2500 * c; w = 1.2; pk = 0; }           /* trench, subducting */
-        else if (A.density < B.density) { amp = 0.3 * c; m = 5600 * c; w = 1.5; pk = 1; }  /* island arc */
+        /* island arc: its volcanoes stand about as high whatever the plates' speed (Japan, the
+           Aleutians, the Lesser Antilles), so the arc rises from the deep floor to near the sea and
+           its peaks break the surface as a chain of islands (below) */
+        else if (A.density < B.density) { amp = 0.3 * c; m = 3800 + 2600 * Math.min(c, 1); w = 1.6 + 0.6 * Math.min(c, 1); pk = 1; arc = 1; }
         else { amp = -0.15 * c; m = -2500 * c; w = 1.2; pk = 0; }
       } else if (c < 0) {
         if (ci) { amp = 0.12 * c; m = 1400 * c; w = 1.6; pk = 0; }                          /* continental rift */
         else { amp = -0.08 * c; m = 0; w = 2.6; pk = 0; }       /* mid-ocean ridge: its height is the young floor's (below) */
       }
-      if (Math.abs(amp) > Math.abs(best)) { best = amp; bm = m; bw = w; bp = pk; bo = plateOf[j]; }
+      if (Math.abs(amp) > Math.abs(best)) { best = amp; bm = m; bw = w; bp = pk; bo = plateOf[j]; ba = arc; }
       stress[i] = Math.max(stress[i], Math.abs(c));
       if (c < 0 && !ci && !cj) ridge[i] = 1;
     }
-    if (best !== 0) { isSource[i] = 1; effAmp[i] = best; effM[i] = bm; effW[i] = bw; effPeak[i] = bp; effOther[i] = bo; }
+    if (best !== 0) { isSource[i] = 1; effAmp[i] = best; effM[i] = bm; effW[i] = bw; effPeak[i] = bp; effOther[i] = bo; effArc[i] = ba; }
   }
   /* spread each effect inland within its own plate (multi-source BFS) */
   const srcOf = new Int32Array(N).fill(-1), dist = new Float32Array(N).fill(Infinity);
@@ -460,12 +463,26 @@ function generate(world, pack, rng) {
       h += 250 * nf(noise3, i, 0.14, 3, 0.5);
     }
     const mtn = clamp(upliftM[i] / 1500, 0, 1);
+    /* an island arc is a chain, not a wall: its height rises and falls along it, so it breaks
+       into islands of mixed sizes with straits between them */
+    if (srcOf[i] >= 0 && effArc[srcOf[i]]) h += upliftM[i] * (clamp(0.8 + 1.5 * nf(noise3, i, 0.3, 2, 0.5), 0.3, 1.4) - 1);
     h += upliftM[i] + (noise2.ridged(CX[i] * 0.16, CY[i] * 0.16, CZ[i] * 0.16, 4) - 0.55) * 1800 * mtn;
     /* the highest ranges grow more slowly than the push under them (erosion, gravity) */
     if (h > 5000) h = 5000 + (h - 5000) * 0.4;
     /* continental crust below the sea is shelf (a rift may sink deeper) */
     if (cont[i] && h < 0 && upliftM[i] > -300) h = -40 - 180 * (1 - Math.exp(h / 400));
     hm[i] = h;
+  }
+
+  /* ----- the world's sea level -----
+     Most worlds keep the sea near Earth's; some have a higher sea that floods the lowlands and
+     shelves into island seas (an archipelago world), a few a lower one that joins the shelves to
+     the land. Its own stream of draws, so the rest of the world stays as it was. */
+  {
+    const sr = AEON.RNG(world.seed + ":sealevel"), r = sr.next();
+    const rise = r < 0.6 ? sr.range(-40, 40) : r < 0.85 ? sr.range(90, 220) : sr.range(-130, -70);
+    for (let i = 0; i < N; i++) hm[i] -= rise;
+    world.seaRise = Math.round(rise);
   }
 
   /* ================================================== 4. erosion ======= */
@@ -1598,8 +1615,8 @@ function blurWrap(src, W, H, r, kx) {
 AEON.planetgen = { generate: generate, region: region };
 /* raised whenever a change here makes the same seed a different world (its land, climate or
    biomes, and so its history): what the browser kept for a world of an older version is
-   dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). 3: 3 to 5 hotspots. */
-AEON.GEN_VERSION = 3;
+   dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). 3: 3 to 5 hotspots. 4: a sea level per world. */
+AEON.GEN_VERSION = 4;
 AEON.regiongen = region;
 
 })();

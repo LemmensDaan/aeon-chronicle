@@ -17,6 +17,31 @@ Sizes: **S** a few hours, **M** about a day, **L** several days, **XL** weeks.
 - **Measured.** Every change is checked with the realism harnesses (`tools/worldgen-report.js`,
   and the real-Earth climate test) before and after.
 
+## 0. Keep the version with history
+
+Before any of this starts, the current game (terrain plus the civilisation history) is kept
+as it is:
+
+- A git tag, `history-v1`, on the last commit before the change of direction (`e04aec1`), and
+  a branch, `feature/history`, that starts from it. The branch can still take fixes, and history can be merged
+  back from it later (step 7).
+- Whether the generator becomes a separate app or stays in this one is not decided yet. Until
+  it is, work goes on in this repository, on `main`, and the history code stays in place but
+  unused rather than deleted.
+
+## Tech stack
+
+The project is plain HTML, CSS and JavaScript, with no build step, and it runs in the browser.
+Recommendation: keep that.
+
+- **Stay in JavaScript.** Moving to TypeScript means a build step; it can come later, or file
+  by file through JSDoc type comments, which need no build.
+- **Heavy work goes to Web Workers.** The deep-time run and the zoom tiles are computed in
+  background threads, so the page stays responsive and shows progress.
+- **WebAssembly only if needed.** If a worker is still too slow, the hottest loop (for example
+  the plate step) can be rewritten in Rust or C and compiled to WebAssembly. Not before
+  measuring.
+
 ## 1. The real-Earth climate test (M, in progress)
 
 Run the climate model on Earth's real terrain and score it against observations: temperature,
@@ -26,7 +51,8 @@ one honest score that every later change must not make worse. `tools/earth-fetch
 
 ## 2. The planet's interior, as a heat budget (M)
 
-No 3D mantle simulation: too slow, and it would not show on the map. Instead:
+The interior is described by a few numbers, not simulated. No 3D mantle model: too slow, and
+it would not show on the map. Instead:
 
 - **Heat** starts high and falls over time, faster for a small planet. It sets the plates'
   speed, how much volcanism there is and how thick new crust is. An old or small planet goes
@@ -82,10 +108,33 @@ moved. Later: ice ages from the era's continents and orbit.
 
 Civilisations, step by step, on the era and the world the user picked.
 
-## Open questions
+## Decisions so far, and what is still open
 
-- Grid: keep the flat 150 x 95 grid for the overview, or move to a sphere mesh (needed for
-  Euler-pole plates and the poles)? Step 3 will probably force a sphere.
-- How far back the timeline goes, and how much a full run may cost (seconds? a minute with a
-  progress bar?).
-- Whether the timeline is computed up front or on demand.
+**Grid: a hex sphere (leaning yes).** A geodesic grid of hexagons, with 12 pentagons, as on a
+football. It is correct on a sphere: every cell is about the same size, there are no
+squeezed poles, and plates can rotate cleanly. It also gives the map its own look. The flat
+map is then a projection of the sphere, and a globe view becomes possible.
+
+**Timeline: 500 million years by default (proposal).**
+- One supercontinent cycle (a supercontinent forming, breaking up and forming again) takes
+  about 400 to 600 million years. 500 Myr shows one full cycle, so every world has at least
+  one Pangaea-like era.
+- Earth's own: Pangaea formed about 335 Myr ago and broke up from about 200 Myr ago. Rodinia
+  was about 1,000 to 750 Myr ago.
+- A "long" option of about 1,000 Myr for two cycles, if the cost allows.
+- Snapshots every 5 Myr: 100 frames for 500 Myr.
+- Open: confirm 500 Myr.
+
+**How long making a world may take (proposal).** Terraria takes from a few seconds to a
+couple of minutes per world, and people roll several. So two speeds:
+- **Quick preview, about 1 to 3 s:** the whole timeline at low resolution. Fast enough to roll
+  many seeds and keep the one that looks good.
+- **Full world, about 30 to 60 s with a progress bar:** the chosen seed at full resolution, in
+  workers. Zoom tiles are then built on demand as you look around.
+- Because generation is deterministic, the full world is the same planet as its preview, only
+  sharper.
+- Open: check these targets once step 3 has a first version to measure.
+
+**Still open:**
+- A separate app or one app with a history mode (step 0).
+- Whether the timeline is computed fully up front or era by era on demand.

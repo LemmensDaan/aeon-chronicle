@@ -590,6 +590,22 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   New `node tools/realism-suite.js`: 100 worlds x 35 variables vs Earth and vs the model on Earth,
   bell curves in docs/worldgen/realism-suite.html; Earth inside on 30 of 35. Open: too much summer
   rain (and dry-winter climates), shelves too wide. Details: docs/EARTH_CLIMATE_TEST.md, Progress.
+- **Rain seasons (2026-11-25, GEN_VERSION 6, changes every seed's climate, biomes and history):**
+  (1) `pSum` was the July share of July + January (the extreme months); it is now the six-month
+  share, 0.5 + (2/pi)(peak share - 0.5), which is what the Koppen shortcut and the observations
+  use. (2) Thermal pressure winds taper to a fifth from 25 to 50 degrees (shallow highs and lows;
+  the winter continent's high blew sea air offshore at Seattle). (3) The westerlies are 40%
+  stronger in winter and weaker in summer (30-70 degrees). Earth test: summer-share bias +0.11 ->
+  -0.03, r 0.36 -> 0.47 (latitude alone 0.44); Koppen 70 / 39 / 34% -> 68 / 47 / 40%. Suite:
+  Earth inside on 32 of 35. Then, same version: (4) a cold sea's anomaly reaches the land at half
+  (stable air; a warm sea's in full), (5) winter highs over cold land count a quarter (shallow
+  domes), (6) in the winter storm belt the cold-current damping of rain is half lifted (fronts),
+  (7) submerged continental crust at the ocean's edge averages shelf and slope (deeper than
+  200 m unless the noise keeps a wide shelf). Earth test: Koppen 70 / 49 / 41%, rain within a
+  factor 2 60%, summer share r 0.55. Suite: Earth inside on 34 of 35; Cs 2.7% (Earth 3.5),
+  shelf 6.8% (Earth 4.7 on the grid, ~7.5 true). Left on purpose: west-coast rain (worlds 1,423
+  mm, Earth 895; the model on Earth gets 905, so it is the worlds' warmer west-coast seas,
+  geography, not physics).
 - **Elevation colours and region lakes (2026-10-28, region histories change, planet histories not):**
   the Elevation mode colours fixed metre bands (<200, 200-500, 500-1,000, 1,000-2,000, 2,000-3,000,
   3,000+ m; pixelmap.js `elevBand`, legend 0 m to 3,000 m +), not each world's height rank. Region

@@ -475,7 +475,14 @@ function generate(world, pack, rng) {
     /* the highest ranges grow more slowly than the push under them (erosion, gravity) */
     if (h > 5000) h = 5000 + (h - 5000) * 0.4;
     /* continental crust below the sea is shelf (a rift may sink deeper) */
-    if (cont[i] && h < 0 && upliftM[i] > -300) h = -40 - 180 * (1 - Math.exp(h / 400));
+    if (cont[i] && h < 0 && upliftM[i] > -300) {
+      h = -40 - 180 * (1 - Math.exp(h / 400));
+      /* a cell is ~270 km and a shelf averages ~80 km: where the crust meets the ocean floor the
+         cell holds the shelf break and the slope too, so it averages deeper than 200 m; where
+         the noise is high the shelf runs wide (Siberia, Sunda, Patagonia) and stays shallow */
+      const edge = clamp(2 - dCont[i], 0, 1), wide = clamp(0.5 + nf(noise2, i, 0.08, 2, 0.5), 0, 1);
+      h -= edge * (1 - wide) * 1500;
+    }
     hm[i] = h;
   }
 
@@ -637,6 +644,15 @@ function generate(world, pack, rng) {
       U[i] = tab(U_TAB, deg) + nU[i];
       V[i] = tab(V_TAB, deg) * sgn + nV[i];
       rainF[i] = tab(RAIN_TAB, deg);
+      if (shift) {
+        /* the westerlies blow harder in winter, when the pole-to-equator contrast is largest,
+           and slacken in summer: 40% either way between 30 and 70 degrees. Seattle's rain
+           comes in winter, not summer */
+        const win = -Math.sign(shift) * (DEGL[i] >= 0 ? 1 : -1);
+        const g = 1 + 0.4 * win * clamp((deg - 28) / 10, 0, 1) * clamp((70 - deg) / 10, 0, 1);
+        U[i] = tab(U_TAB, deg) * g + nU[i];
+        V[i] = tab(V_TAB, deg) * sgn * g + nV[i];
+      }
       if (P) {
         /* the wind around the season's highs and lows: along the isobars (clockwise round a
            high in the north, the Coriolis turn), and part across them, down the gradient
@@ -648,6 +664,11 @@ function generate(world, pack, rng) {
         let vn = 60 * (gx * s - 0.6 * gn) / af;
         const mg = Math.hypot(ue, vn);
         if (mg > 1.2) { ue *= 1.2 / mg; vn *= 1.2 / mg; }
+        /* thermal highs and lows are shallow: they steer the winds in the tropics (the
+           monsoons) but the moving storms of the westerlies outweigh them from 25 to 50 degrees,
+           down to a fifth (the winter continent is a high, yet sea air still reaches it) */
+        const wq = clamp((Math.abs(DEGL[i]) - 25) / 25, 0, 1), gq = 1 - 0.8 * wq * wq * (3 - 2 * wq);
+        ue *= gq; vn *= gq;
         U[i] += ue; V[i] -= vn;
         /* rising air in the lows rains more, sinking air in the highs less */
         rainF[i] *= clamp(1 - 5 * P[i], 0.25, 2.5);
@@ -758,7 +779,11 @@ function generate(world, pack, rng) {
     /* away from the sea's influence the year's mean is warmer in the low latitudes (no
        evaporating sea to cool the air) and colder in the high ones (the long winter outweighs
        the summer): +2.4 C at the equator, -1.2 C at 60 degrees, fitted on Earth's land */
-    T[i] = T[i] - LAPSE_T * Math.max(0, hm[i]) / 1000 + CT * (1 - marine[i]) * (2.4 - 4.2 * sinLat[i]) + anom[i];
+    /* air off a cold current is stable: its chill stays in a shallow layer by the coast, so half
+       of it reaches the ground (with all of it, California and Portugal were 3 C too cold and
+       continental instead of Mediterranean); air off warm water mixes and carries its warmth
+       inland in full (London) */
+    T[i] = T[i] - LAPSE_T * Math.max(0, hm[i]) / 1000 + CT * (1 - marine[i]) * (2.4 - 4.2 * sinLat[i]) + (anom[i] < 0 ? 0.5 : 1) * anom[i];
   }
   /* weather does not follow the parallels: broad warm and cold tongues, plus a little local
      variety, so the tundra and the deserts get ragged edges instead of straight ones */
@@ -806,7 +831,9 @@ function generate(world, pack, rng) {
       let s = 0;
       for (let x = 0; x < W; x++) s += Ta[y * W + x];
       const m = s / W;
-      for (let x = 0; x < W; x++) Ta[y * W + x] = m - Ta[y * W + x];
+      /* a winter continent's cold high is a shallow dome: the storms and the sea air pass over
+         it, so it counts a quarter (the summer heat lows of the monsoons count in full) */
+      for (let x = 0; x < W; x++) { const k = y * W + x; Ta[k] = m - Ta[k]; if (Ta[k] > 0 && sgn * DEGL[k] < 0) Ta[k] *= 0.25; }
     }
     Pp.set(blurWrap(Ta, W, H, 6, KX));
     winds(6 * sgn, Us, Vs, rFs, Pp);
@@ -825,7 +852,13 @@ function generate(world, pack, rng) {
       /* air off a cold current is stable and keeps its water (the Atacama, the Namib, Baja),
          air off a warm one rains readily: each degree of the water's anomaly it carries moves
          the rain-out by a fifth, between 0.2 and 1.6 times */
-      const stab = clamp(1 + anom[i] / (CT * 5), 0.2, 1.6);
+      let stab = clamp(1 + anom[i] / (CT * 5), 0.2, 1.6);
+      /* in winter the storms' fronts lift the air whatever its stability, so in the storm belt
+         the cold water's damping is half lifted (Perth, Chile and California get winter rain) */
+      if (sgn * DEGL[i] < 0) {
+        const dg = Math.abs(DEGL[i]), wb = clamp((dg - 28) / 10, 0, 1) * clamp((70 - dg) / 10, 0, 1);
+        stab = lerp(stab, Math.max(1, stab), 0.5 * wb);
+      }
       FRAC[i] = clamp((0.045 * rFs[i] + rise * 2) * stab, 0, 0.8);
     }
     let q1 = new Float32Array(N), q2 = new Float32Array(N);
@@ -848,12 +881,14 @@ function generate(world, pack, rng) {
   const pJul = new Float32Array(N), pJan = new Float32Array(N);
   season(1, pJul);
   season(-1, pJan);
-  /* the year's rain, and the share of it that falls in the local summer half */
+  /* the year's rain, and the share of it that falls in the local summer half. July and January
+     are the extreme months, not the halves: with the rain following a sine through the year,
+     the six summer months hold 0.5 + (2 / pi) x (the peak month's share - 0.5) of it */
   const precip = new Float32Array(N), pSum = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     precip[i] = (pJul[i] + pJan[i]) / 2;
     const s = DEGL[i] >= 0 ? pJul[i] : pJan[i];
-    pSum[i] = precip[i] > 0 ? s / (pJul[i] + pJan[i]) : 0.5;
+    pSum[i] = precip[i] > 0 ? 0.5 + (2 / Math.PI) * (s / (pJul[i] + pJan[i]) - 0.5) : 0.5;
   }
   /* dry ground runs hot: with little water to evaporate and clear skies, the sun's heat goes
      into the air (the Sahara's annual mean is some 5 C above its latitude's). Up to 4.2 C x
@@ -1673,8 +1708,9 @@ AEON.planetgen = { generate: generate, region: region };
 /* raised whenever a change here makes the same seed a different world (its land, climate or
    biomes, and so its history): what the browser kept for a world of an older version is
    dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). 3: 3 to 5 hotspots. 4: a sea level per world. 5: the climate refitted on the real Earth
-   (docs/EARTH_CLIMATE_TEST.md). */
-AEON.GEN_VERSION = 5;
+   (docs/EARTH_CLIMATE_TEST.md). 6: rain seasons (the half-year share, seasonal westerlies, shallow winter highs), half a cold sea's
+   anomaly on land, winter storms through cold-current air, shelf edges averaged with the slope. */
+AEON.GEN_VERSION = 6;
 AEON.regiongen = region;
 
 })();

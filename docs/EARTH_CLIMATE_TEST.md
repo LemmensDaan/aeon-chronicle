@@ -70,8 +70,8 @@ group map).
 ![Köppen](worldgen/earth-koppen.png)
 
 *Each sheet: observed, model, difference. On the Köppen sheet, dark green is exact, light green
-the same group, red a different group. Grey land has no CRU data. The maps show the model after
-the refit of 2026-11-25 (see Progress); the numbers in this section are from before it.*
+the same group, red a different group. Grey land has no CRU data. The maps show the model at
+GEN_VERSION 6 (see Progress); the numbers in this section are from before the refit.*
 
 ## What is wrong, in order of how much it costs
 
@@ -189,3 +189,72 @@ Result: Earth falls inside the range on **30 of 35** variables. Outside:
   high-latitude land with mountain coasts.
 - **Shelf share of the ocean** (9.6%, Earth 4.7% on this grid). Earth's shelves average away
   into the slope at 270 km cells, and the generator's do not: its shelves are too wide.
+
+### Rain seasons (2026-11-25, GEN_VERSION 6)
+
+- **The summer share was measured on the wrong months.** The model runs two seasons, July and
+  January, which are the year's extreme months. Its share was July over July + January, while
+  Köppen and the observations use the six summer months. For rain that follows a sine through
+  the year, the summer half holds 0.5 + (2/π) × (the peak month's share − 0.5). The model now
+  reports that. This alone removed the bias (+0.11 → +0.01).
+- **Thermal highs and lows are shallow.** They steer the tropics (the monsoons), but from 25 to
+  50° the moving storms of the westerlies outweigh them, so their winds now taper to a fifth.
+  Before, the winter continent's high blew the air offshore at Seattle, so the Pacific's
+  winter rain never came in.
+- **The westerlies are seasonal:** 40% stronger in winter, when the pole-to-equator contrast
+  is largest, and 40% weaker in summer (30–70°).
+
+| Earth test, 10 seeds | Before | After | Latitude only |
+|---|---|---|---|
+| Summer share of rain: bias / RMSE / r | +0.11 / 0.28 / 0.36 | −0.03 / 0.19 / **0.47** | 0 / – / 0.44 |
+| Köppen group / 2 letters / exact | 70 / 39 / 34% | 68 / **47 / 40%** | 66 / 40 / 34% |
+| Rain within a factor of 2 | 60% | 58% | 67% |
+
+The seasonality of rain now beats latitude alone. The cost is 1.5 points of Köppen groups:
+the stronger winter westerlies leave the interiors a little drier (more B). Moscow is Dfc
+instead of Dwc, and Seattle's summer share went from 0.83 to 0.56 (observed 0.26).
+
+Suite (same 100 seeds): Earth is inside on **32 of 35**. The summer share matches (0.64 against
+0.64), and the dry-winter climates (4.8%, Earth 8%) and the rain at 45–60° are now in range.
+Still outside: the shelves; west-coast rain (1,308 mm, Earth 895); and, newly, Mediterranean
+climates, which are too rare (1.5%, Earth 3.5%; the model on Earth 1.7%).
+
+### The red flags of the suite (2026-11-25, still GEN_VERSION 6)
+
+**Mediterranean climates.** On the cells that Earth has as Cs, the model's summer share was
+right (+0.05), so the dry summers were not the problem. The problem was that these places were
+3 °C too cold (they became D) and got half their rain (they became B). Three changes:
+- **A cold sea's chill reaches the land at half.** Air off a cold current is stable, so its
+  chill stays in a shallow layer by the coast. Air off warm water mixes and carries its warmth
+  inland in full, as at London. West coasts by a cold sea had been 3.2 °C too cold.
+- **A winter continent's high counts a quarter.** It is a shallow dome of cold air, and the
+  storms and the sea air pass over it. The summer heat lows of the monsoons count in full.
+  Before, the winter highs of Australia and Iberia blew the sea air away from Perth and
+  Portugal.
+- **Winter fronts rain through stable air.** In the winter storm belt the cold current's
+  damping of rain is half lifted.
+
+Of Earth's Cs land, the model now calls 37% Cs, up from 20%. Over the 100 worlds Cs is 2.7%
+(Earth 3.5%).
+
+**Shelves.** Every piece of continental crust below the sea was shelf, 40–220 m deep. But a
+cell is about 270 km and a shelf averages about 80 km, so the cell at the ocean's edge also
+holds the shelf break and the slope, and averages deeper. That edge ring is now up to 1,500 m
+deeper, unless the noise keeps a wide shelf there (Siberia, Sunda, Patagonia). The shelf share
+falls from 9.6% to 6.8% of the ocean. That is near Earth's true share, about 7.5%. Earth reads
+4.7% on this grid because its narrow shelves average away into the slope.
+
+**West coasts (left on purpose).** The worlds' west coasts get 1,423 mm and Earth's get 895,
+but the model on Earth's own map gives 905. So the physics is right. The generated worlds just
+have warmer water off their west coasts (+2.3 °C against Earth's −0.9 °C), because their
+oceans are shaped differently. Pushing this towards Earth would make the worlds copy Earth.
+
+| Earth test, 10 seeds | GEN 5 | Rain seasons | Now | Latitude only |
+|---|---|---|---|---|
+| Temperature bias / RMSE | +0.2 / 3.0 °C | +0.3 / 3.1 °C | +0.4 / 3.0 °C | 0 / 4.2 °C |
+| Rain within a factor of 2 | 60% | 58% | 60% | 67% |
+| Summer share r | 0.36 | 0.47 | **0.55** | 0.44 |
+| Köppen group / 2 letters / exact | 70 / 39 / 34% | 68 / 47 / 40% | **70 / 49 / 41%** | 66 / 40 / 34% |
+
+Suite: Earth is inside the worlds' range on **34 of 35** variables. Only the west coasts are
+outside.

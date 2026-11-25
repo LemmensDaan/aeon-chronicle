@@ -529,6 +529,11 @@ function generate(world, pack, rng) {
     }
   }
 
+  /* a test can hand in a whole planet's relief in metres (tools/earth-climate.js runs the climate
+     on Earth's): it replaces the generated terrain here, and the seam is left where it is */
+  const terrainIn = AEON.planetgen && AEON.planetgen.terrainIn;
+  if (terrainIn) { for (let i = 0; i < N; i++) hm[i] = terrainIn[i]; geo.fill(0); }
+
   /* E, the 0..1 scale every later stage reads: the sea at 0.5, 5,000 m at 1 (higher is held at 1),
      -7,000 m at 0; the same scale for every world */
   const E = new Float32Array(N);
@@ -569,7 +574,7 @@ function generate(world, pack, rng) {
       for (const [d, wgt] of WT) s += colLand[wx(c + d)] * wgt;
       if (s < bestScore) { bestScore = s; best = c; }
     }
-    const off = (W - best) % W;
+    const off = terrainIn ? 0 : (W - best) % W;
     if (off) {
       const roll = function (a) {
         const src = a.slice();

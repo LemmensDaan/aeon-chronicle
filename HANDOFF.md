@@ -575,6 +575,13 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   hotspots, blurs (`blurWrap(..., KX)`), wind advection and current reach. Rain mm refitted.
   The realism plan (docs/WORLDGEN_REALISM.md) is now done, items 1-10; its Progress section
   lists what is still off.
+- **Earth climate test (2026-11-25, report only, no world changes):** `node tools/earth-climate.js`
+  runs the climate on Earth's real relief (`AEON.planetgen.terrainIn`; normal worlds never set it)
+  and scores it against CRU CL 2.0 station normals, with a latitude-only yardstick. Data:
+  `tools/earth/earth-150x95.json`, rebuilt by `tools/earth-fetch.js`. Temperature pattern good
+  (r 0.96) but 3 C too cold; rain and Koppen do not yet beat latitude alone (Koppen groups 61%
+  vs 66%): wet Sahara, dry mid-latitude interiors, weak South Asian monsoon. Write-up and the
+  ranked list of faults: docs/EARTH_CLIMATE_TEST.md.
 - **Elevation colours and region lakes (2026-10-28, region histories change, planet histories not):**
   the Elevation mode colours fixed metre bands (<200, 200-500, 500-1,000, 1,000-2,000, 2,000-3,000,
   3,000+ m; pixelmap.js `elevBand`, legend 0 m to 3,000 m +), not each world's height rank. Region

@@ -70,7 +70,8 @@ group map).
 ![Köppen](worldgen/earth-koppen.png)
 
 *Each sheet: observed, model, difference. On the Köppen sheet, dark green is exact, light green
-the same group, red a different group. Grey land has no CRU data.*
+the same group, red a different group. Grey land has no CRU data. The maps show the model after
+the refit of 2026-11-25 (see Progress); the numbers in this section are from before it.*
 
 ## What is wrong, in order of how much it costs
 
@@ -118,3 +119,73 @@ and the share of each Köppen group overall.
   alone.
 - Careful: tuning only to Earth can overfit. The constants should stay physical, so other
   worlds keep behaving.
+
+## Progress
+
+### Climate refit (2026-11-25, GEN_VERSION 5; changes every seed's climate, biomes and history)
+
+Each change is physical and holds for any planet. Its size was fitted on Earth's land
+(regressions of the test's errors against height, distance from the sea, dryness and latitude).
+
+- **Lapse rate 6 → 4.9 °C/km.** The ground temperature of high land falls more slowly than
+  free air (a plateau is a raised heat source). The error was −1.2 °C per km of height.
+- **Inland annual mean:** +2.4 °C at the equator to −1.2 °C at 60° away from the sea's
+  influence. The old term only cooled.
+- **Dry ground runs hot:** up to +4.2 °C × cos(latitude) where the year's rain is near nil,
+  none from 1,000 mm. This explained most of the subtropical cold bias.
+- **Coastal seasonal range** about doubled (0.75 + 11.3·s instead of 1 + 6·s): a coastal
+  cell is about 200 km of land, not the shore itself.
+- **Weather noise on temperature** cut from ±6 °C to about ±3.5 °C. It was the largest source of
+  seed-to-seed error.
+- **Rain belts:** the tropical rain belt is narrower, and the subtropical sinking air keeps
+  the deserts dry all year (Sahara, Arabia). The old belt reached 25° with a third of the
+  equator's rain-out.
+- **Pressure-driven winds (new):** each season, ground warmer than its latitude's mean
+  (taken as at sea level) makes a low, and colder ground makes a high. The wind turns round
+  them (Coriolis) and drifts across into the lows (friction), and lows rain more than highs.
+  This replaces the old land–sea monsoon term, which only worked below 30°. It gives the Asian
+  monsoon, Beijing's dry winter and wet summer, and wet east coasts.
+- **Stable air off cold currents** rains less (the Atacama, the Namib). Air off warm
+  currents rains more.
+- **Orographic rain** factor 3.5 → 2 (East Africa got 4–8× its rain).
+- **Air-mass capacity:** the water the air can hold follows half the ground's season and half
+  its year. Sea air over a winter continent now carries snow inland instead of dropping it all
+  on the first cold coast.
+- **Rain in mm** refitted by quantile matching on Earth (2675 × (p / 0.097)^0.887).
+
+Earth test, 10 seeds, median:
+
+| | Before | After | Latitude only |
+|---|---|---|---|
+| Temperature bias / RMSE | −3.0 / 4.9 °C | **+0.2 / 3.0 °C** | 0 / 4.2 °C |
+| Seasonal range RMSE | 5.1 °C | 4.8 °C | 5.6 °C |
+| Rain correlation (log) | 0.49 | 0.53 | 0.53 |
+| Rain within a factor of 2 | 53% | 60% | 67% |
+| Köppen group / 2 letters / exact | 61 / 34 / 26% | **70 / 39 / 34%** | 66 / 40 / 34% |
+| Summer share of rain: bias / r | +0.04 / 0.45 | +0.11 / 0.36 | 0 / 0.44 |
+
+Temperature and the Köppen groups now beat latitude alone. Rain is closer but does not yet.
+Places: Cairo gets 97 mm (was 242, observed 42), Beijing is Dwa (observed Dwa), and the
+deserts are dry. The seasonality of rain got worse: summer rain is too strong almost
+everywhere. Tried and rejected: storms that grow in winter with the season's pole-to-equator
+contrast. They fixed the summer share partly but cost 4–5 points of Köppen group agreement.
+
+### Realism suite (`node tools/realism-suite.js`)
+
+It runs 100 new worlds (seeds 20001–20100, about 70 s) and measures 35 variables on each:
+terrain, temperature and rain by latitude band, aridity, west and east coasts, Köppen groups
+and two sub-types. It measures the same on Earth, and on the model run on Earth's relief. Earth
+is one draw from all possible planets, so the test is whether it falls inside the worlds'
+2.5–97.5% range. The model-on-Earth value separates the model's error from differences in
+geography. The bell curves are in [realism-suite.html](worldgen/realism-suite.html) and the
+table in [realism-suite.txt](worldgen/realism-suite.txt).
+
+Result: Earth falls inside the range on **30 of 35** variables. Outside:
+- **Summer share of rain** (worlds 0.81, Earth 0.64; the model on Earth gives 0.76) and
+  **dry-winter climates Cw + Dw** (21%, Earth 8%; the model on Earth 17%). These are the
+  model's error, the next thing to fix.
+- **Rain at 45–60°** (912 mm, Earth 599) and **west-coast rain** (1,466 mm, Earth 895). The
+  model on Earth gets 609 and 954 mm, so this is geography: generated worlds have narrower
+  high-latitude land with mountain coasts.
+- **Shelf share of the ocean** (9.6%, Earth 4.7% on this grid). Earth's shelves average away
+  into the slope at 270 km cells, and the generator's do not: its shelves are too wide.

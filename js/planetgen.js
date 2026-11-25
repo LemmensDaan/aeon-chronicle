@@ -133,9 +133,11 @@ function floodFill(N, NB8, E, sea, runoff, outlet) {
 const TOP_M = 5000, DEEP_M = 7000;
 function eOfM(h) { return h > 0 ? 0.5015 + 0.4985 * Math.min(1, h / TOP_M) : 0.5 * Math.max(0, 1 + h / DEEP_M); }
 function mOfE(e) { return e > 0.5 ? Math.max(0, (e - 0.5015) / 0.4985) * TOP_M : (e / 0.5 - 1) * DEEP_M; }
-/* cooling with height, in the T scale (1 = 55.6 degC): 6 degC a km, a little under the free
-   air's 6.5, as sunlit ground warms the air over it */
-const LAPSE_T = 6 / 55.6;
+/* cooling with height, in the T scale (1 = 55.6 degC): 4.9 degC a km, well under the free air's
+   6.5, as high ground heats the air over it (a plateau is a raised heat source). Fitted on
+   Earth's land: CRU station normals against height, latitude and distance from the sea
+   (docs/EARTH_CLIMATE_TEST.md) */
+const LAPSE_T = 4.9 / 55.6;
 /* the treeline by latitude (degrees), in metres; above it land is "mountain": rock, alpine
    meadow and glacier. ~3,800 m in the tropics, ~2,200 m at 45 degrees, never under 500 m */
 function treeline(deg) {
@@ -143,6 +145,9 @@ function treeline(deg) {
 }
 /* how far (m) a height h at latitude deg stands above where mountains begin: the treeline, and
    never under 1,200 m (low cold uplands above the treeline are tundra) */
+/* the model's rain (a share of the air's water per step) in mm a year: matched to Earth's land
+   rainfall, quantile by quantile, on Earth's own relief (tools/earth-climate.js) */
+function rainMmOf(p) { return 2675 * Math.pow(Math.max(0, p) / 0.097, 0.887); }
 function overTree(h, deg) { return Math.min(h - treeline(deg), h - 1200); }
 
 function quantile(arr, q) {
@@ -615,24 +620,37 @@ function generate(world, pack, rng) {
   /* winds: three-cell circulation, as a table over |latitude| (degrees) */
   const U_TAB = [[0, -0.75], [15, -0.95], [30, 0], [45, 1], [60, 0], [75, -0.6], [90, -0.3]];
   const V_TAB = [[0, 0], [15, -0.45], [30, 0], [45, 0.35], [60, 0], [75, -0.35], [90, 0]]; /* + = poleward */
-  const RAIN_TAB = [[0, 2.3], [8, 2.0], [15, 1.0], [25, 0.32], [35, 0.45], [45, 0.95], [58, 1.1], [70, 0.7], [90, 0.4]];
+  /* how readily the air rains out by latitude (its rising and sinking): the narrow belt of the
+     tropical rains, the sinking subtropical air that keeps the deserts dry all year, the storm
+     tracks. Fitted on Earth's land (tools/earth-climate.js) */
+  const RAIN_TAB = [[0, 2.3], [6, 2.0], [11, 1.1], [16, 0.35], [22, 0.08], [28, 0.1], [34, 0.4], [42, 0.85], [50, 1.05], [58, 1.1], [70, 0.7], [90, 0.4]];
   const tab = (t, d) => { for (let k = 1; k < t.length; k++) if (d <= t[k][0]) return lerp(t[k - 1][1], t[k][1], (d - t[k - 1][0]) / (t[k][0] - t[k - 1][0])); return t[t.length - 1][1]; };
   const nU = new Float32Array(N), nV = new Float32Array(N);
   for (let i = 0; i < N; i++) { nU[i] = nf(noise2, i, 0.05, 2, 0.5) * 0.3; nV[i] = nf(noise3, i, 0.05, 2, 0.5) * 0.2; }
   /* the belts at a season: the whole pattern follows the sun, `shift` degrees north in July and
-     south in January; in the summer hemisphere the hot land draws the air in from the sea (the
-     monsoon), in winter the cold land pushes it out */
-  const landF = blurWrap(Float32Array.from(E, (e) => (e > 0.5 ? 1 : 0)), W, H, 5, KX);
-  const winds = function (shift, U, V, rainF) {
+     south in January; with a season's pressure P (below) the wind also turns round its highs
+     and lows, which makes the monsoons */
+  const winds = function (shift, U, V, rainF, P) {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = y * W + x, lat = DEGL[i] - shift, deg = Math.abs(lat), sgn = lat >= 0 ? -1 : 1; /* poleward = -y in north */
+      const i = y * W + x;
+      const lat = DEGL[i] - shift, deg = Math.abs(lat), sgn = lat >= 0 ? -1 : 1; /* poleward = -y in north */
       U[i] = tab(U_TAB, deg) + nU[i];
       V[i] = tab(V_TAB, deg) * sgn + nV[i];
       rainF[i] = tab(RAIN_TAB, deg);
-      const mon = shift * Math.sign(DEGL[i]) / 6 * band(Math.abs(DEGL[i]), 0, 6, 18, 30);
-      if (mon) {
-        U[i] += mon * 6 * (landF[y * W + wx(x + 1)] - landF[y * W + wx(x - 1)]) / 2;
-        V[i] += mon * 6 * (landF[Math.min(H - 1, y + 1) * W + x] - landF[Math.max(0, y - 1) * W + x]) / 2;
+      if (P) {
+        /* the wind around the season's highs and lows: along the isobars (clockwise round a
+           high in the north, the Coriolis turn), and part across them, down the gradient
+           (friction at the ground); near the equator, where the turn fades, mostly down it */
+        const gx = (P[y * W + wx(x + 1)] - P[y * W + wx(x - 1)]) / (2 * KX[y]);
+        const gn = (P[Math.max(0, y - 1) * W + x] - P[Math.min(H - 1, y + 1) * W + x]) / 2;
+        const f = Math.sin(DEGL[i] * Math.PI / 180), af = Math.max(Math.abs(f), 0.25), s = f >= 0 ? 1 : -1;
+        let ue = 60 * (-gn * s - 0.6 * gx) / af;
+        let vn = 60 * (gx * s - 0.6 * gn) / af;
+        const mg = Math.hypot(ue, vn);
+        if (mg > 1.2) { ue *= 1.2 / mg; vn *= 1.2 / mg; }
+        U[i] += ue; V[i] -= vn;
+        /* rising air in the lows rains more, sinking air in the highs less */
+        rainF[i] *= clamp(1 - 5 * P[i], 0.25, 2.5);
       }
     }
   };
@@ -737,11 +755,14 @@ function generate(world, pack, rng) {
 
   for (let i = 0; i < N; i++) {
     if (isOcean(i)) { T[i] = SST[i]; continue; }
-    T[i] = T[i] - LAPSE_T * Math.max(0, hm[i]) / 1000 - 0.06 * (1 - marine[i]) * sinLat[i] + anom[i];
+    /* away from the sea's influence the year's mean is warmer in the low latitudes (no
+       evaporating sea to cool the air) and colder in the high ones (the long winter outweighs
+       the summer): +2.4 C at the equator, -1.2 C at 60 degrees, fitted on Earth's land */
+    T[i] = T[i] - LAPSE_T * Math.max(0, hm[i]) / 1000 + CT * (1 - marine[i]) * (2.4 - 4.2 * sinLat[i]) + anom[i];
   }
   /* weather does not follow the parallels: broad warm and cold tongues, plus a little local
      variety, so the tundra and the deserts get ragged edges instead of straight ones */
-  for (let i = 0; i < N; i++) if (!isOcean(i)) T[i] += nf(noise3, i, 0.022, 3, 0.5) * 0.11 + nf(noise2, i, 0.09, 2, 0.5) * 0.03;
+  for (let i = 0; i < N; i++) if (!isOcean(i)) T[i] += nf(noise3, i, 0.022, 3, 0.5) * 0.06 + nf(noise2, i, 0.09, 2, 0.5) * 0.02;
   for (let i = 0; i < N; i++) T[i] = clamp(T[i], 0, 1);
 
   /* seasons: half the year's range (warmest minus coldest month), small at sea and by it, large
@@ -756,7 +777,9 @@ function generate(world, pack, rng) {
       if ((T[i] - Tamp[i]) / CT - 22.4 < -8) seaIce[i] = 1;
       continue;
     }
-    Tamp[i] = CT * lerp(2 + 24 * s, 1 + 6 * s, marine[i]);
+    /* half the range deep inland and right by the sea (fitted on Earth's land: a coastal cell
+       here is some 200 km of land, not the shore itself) */
+    Tamp[i] = CT * lerp(2.1 + 24.3 * s, 0.75 + 11.3 * s, marine[i]);
   }
 
   /* moisture transport: semi-Lagrangian advection to a steady state, once for July and once
@@ -770,19 +793,40 @@ function generate(world, pack, rng) {
   /* the upwind point of every cell is fixed for a season, so its four corners and weights, the
      share that rains out and the cap are worked out once, before the 90 steps */
   const UPI = new Int32Array(N * 4), UPW = new Float32Array(N * 4), FRAC = new Float32Array(N), CAP = new Float32Array(N);
+  const Pp = new Float32Array(N), Ta = new Float32Array(N);
   const season = function (sgn, out) {
-    winds(6 * sgn, Us, Vs, rFs);
+    for (let i = 0; i < N; i++) Ts[i] = clamp(T[i] + sgn * Math.sign(DEGL[i]) * Tamp[i], 0, 1);
+    /* the season's pressure, from heat: ground warmer than its latitude's mean heats the air
+       over it into a low (the summer continents, the Asian monsoon's), colder ground cools it
+       into a high (Siberia in winter, the cool summer oceans' subtropical highs). The heat is
+       taken as at sea level, so a high plateau in summer is a heat source, not a cold dome;
+       smoothed to the scale of the weather systems. */
+    for (let i = 0; i < N; i++) Ta[i] = Ts[i] + (isOcean(i) ? 0 : LAPSE_T * Math.max(0, hm[i]) / 1000);
+    for (let y = 0; y < H; y++) {
+      let s = 0;
+      for (let x = 0; x < W; x++) s += Ta[y * W + x];
+      const m = s / W;
+      for (let x = 0; x < W; x++) Ta[y * W + x] = m - Ta[y * W + x];
+    }
+    Pp.set(blurWrap(Ta, W, H, 6, KX));
+    winds(6 * sgn, Us, Vs, rFs, Pp);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = y * W + x;
-      Ts[i] = clamp(T[i] + sgn * Math.sign(DEGL[i]) * Tamp[i], 0, 1);
       recycle[i] = 0.65 * clamp(Ts[i] * 1.5, 0.2, 1);
-      CAP[i] = 0.12 + 0.88 * Ts[i];
+      /* the water the air can hold follows the air mass as much as the ground under it: the
+         sea air over a winter continent cools only gradually, so it carries snow inland
+         instead of dropping all its water on the first cold coast */
+      CAP[i] = 0.12 + 0.88 * lerp(Ts[i], T[i], 0.5);
       const ux = x - Us[i] / KX[y], uy = clamp(y - Vs[i], 0, H - 1);
       const x0 = Math.floor(ux), y0 = Math.floor(uy), tx = ux - x0, ty = uy - y0, y1 = Math.min(y0 + 1, H - 1);
       UPI[i * 4] = y0 * W + wx(x0); UPI[i * 4 + 1] = y0 * W + wx(x0 + 1); UPI[i * 4 + 2] = y1 * W + wx(x0); UPI[i * 4 + 3] = y1 * W + wx(x0 + 1);
       UPW[i * 4] = (1 - tx) * (1 - ty); UPW[i * 4 + 1] = tx * (1 - ty); UPW[i * 4 + 2] = (1 - tx) * ty; UPW[i * 4 + 3] = tx * ty;
       const rise = Math.max(0, Es[i] - sampleWrap(Es, ux, uy));
-      FRAC[i] = clamp(0.045 * rFs[i] + rise * 3.5, 0, 0.8);
+      /* air off a cold current is stable and keeps its water (the Atacama, the Namib, Baja),
+         air off a warm one rains readily: each degree of the water's anomaly it carries moves
+         the rain-out by a fifth, between 0.2 and 1.6 times */
+      const stab = clamp(1 + anom[i] / (CT * 5), 0.2, 1.6);
+      FRAC[i] = clamp((0.045 * rFs[i] + rise * 2) * stab, 0, 0.8);
     }
     let q1 = new Float32Array(N), q2 = new Float32Array(N);
     for (let it = 0; it < 90; it++) {
@@ -810,6 +854,14 @@ function generate(world, pack, rng) {
     precip[i] = (pJul[i] + pJan[i]) / 2;
     const s = DEGL[i] >= 0 ? pJul[i] : pJan[i];
     pSum[i] = precip[i] > 0 ? s / (pJul[i] + pJan[i]) : 0.5;
+  }
+  /* dry ground runs hot: with little water to evaporate and clear skies, the sun's heat goes
+     into the air (the Sahara's annual mean is some 5 C above its latitude's). Up to 4.2 C x
+     cos(latitude) where the year's rain is near nil, none from 1,000 mm; fitted on Earth's land */
+  for (let i = 0; i < N; i++) {
+    if (isOcean(i)) continue;
+    const mm = rainMmOf(precip[i]);
+    T[i] = clamp(T[i] + CT * 4.2 * Math.max(0, 1 - mm / 1000) * Math.cos(latRad[i]), 0, 1);
   }
 
   const fin = finish(world, pack, {
@@ -1029,7 +1081,7 @@ function finish(world, pack, L) {
   const tempC = new Float32Array(N), rainMm = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     tempC[i] = -22.4 + 55.6 * T[i];
-    rainMm[i] = isOcean(i) ? 0 : 3480 * Math.pow(precip[i] / pRef, 1.025);
+    rainMm[i] = isOcean(i) ? 0 : rainMmOf(precip[i]);
   }
 
   /* Koppen's climates from the two seasons: warmest and coldest month (the annual mean plus and
@@ -1620,8 +1672,9 @@ function blurWrap(src, W, H, r, kx) {
 AEON.planetgen = { generate: generate, region: region };
 /* raised whenever a change here makes the same seed a different world (its land, climate or
    biomes, and so its history): what the browser kept for a world of an older version is
-   dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). 3: 3 to 5 hotspots. 4: a sea level per world. */
-AEON.GEN_VERSION = 4;
+   dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). 3: 3 to 5 hotspots. 4: a sea level per world. 5: the climate refitted on the real Earth
+   (docs/EARTH_CLIMATE_TEST.md). */
+AEON.GEN_VERSION = 5;
 AEON.regiongen = region;
 
 })();

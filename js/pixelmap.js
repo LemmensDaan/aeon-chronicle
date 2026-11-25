@@ -27,7 +27,7 @@ function tableAt(t, d) {
   for (let k = 1; k < t.length; k++) if (d <= t[k][0]) return t[k - 1][1] + (t[k][1] - t[k - 1][1]) * (d - t[k - 1][0]) / (t[k][0] - t[k - 1][0]);
   return t[t.length - 1][1];
 }
-const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents"];
+const MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents", "plates"];
 /* the diplomacy mode's colours: how each realm stands with the realm in focus (AEON.stancesAt) */
 /* (Daan, 2026-10-24: truce silver, trade gold; the realm in focus a pale cream wash, so it is never
    mistaken for one of the stances; he tried a thick ink border round it and dropped it) */
@@ -867,6 +867,135 @@ function currentLines(c, w) {
   if (c.curLines === undefined) c.curLines = flowLines(currentsField(c, w));
   return c.curLines;
 }
+/* the plates mode: the boundaries by kind (as tectonic atlases draw them:
+   where plates meet red (purple where continents collide), where they part
+   orange, where they slide past grey, apart from the inked coast); the plates' motion, the hotspots */
+const PLATE_EDGE = { collision: "#a0307f", subduction: "#c8291c", rift: "#e0861a", ridge: "#f2c94c", transform: "#a39a8a" };
+/* the marks: the plates' motion, the hotspots, and the pairs of arrows on
+   the boundaries (as the atlases draw them): toward each other where the plates close (red), away
+   where they part (orange), past each other where they slide (grey) */
+const PLATE_MARK = { arrow: "#f6efdc", hot: "#ff6a2a", close: "#e8453a", part: "#f0a030", slide: "#cfc6b4", casing: "rgba(20,14,8,0.7)" };
+AEON.plateColors = { edge: PLATE_EDGE, mark: PLATE_MARK };
+
+/* the kind of the boundary between plates a and b near cell i: its direction from the plates'
+   cells in a 5 by 5 window round i (from a's side toward b's), how the plates move across it
+   (closing, opening or sliding), and their crust there. Kinds: 1 collision, 2 subduction, 3 rift,
+   4 ridge, 5 transform; over: the plate that rides over at a subduction. Always on the planet's
+   grid (pw: the planet; i its cell), so a region's boundaries are the world map's; kept on its _gen. */
+function plateKind(pw, i, a, b) {
+  const g = pw._gen || {}, memo = g.plateKinds || (g.plateKinds = new Map()), key = (i * 16 + a) * 16 + b;
+  if (memo.has(key)) return memo.get(key);
+  const R = pw.regions, W = pw.width, H = pw.height, wrap = true;
+  const P = g.plates;
+  let res = { kind: 5, over: -1 };
+  if (P && P[a] && P[b]) {
+    const x = i % W, y = (i - x) / W;
+    let ax = 0, ay = 0, an = 0, ac = 0, bx = 0, by = 0, bn = 0, bc = 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const yy = y + dy;
+      let xx = x + dx;
+      if (yy < 0 || yy >= H) continue;
+      if (wrap) xx = ((xx % W) + W) % W; else if (xx < 0 || xx >= W) continue;
+      const r = R[yy * W + xx], cont = r.crust === "continental" ? 1 : 0;
+      if (r.plate === a) { ax += dx; ay += dy; an++; ac += cont; }
+      else if (r.plate === b) { bx += dx; by += dy; bn++; bc += cont; }
+    }
+    if (an && bn) {
+      let nx = bx / bn - ax / an, ny = by / bn - ay / an;
+      const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+      const A = P[a], B = P[b], cv = (A.vx - B.vx) * nx + (A.vy - B.vy) * ny;
+      const ca = ac / an > 0.5, cb = bc / bn > 0.5;
+      if (cv > 0.25) {
+        if (ca && cb) res = { kind: 1, over: -1, nx: nx, ny: ny };
+        else res = { kind: 2, over: ca ? a : cb ? b : A.density < B.density ? a : b, nx: nx, ny: ny };
+      } else if (cv < -0.25) res = { kind: ca || cb ? 3 : 4, over: -1, nx: nx, ny: ny };
+      else res = { kind: 5, over: -1, nx: nx, ny: ny };
+    }
+  }
+  memo.set(key, res);
+  return res;
+}
+
+/* the plates mode's marks, in cell units, drawn by drawFlow: arrows of each plate's motion on a
+   plate's inmost cell, the pairs of arrows on the boundaries, and the hotspots */
+function plateMarks(c, w) {
+  if (c.plateMarks !== undefined) return c.plateMarks;
+  c.plateMarks = null;
+  const pl = w.planet, g = (pl || w)._gen;
+  if (!g || !g.plates || typeof Path2D === "undefined") return null;
+  const R = w.regions, W = w.width, H = w.height, sq = w.square, wrap = !sq, P = g.plates;
+  const at = function (x, y) { if (y < 0 || y >= H) return -1; if (wrap) x = ((x % W) + W) % W; else if (x < 0 || x >= W) return -1; return y * W + x; };
+  const mk = function (col) { return { col: col, p: new Path2D(), h: new Path2D(), seam: true }; };
+  const arrows = mk("arrow"), hot = mk("hot"), close = mk("close"), part = mk("part"), slide = mk("slide");
+  /* one arrow per plate, at its cell farthest from any boundary (and from the map's edges), the
+     way it moves; its length from the plate's speed, kept clear of the boundaries. On a region's
+     map, drawn closer, the marks are Z times as big */
+  const Z = sq ? 1.8 : 1, N = W * H, D = new Int16Array(N).fill(-1), Q = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    let edge = y === 0 || y === H - 1 || (!wrap && (x === 0 || x === W - 1));
+    if (!edge) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = at(x + dx, y + dy); if (j >= 0 && R[j].plate !== R[i].plate) { edge = true; break; } }
+    if (edge) { D[i] = 0; Q.push(i); }
+  }
+  for (let q = 0; q < Q.length; q++) {
+    const i = Q[q], x = i % W, y = (i - x) / W;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = at(x + dx, y + dy); if (j >= 0 && D[j] < 0) { D[j] = D[i] + 1; Q.push(j); } }
+  }
+  const bestAt = {};
+  for (let i = 0; i < N; i++) { const p0 = R[i].plate; if (bestAt[p0] == null || D[i] > D[bestAt[p0]]) bestAt[p0] = i; }
+  for (const p0 in bestAt) {
+    const i = bestAt[p0], Pp = P[p0], room = D[i];
+    if (!Pp || room < 2) continue;
+    const sp = Math.hypot(Pp.vx, Pp.vy) || 1, ux = Pp.vx / sp, uy = Pp.vy / sp;
+    const len = Math.min((2.2 + 2 * sp) * Z, 2 * (room - 0.5)), hl = 0.8 * Z, hw = 0.6 * Z;
+    const x = i % W, y = (i - x) / W, cx = x + 0.5, cy = y + 0.5, tx = cx + ux * len / 2, ty = cy + uy * len / 2;
+    arrows.p.moveTo(cx - ux * len / 2, cy - uy * len / 2); arrows.p.lineTo(tx - ux * hl * 0.6, ty - uy * hl * 0.6);
+    arrows.h.moveTo(tx + ux * hl * 0.3, ty + uy * hl * 0.3); arrows.h.lineTo(tx - ux * hl - uy * hw, ty - uy * hl + ux * hw);
+    arrows.h.lineTo(tx - ux * hl + uy * hw, ty - uy * hl - ux * hw); arrows.h.closePath();
+  }
+  const dist2 = function (ax, ay, bx, by) { let dx = Math.abs(ax - bx); if (wrap) dx = Math.min(dx, W - dx); return dx * dx + (ay - by) * (ay - by); };
+  /* the pairs of arrows on the boundaries that compose drew (c.plateEdges, in cells), one every
+     PG cells: one arrow on each side of the line, OFF from it, each showing how its own plate moves
+     against the other: toward the line where they close, away where they part, along it where
+     they slide (n runs from plate a toward b; t along the line) */
+  const pairs = [], PG = 8 * Z, PG2 = PG * PG, OFF = 1.15 * Z, AL = 1.1 * Z, AH = 0.5 * Z, AW = 0.42 * Z;
+  const arrowAt = function (q, x, y, ux, uy) {
+    const tx = x + ux * AL / 2, ty = y + uy * AL / 2;
+    q.p.moveTo(x - ux * AL / 2, y - uy * AL / 2); q.p.lineTo(tx - ux * AH * 0.6, ty - uy * AH * 0.6);
+    q.h.moveTo(tx + ux * AH * 0.4, ty + uy * AH * 0.4); q.h.lineTo(tx - ux * AH - uy * AW, ty - uy * AH + ux * AW); q.h.lineTo(tx - ux * AH + uy * AW, ty - uy * AH - ux * AW); q.h.closePath();
+  };
+  for (const e of c.plateEdges || []) {
+    const mx = e[0], my = e[1], k = e[2];
+    if (k.nx == null) continue;
+    let near = false;
+    for (const t of pairs) if (dist2(t[0], t[1], mx, my) < PG2) { near = true; break; }
+    if (near) continue;
+    pairs.push([mx, my]);
+    const nx = k.nx, ny = k.ny, ax = mx - nx * OFF, ay = my - ny * OFF, bx = mx + nx * OFF, by = my + ny * OFF;
+    if (k.kind === 1 || k.kind === 2) { arrowAt(close, ax, ay, nx, ny); arrowAt(close, bx, by, -nx, -ny); }
+    else if (k.kind === 3 || k.kind === 4) { arrowAt(part, ax, ay, -nx, -ny); arrowAt(part, bx, by, nx, ny); }
+    else {
+      const A = P[e[3]], B = P[e[4]];
+      if (!A || !B) continue;
+      const tx = -ny, ty = nx, sg = (A.vx - B.vx) * tx + (A.vy - B.vy) * ty >= 0 ? 1 : -1;
+      arrowAt(slide, ax, ay, tx * sg, ty * sg); arrowAt(slide, bx, by, -tx * sg, -ty * sg);
+    }
+  }
+  /* hotspots, from the planet's cells to this map's */
+  for (const hs of g.hotspots || (pl && pl._gen && pl._gen.hotspots) || []) {
+    let hx = hs.x + 0.5, hy = hs.y + 0.5;
+    if (sq && pl) { hx = (hx - sq.px0) * sq.K; hy = (hy - sq.py0) * sq.K; if (hx < 0 || hy < 0 || hx > W || hy > H) continue; }
+    const r = 0.75 * Z;
+    hot.h.moveTo(hx + r, hy); hot.h.arc(hx, hy, r, 0, 6.2832); hot.h.closePath();
+    hot.h.moveTo(hx + r * 0.38, hy); hot.h.arc(hx, hy, r * 0.38, 0, 6.2832, true); hot.h.closePath();
+  }
+  const out = [arrows, close, part, slide, hot];
+  out.wrap = wrap;
+  c.plateMarks = out;
+  return out;
+}
+function drawPlates(ctx, c, w, v, X0) { drawFlow(ctx, c, v, X0, plateMarks(c, w), PLATE_MARK); }
+
 /* the rain belts over the sea by latitude (the generator models rain over land only): the wet
    tropics, the dry subtropics, the stormy middle latitudes and the drier poles; they follow the sun
    six degrees north and south. As mm a year these are SEA_RAIN_MM times the table. */
@@ -1337,6 +1466,66 @@ function compose(c, w, mode, roads, contest, focus, provOf, sea) {
       if (!r || (r.barren && !r.lake) || !cols[r.climate]) r = R[cellOf[i]];
       const col = r && cols[r.climate];
       if (col) setPx(i, col, 0.8);
+    }
+  }
+
+  /* plates: each pixel the plate with the most weight among the four cells round it (so the
+     boundaries run smooth, not in steps); the map itself plain, as the winds' and currents', and
+     the boundaries over it two pixels wide in the colour of their kind (plateKind); the coast in ink */
+  if (mode === "plates") {
+    /* the vote is on the planet's grid, so a region's boundaries run as smooth as the world map's
+       instead of in the steps of its planet cells; PC: each pixel's nearest planet cell */
+    const PW = w.planet && w.square ? w.planet : w, PR = PW.regions, GW = PW.width, GH = PW.height, sqr = w.square && w.planet ? w.square : null;
+    const PI = new Int16Array(VW * VH), PC = new Int32Array(VW * VH), seaCol = RAMPS.currents.map(rgb)[3];
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const gx = sqr ? sqr.px0 + (x + 0.5) / PPC / sqr.K : (x + 0.5) / PPC, gy = sqr ? sqr.py0 + (y + 0.5) / PPC / sqr.K : (y + 0.5) / PPC;
+      const fx = gx - 0.5, fy = Math.max(0, Math.min(GH - 1, gy - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, y1 = Math.min(y0 + 1, GH - 1);
+      PC[y * VW + x] = Math.max(0, Math.min(GH - 1, Math.floor(gy))) * GW + ((Math.floor(gx) % GW) + GW) % GW;
+      const ids = [-1, -1, -1, -1], ws = [0, 0, 0, 0];
+      for (let q = 0; q < 4; q++) {
+        const cx = q & 1 ? x0 + 1 : x0, cy = q & 2 ? y1 : y0, wt = (q & 1 ? tx : 1 - tx) * (q & 2 ? ty : 1 - ty);
+        const j = cy * GW + ((cx % GW) + GW) % GW, pid = PR[j].plate;
+        let k = 0;
+        while (k < 4 && ids[k] !== -1 && ids[k] !== pid) k++;
+        ids[k] = pid; ws[k] += wt;
+      }
+      let best = 0;
+      for (let k = 1; k < 4; k++) if (ws[k] > ws[best]) best = k;
+      const i = y * VW + x;
+      PI[i] = ids[best];
+    }
+    /* the relief, faint, as the winds' and currents' plain grey land and dark blue sea: the land
+       lighter the higher it stands and the sea darker the deeper it lies, both shaded by slope
+       (lit from the north-west), so the ranges, trenches and ridges that the boundaries raise show */
+    const PH = new Float32Array(VW * VH), HS = new Float32Array(R.length), grey = [185, 177, 154];
+    for (const r of R) HS[r.id] = heightOf2(r);
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) PH[y * VW + x] = pixelVal(HS, x, y, null);
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x, h = PH[i];
+      const a = PH[Math.max(0, y - 1) * VW + (x + VW - 1) % VW], b = PH[Math.min(VH - 1, y + 1) * VW + (x + 1) % VW];
+      const shade = Math.max(-0.14, Math.min(0.14, (a - b) / (land[i] ? 900 : 2500)));
+      if (land[i]) {
+        const f = 0.8 + 0.28 * Math.min(1, Math.max(0, h) / 3500) + shade;
+        setPx(i, [grey[0] * f, grey[1] * f, grey[2] * f]);
+      } else {
+        const f = 1.22 - 0.42 * Math.min(1, Math.max(0, -h) / 5000) + shade * 0.8;
+        setPx(i, [seaCol[0] * f, seaCol[1] * f, seaCol[2] * f]);
+      }
+    }
+    inkCoast();
+    const EC = [null, rgb(PLATE_EDGE.collision), rgb(PLATE_EDGE.subduction), rgb(PLATE_EDGE.rift), rgb(PLATE_EDGE.ridge), rgb(PLATE_EDGE.transform)];
+    /* the boundary's pixels, for the arrow pairs (plateMarks): [x, y in cells, kind, plate a, plate b] */
+    const edges = c.plateEdges = [];
+    c.plateMarks = undefined;
+    for (let y = 0; y < VH; y++) for (let x = 0; x < VW; x++) {
+      const i = y * VW + x, a = PI[i];
+      const jr = w.square && x === VW - 1 ? -1 : y * VW + (x + 1) % VW, jd = y < VH - 1 ? i + VW : -1;
+      for (const j of [jr, jd]) {
+        if (j < 0 || PI[j] === a) continue;
+        const k = plateKind(PW, PC[i], a, PI[j]), col = EC[k.kind];
+        setPx(i, col); setPx(j, col);
+        edges.push([(x + 1) / PPC, (y + 1) / PPC, k, a, PI[j]]);
+      }
     }
   }
 
@@ -2063,7 +2252,7 @@ function drawOverlay(ctx, w, c, v, opts, tiles) {
 }
 
 /* the statistics modes: drawn without sprites (drawOverlay), with only the sea's swells moving */
-const BARE_MODES = { elevation: 1, habitability: 1, temperature: 1, rainfall: 1, climate: 1, winds: 1, currents: 1 };
+const BARE_MODES = { elevation: 1, habitability: 1, temperature: 1, rainfall: 1, climate: 1, winds: 1, currents: 1, plates: 1 };
 
 /* ------------------------------------------------------------ public API */
 function draw(canvas, world, opts) {
@@ -2082,7 +2271,7 @@ function draw(canvas, world, opts) {
   /* the seasons (seasons.js): on the ground in the realm modes, on the sprites and in the weather
      everywhere but the data modes; the season quantised for the caches */
   const dataMode = mode === "population" || mode === "elevation" || mode === "habitability" || mode === "currents" ||
-    mode === "temperature" || mode === "rainfall" || mode === "climate" || mode === "winds";
+    mode === "temperature" || mode === "rainfall" || mode === "climate" || mode === "winds" || mode === "plates";
   const SE = AEON.seasons && !dataMode && opts.season !== undefined ? AEON.seasons : null;
   const sea = SE ? { season: opts.season, ground: SE.key(opts, 2), key: SE.key(opts, 1) } : null;
   opts = Object.assign({}, opts, { sea: sea });
@@ -2102,6 +2291,7 @@ function draw(canvas, world, opts) {
   if (opts.time != null && BARE_MODES[mode]) drawSwells(ctx, c, v, X0, opts.time, mode === "climate" || mode === "habitability" || mode === "elevation");
   if (mode === "currents") drawCurrents(ctx, c, world, v, X0);
   if (mode === "winds") drawWinds(ctx, c, world, v, X0);
+  if (mode === "plates") drawPlates(ctx, c, world, v, X0);
   /* the event animations (mapfx.js): land changes below the settlements, sprites above them */
   const fx = AEON.mapfx && AEON.mapfx.live() && !BARE_MODES[mode] ? AEON.mapfx : null, war = AEON.mapfx && opts.date != null && !dataMode;
   const cell = PPC * v.P, env = (fx || war) && {

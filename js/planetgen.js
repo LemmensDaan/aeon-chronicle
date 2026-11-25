@@ -328,7 +328,9 @@ function generate(world, pack, rng) {
 
   /* hotspots: volcanic chains dragged out behind the moving plate */
   const hotspots = [];
-  const nHot = rng.int(1, 3);
+  /* 3 to 5: Earth has some 40 to 50, but each chain here runs over many cells, and more would
+     crowd the sea with them */
+  const nHot = rng.int(3, 5);
   for (let h = 0; h < nHot; h++) {
     const s = rng.int(0, N - 1), pl = plates[plateOf[s]];
     const sp = Math.hypot(pl.vx, pl.vy) || 1, dx = -pl.vx / sp, dy = -pl.vy / sp;
@@ -1596,8 +1598,8 @@ function blurWrap(src, W, H, r, kx) {
 AEON.planetgen = { generate: generate, region: region };
 /* raised whenever a change here makes the same seed a different world (its land, climate or
    biomes, and so its history): what the browser kept for a world of an older version is
-   dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). */
-AEON.GEN_VERSION = 2;
+   dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). 3: 3 to 5 hotspots. */
+AEON.GEN_VERSION = 3;
 AEON.regiongen = region;
 
 })();

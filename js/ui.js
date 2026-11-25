@@ -69,10 +69,10 @@ let chapter = null;
 function firstYear() { return chapter ? chapter.from : world.startYear; }
 function lastYear() { return chapter ? chapter.to : world.endYear; }
 function onPlanet() { return !!planet && world === planet; }
-const PLANET_MODES = ["world", "ages", "biome", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents"];
+const PLANET_MODES = ["world", "ages", "biome", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents", "plates"];
 /* the modes drawn from the world sketch */
 function sketchMode() { return mapMode === "world" || mapMode === "ages"; }
-const REGION_MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents"];
+const REGION_MODES = ["political", "diplomacy", "biome", "population", "elevation", "habitability", "temperature", "rainfall", "climate", "winds", "currents", "plates"];
 let view = { zoom: 1, panX: 0, panY: 0 };
 let hoverRegion = null, selectedRegion = null;
 
@@ -807,6 +807,22 @@ function specialLegend(L) {
       const seen = {};
       for (const r of world.regions) if (r.climate && !r.barren) seen[r.climate] = (seen[r.climate] || 0) + 1;
       Object.keys(AEON.koppen).filter(function (k) { return seen[k]; }).forEach(function (k) { chip(AEON.koppen[k][0], k, AEON.koppen[k][1]); });
+    }
+    L.classList.remove("hidden");
+    return true;
+  }
+  if (mapMode === "plates" && AEON.plateColors) {
+    if (L._mode !== key) {
+      L._mode = key; L.textContent = "";
+      L.appendChild(el("b", { text: "Plates" }));
+      const E = AEON.plateColors.edge, M = AEON.plateColors.mark;
+      chip(E.collision, "collision", "Two continents pushing together: the highest ranges");
+      chip(E.subduction, "subduction", "An ocean plate sinking under another: a trench, with a range or island arc on the plate that rides over");
+      chip(E.rift, "rift", "A continent pulling apart: a rift valley");
+      chip(E.ridge, "ridge", "Ocean plates pulling apart: a mid-ocean ridge, where new sea floor forms");
+      chip(E.transform, "sliding", "Plates sliding past each other: earthquakes, little relief");
+      chip(M.arrow, "plate motion", "The way each plate moves", "linear-gradient(90deg, " + M.arrow + " 60%, transparent 60%)");
+      chip(M.hot, "hotspot", "A plume of hot rock under the plate: a volcano, and a chain of older ones behind it as the plate moves on", "radial-gradient(circle, transparent 30%, " + M.hot + " 32%)");
     }
     L.classList.remove("hidden");
     return true;

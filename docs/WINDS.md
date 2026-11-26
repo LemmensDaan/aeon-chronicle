@@ -23,7 +23,9 @@ the coast. It takes 30–130 ms. From its monthly temperatures:
   equator-to-pole contrast to the 1/4 power and shrinks with (rotation × radius)^1/2 (Held 2000).
   A faster-spinning or larger planet gets narrower belts. The westerlies and the storms lie
   between the Hadley cell's edge and twice that distance; beyond that are the polar easterlies.
-- **The westerlies' strength** follows the surface temperature contrast between 30° and 60°
+- **The westerlies' strength** (since GEN_VERSION 11 scaled by `WIND.WEST` = 1.43 and measured
+  against Earth's contrast `GRAD_E` = 21.1 °C, refitted once the sea could freeze) follows the
+  surface temperature contrast between 30° and 60°
   (the thermal wind), divided by the rotation. For the season, the storms that bring their rain
   grow with the square of the contrast (eddy heat flux), between 0.5 and 1.6 times. A hemisphere
   with big winter continents gets strong winter storms and weak summer ones. An ocean hemisphere

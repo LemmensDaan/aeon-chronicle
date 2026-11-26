@@ -17,6 +17,8 @@ layer. It is run for 4 years of 36 steps, and the last year is kept as 12 monthl
   0.6. Both fade in over a few degrees below freezing.
 - **Heat lost to space:** A + B·T, with A = 203 W/m² and B = 2.09 W/m²/K (T in °C).
 - **Heat storage:** the sea's mixed layer (50 m, slow) or the land's surface (fast).
+- **Sea ice** (since GEN_VERSION 11): the water freezes at −1.8 °C; the ice grows and melts and
+  insulates the water, and its surface can grow very cold ([OCEAN_HEAT.md](OCEAN_HEAT.md)).
 - **The air:** one layer per latitude row. It carries heat towards the poles as diffusion in
   sin(latitude), with D = 1.8 W/m²/K. Rows of polar sea are added beyond 75°, where the map
   stops.
@@ -79,8 +81,9 @@ A world takes about 0.2–0.35 s longer to generate.
 
 ## Known limits
 
-- **The polar rows beyond 75° are too warm**: since GEN_VERSION 10 about 2 °C in the north and −3 °C
-  in the south (the Arctic is about −18 °C). Their sea never
+- **(Fixed in GEN_VERSION 11.) The polar rows beyond 75° were too warm**: the sea could not
+  freeze. Since sea ice is in the heat budget ([OCEAN_HEAT.md](OCEAN_HEAT.md)) they settle at
+  about −20 °C (the Arctic is about −18 °C). The old note follows: they stayed near 0 °C. Their sea never
   cools enough to freeze, so the bright sea ice that would cool it further never forms. Giving
   sea ice a small heat capacity, or weakening the transport near the poles, did not change it,
   and both made the map slightly worse. These rows are not on the map; they act only as a heat

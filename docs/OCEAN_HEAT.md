@@ -65,10 +65,59 @@ range). Only the west-coast rain is outside.
 
 ## Known limits
 
-- The currents still start from a latitude curve fitted to Earth (`T0`). For a planet with
-  another tilt or star it should come from the heat budget, which needs the frozen-sea test to
-  use the heat budget's winter sea ice first.
+- (Fixed in GEN_VERSION 11, below: the currents start from the heat budget's sea.)
 - Only wind-driven currents are modelled. There is no deep overturning circulation (the
   conveyor that carries Atlantic heat far north), so heat reaching high latitudes may be
   underestimated, and the year's tropical rain belt stays near the equator.
 - `CUR_SHARE` is a scale fitted on Earth's map.
+
+## GEN_VERSION 11: sea ice, and the currents from the heat budget
+
+Starting the currents from the heat budget turned up an older bug: since GEN_VERSION 7 the heat
+budget's sea never froze, so there was no sea ice anywhere. A 50 m layer of water could not cool
+below 0 °C in a winter, and the polar rows beyond the map stayed near 0 °C.
+
+- **Sea ice in the heat budget.** When the water cools to −1.8 °C, the extra cold turns into
+  ice. Under ice the water stays at freezing. The ice surface has no heat of its own, so it
+  balances sunlight, heat to space, the air and the heat conducted up through the ice. In
+  winter it grows as cold as a continent. The ice thickens at its base by conduction (Stefan's
+  law), minus the currents' heat, and melts from the top once the surface reaches 0 °C. Over
+  ice the air forms a stable inversion, as over winter land. The polar rows beyond the map now
+  settle at about −20 °C (the Arctic is about −18 °C).
+- **The currents start from the heat budget's sea:** the water's annual mean along each row,
+  from the first coarse run (at freezing under ice). The Earth-fitted curve `T0` is no longer
+  used.
+- **Frozen seas come from the heat budget's ice.** A second coarse run, with the currents' heat
+  and the air's share of the transport, gives each sea cell its months under ice. Four or more
+  months cut the sea air's reach on land to 0.3; fewer cut it in proportion. A first try took
+  the ice from the run without currents. There the North Atlantic froze at 58°N and Europe
+  turned continental.
+- **The land feels the row's sea water**, at freezing under ice, rather than the ice's surface.
+  The frozen-sea cut already handles the cold air off the ice.
+- **The sea's level against its row** (for the land's rain and warmth) is the water's mean
+  against the row's mean ground, from the first run. It replaces the fitted table `CUR_ZONAL`.
+- **The westerlies' references refitted.** With ice, Earth's 30–60°N ground contrast became
+  28.8 °C, close to the observed (about 29 °C in January). Before it was 16 °C. The reference
+  `GRAD_E` is now 21.1 (Earth's mean of both hemispheres). The westerlies' strength on Earth
+  is a separate constant, `WIND.WEST` = 1.43, which scores best on Earth's map.
+
+Earth test, 10 seeds:
+
+| | GEN 10 | GEN 11 |
+|---|---|---|
+| Köppen group / 2 letters / exact | 72.7 / 50.3 / 43.0% | **73.5 / 51.2 / 42.9%** |
+| Temperature: bias / error | −0.3 / 3.1 °C | +0.4 / 3.1 °C |
+| Seasonal range: bias / error | −0.1 / 4.9 °C | +0.1 / 5.1 °C |
+| Rain within a factor 2 | 57.4% | 58.4% |
+
+The 100-world suite: Earth is inside on 33 of 35 (was 34). The worlds' land is now as warm as
+Earth's (13.1 °C, Earth 13.3), and tundra and ice cover 9% of their land (was 12%, Earth 6%).
+Their land at 45–60° is wetter: 834 mm, against Earth's 599 mm. Earth is just outside, at the 1st
+percentile. On Earth's own map the model gets 566 mm there, so this looks like geography, as
+with the west-coast rain: generated continents are smaller and have more coast.
+
+A world takes about the same time; the second coarse run costs about 50 ms.
+
+Still open: Moscow and Europe's interior have too large a seasonal range (Moscow 36 °C,
+observed 28). Land feels only its row's mean sea plus an annual anomaly, not the open North
+Atlantic upwind of it month by month.

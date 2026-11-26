@@ -286,3 +286,11 @@ compensation). See [OCEAN_HEAT.md](OCEAN_HEAT.md). Earth test, 10 seeds: Köppen
 43.0%** (was 73.3 / 51.1 / 43.4%), temperature bias −0.3 °C and error 3.1 °C, mean land rain
 740 mm (was 694, observed 794). Land at 0–15°N is now 25.8 °C (observed 25.7) and at 60–75°N
 −8.7 °C (observed −8.9). Suite: 34 of 35, as before.
+
+### Sea ice, and the currents from the heat budget (2026-11-26, GEN_VERSION 11)
+
+The heat budget's sea can now freeze (it never did since GEN_VERSION 7), the currents start from
+its sea, and the frozen seas come from its ice. The fitted curves T0 (for the currents) and
+CUR_ZONAL are gone. See [OCEAN_HEAT.md](OCEAN_HEAT.md). Earth test, 10 seeds: Köppen **73.5 /
+51.2 / 42.9%** (was 72.7 / 50.3 / 43.0%), rain within a factor 2 58.4%. Suite: 33 of 35; the
+worlds' land at 45–60° is wetter than Earth's (geography, as with the west coasts).

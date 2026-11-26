@@ -648,6 +648,18 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   Earth test: Koppen 72.7 / 50.3 / 43.0%, temperature error 3.1 C, land 0-15N 25.8 C and 60-75N
   -8.7 C (both within 0.2 C of observed). Suite: 34 of 35; worlds' high latitudes 1 C colder, E
   12% of land. Polar rows now 1.5-2.5 C (N) and -2.4 to -3.3 C (S). Details: docs/OCEAN_HEAT.md.
+- **Sea ice, and the currents from the heat budget (2026-11-26, GEN_VERSION 11, every seed's climate,
+  biomes and history change):** the heat budget's sea never froze since GEN 7 (no sea ice at all).
+  `seaStep()` in energyBalance(): water freezes at -1.8 C, ice grows by conduction (Stefan) less
+  qOcean and melts from the top, its surface has no heat capacity (stable air over it); returns
+  `iceMonths` and `water`. Polar rows now about -20 C. The currents start from the first coarse
+  run's water per row (T0 unused); `circ.iceWith()` runs a second coarse pass with qOcean and the
+  air's share to give each sea cell's months under ice (openSea: 4+ months -> 0.3 marine);
+  rowSea uses the water (-1.8 under ice); zl = water row - ground row replaces CUR_ZONAL. With
+  ice Earth's 30-60N ground contrast is 28.8 C (observed ~29): GRAD_E 21.1, WEST 1.43 (best on
+  Earth). Earth test: Koppen 73.5 / 51.2 / 42.9%. Suite: 33 of 35 (worlds' land rain at 45-60
+  degrees 834 mm, Earth 599; the model on Earth 566: geography). Open: Europe's interior too
+  continental (Moscow range 36 C, observed 28).
 - **Elevation colours and region lakes (2026-10-28, region histories change, planet histories not):**
   the Elevation mode colours fixed metre bands (<200, 200-500, 500-1,000, 1,000-2,000, 2,000-3,000,
   3,000+ m; pixelmap.js `elevBand`, legend 0 m to 3,000 m +), not each world's height rank. Region

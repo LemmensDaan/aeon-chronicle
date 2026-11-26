@@ -171,9 +171,9 @@ const earth = measure(earthP);
 /* the model run on Earth's own relief: its gap to the observed Earth is the model's error on
    the same geography, apart from any difference in the worlds' geography */
 const modelEarth = (function () {
-  AEON.planetgen.terrainIn = Float32Array.from(EARTH.hm);
+  AEON.planetgen.terrainIn = Float32Array.from(EARTH.hm); AEON.planetgen.tiltIn = 23.44;
   const w = AEON.createWorld({ packId: "historical", seed: 1 }), g = w._gen, R = w.regions;
-  delete AEON.planetgen.terrainIn;
+  delete AEON.planetgen.terrainIn; delete AEON.planetgen.tiltIn;
   return measure({
     land: (i) => g.E[i] > 0.5, hm: (i) => g.Hm[i], clim: (i) => earthP.clim(i) && !R[i].lake && R[i].climate != null,
     tC: (i) => R[i].tempC, range: (i) => R[i].warmC - R[i].coldC, mm: (i) => R[i].rainMm, ps: (i) => R[i].summerRain, k: (i) => R[i].climate,

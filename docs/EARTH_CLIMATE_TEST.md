@@ -258,3 +258,12 @@ oceans are shaped differently. Pushing this towards Earth would make the worlds 
 
 Suite: Earth is inside the worlds' range on **34 of 35** variables. Only the west coasts are
 outside.
+
+### The heat budget (2026-11-26, GEN_VERSION 7)
+
+Temperature and the seasons now come from a seasonal energy balance: sunlight by latitude and
+day from the planet's tilt, snow and sea ice, and the air carrying heat poleward. They no longer
+come from tables fitted to Earth. See [ENERGY_BALANCE.md](ENERGY_BALANCE.md). Earth test,
+10 seeds: Köppen **73 / 52 / 43%** (was 70 / 49 / 41%), temperature error 3.0 °C (unchanged),
+seasonal range error 5.0 °C (was 4.8). Suite: Earth is inside on 32 of 35. The worlds' land is
+about 1 °C colder than Earth's because of their higher terrain, and dry-winter climates are short.

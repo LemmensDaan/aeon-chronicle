@@ -48,6 +48,7 @@ function loadEngine() {
 }
 const AEON = loadEngine();
 AEON.planetgen.terrainIn = Float32Array.from(EARTH.hm);
+AEON.planetgen.tiltIn = 23.44;      /* Earth's own tilt */
 
 /* ------------------------------------------------------------------ helpers -------- */
 const r1 = (v) => Math.round(v * 10) / 10, r2 = (v) => Math.round(v * 100) / 100;

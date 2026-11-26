@@ -618,6 +618,11 @@ function generate(world, pack, rng) {
 
   /* ================================================== 5. climate ======= */
   const CT = 1 / 55.6;                       /* one degree C in T units (deg C = -22.4 + 55.6 T) */
+  /* the planet's axial tilt: Earth's 23.4 degrees, give or take 1.5 (its own stream of draws, so
+     the rest of the world stays as it was). Day length and size are Earth's for now; later they
+     come from the planet's settings (docs/ROADMAP_WORLDGEN.md). A test may set tiltIn. */
+  const tilt = (AEON.planetgen && AEON.planetgen.tiltIn) || Math.round(AEON.RNG(world.seed + ":orbit").range(21.9, 24.9) * 100) / 100;
+  world.planet = { tilt: tilt, dayHours: 24, radiusKm: 6371 };
   const T0 = (lat) => 0.02 + 0.88 * Math.pow(Math.max(0, Math.cos(lat)), 1.35);
   /* 0 below a, rising to 1 at b, 1 to c, falling to 0 at d */
   const band = (v, a, b, c, d) => (v <= a || v >= d ? 0 : v < b ? (v - a) / (b - a) : v <= c ? 1 : (d - v) / (d - c));
@@ -680,7 +685,8 @@ function generate(world, pack, rng) {
 
   /* ----- ocean currents (docs/OCEAN_CURRENTS.md): this world's own, from its winds, coasts and
      sea floor, and the warmth or cold they carry ----- */
-  const T = new Float32Array(N), SST = new Float32Array(N), sstA = new Float32Array(N);
+  const T = new Float32Array(N), SST = new Float32Array(N), sstA = new Float32Array(N), curA = new Float32Array(N);
+  /* a first guess from latitude, for the currents to carry; the heat budget below sets the real one */
   for (let i = 0; i < N; i++) T[i] = T0(latRad[i]);
   const cur = oceanCurrents(W, H, N, KX, DEGL, wx, isOcean, hm, U, Vv, blurWrap);
   const CU = cur.U, CV = cur.V, upwell = cur.up;
@@ -733,7 +739,8 @@ function generate(world, pack, rng) {
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
         if (!isOcean(i)) continue;
-        sstA[i] = CUR_GAIN * (a[i] - T[i] - m) + zl;
+        curA[i] = CUR_GAIN * (a[i] - T[i] - m);
+        sstA[i] = curA[i] + zl;
         SST[i] = T[i] + sstA[i];
       }
     }
@@ -755,35 +762,40 @@ function generate(world, pack, rng) {
     return lerp(lerp(arr[y0 * W + xa], arr[y0 * W + xb], tx), lerp(arr[y1 * W + xa], arr[y1 * W + xb], tx), ty);
   };
   const nbMean = (arr, i) => { let s = 0, n = 0; for (let k = 0; k < 4; k++) { const j = NB4[i * 4 + k]; if (j >= 0) { s += arr[j]; n++; } } return s / n; };
-  const marine = new Float32Array(N), anom = new Float32Array(N);
+  const marine = new Float32Array(N), anom = new Float32Array(N), anomC = new Float32Array(N);
   /* sea that freezes in winter moderates little: arctic coasts are nearly continental */
   const frozen = (i) => (SST[i] - CT * (1 + 4 * Math.pow(sinLat[i], 1.5))) / CT - 22.4 < -8;
   {
     let m1 = new Float32Array(N), a1 = new Float32Array(N), m2 = new Float32Array(N), a2 = new Float32Array(N);
+    let c1 = new Float32Array(N), c2 = new Float32Array(N);
     for (let it = 0; it < 40; it++) {
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const i = y * W + x;
-        if (isOcean(i)) { m2[i] = frozen(i) ? 0.3 : 1; a2[i] = sstA[i]; continue; }
+        if (isOcean(i)) { m2[i] = frozen(i) ? 0.3 : 1; a2[i] = sstA[i]; c2[i] = curA[i]; continue; }
         const ux = x - U[i] / KX[y], uy = y - Vv[i], mx = Math.max(0.3, mix[i]);
         const keep = Math.exp(-0.01 - 0.06 * Math.hypot(U[i], Vv[i]) - Math.max(0, Es[i] - sampleWrap(Es, ux, uy)) * 2);
         m2[i] = lerp(sampleWrap(m1, ux, uy), nbMean(m1, i), mx) * keep;
         a2[i] = lerp(sampleWrap(a1, ux, uy), nbMean(a1, i), mx) * keep;
+        c2[i] = lerp(sampleWrap(c1, ux, uy), nbMean(c1, i), mx) * keep;
       }
-      let s = m1; m1 = m2; m2 = s; s = a1; a1 = a2; a2 = s;
+      let s = m1; m1 = m2; m2 = s; s = a1; a1 = a2; a2 = s; s = c1; c1 = c2; c2 = s;
     }
-    marine.set(m1); anom.set(a1);
+    marine.set(m1); anom.set(a1); anomC.set(c1);
   }
 
+  /* the heat budget through the year: each cell's mean and seasonal range at sea level. The land
+     feels the sea air upwind of it: air off a cold current is stable, its chill stays in a shallow
+     layer by the coast, so half of the water's cold anomaly counts (California and Portugal stay
+     Mediterranean); air off warm water mixes and carries its warmth inland in full (London) */
+  const seaAnom = new Float32Array(N);
+  for (let i = 0; i < N; i++) seaAnom[i] = (anomC[i] < 0 ? 0.5 : 1) * anomC[i] / CT;
+  const eb = energyBalance({ W: W, H: H, N: N, ocean: isOcean, marine: marine, seaAnom: seaAnom, tilt: tilt });
+  world.planet.polarC = eb.polar;
   for (let i = 0; i < N; i++) {
-    if (isOcean(i)) { T[i] = SST[i]; continue; }
-    /* away from the sea's influence the year's mean is warmer in the low latitudes (no
-       evaporating sea to cool the air) and colder in the high ones (the long winter outweighs
-       the summer): +2.4 C at the equator, -1.2 C at 60 degrees, fitted on Earth's land */
-    /* air off a cold current is stable: its chill stays in a shallow layer by the coast, so half
-       of it reaches the ground (with all of it, California and Portugal were 3 C too cold and
-       continental instead of Mediterranean); air off warm water mixes and carries its warmth
-       inland in full (London) */
-    T[i] = T[i] - LAPSE_T * Math.max(0, hm[i]) / 1000 + CT * (1 - marine[i]) * (2.4 - 4.2 * sinLat[i]) + (anom[i] < 0 ? 0.5 : 1) * anom[i];
+    const t = (eb.mean[i] + 22.4) * CT;
+    /* the sea: the heat budget's level, plus the warmth or cold its current carries */
+    if (isOcean(i)) { T[i] = t + curA[i]; SST[i] = T[i]; continue; }
+    T[i] = t - LAPSE_T * Math.max(0, hm[i]) / 1000;
   }
   /* weather does not follow the parallels: broad warm and cold tongues, plus a little local
      variety, so the tundra and the deserts get ragged edges instead of straight ones */
@@ -794,17 +806,10 @@ function generate(world, pack, rng) {
      deep inside a continent at high latitude (Yakutsk: 58 C between January and July) */
   const Tamp = new Float32Array(N), seaIce = new Uint8Array(N);
   for (let i = 0; i < N; i++) {
-    const s = Math.pow(sinLat[i], 1.5);
-    if (isOcean(i)) {
-      Tamp[i] = CT * (1 + 4 * s);
-      /* pack ice in winter: the water stays warmer than the air above it, so the ice edge lies
-         where the winter air is about -8 C */
-      if ((T[i] - Tamp[i]) / CT - 22.4 < -8) seaIce[i] = 1;
-      continue;
-    }
-    /* half the range deep inland and right by the sea (fitted on Earth's land: a coastal cell
-       here is some 200 km of land, not the shore itself) */
-    Tamp[i] = CT * lerp(2.1 + 24.3 * s, 0.75 + 11.3 * s, marine[i]);
+    Tamp[i] = CT * eb.amp[i];
+    /* pack ice in winter: the water stays warmer than the air above it, so the ice edge lies
+       where the winter air is about -8 C */
+    if (isOcean(i) && (T[i] - Tamp[i]) / CT - 22.4 < -8) seaIce[i] = 1;
   }
 
   /* moisture transport: semi-Lagrangian advection to a steady state, once for July and once
@@ -909,7 +914,7 @@ function generate(world, pack, rng) {
   /* debug layers for the inspector page; not enumerable so nothing copies them */
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, CU, CV, psi: cur.psi, upwell, sstA, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
+    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, ebMean: eb.mean, ebAmp: eb.amp, curA, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, CU, CV, psi: cur.psi, upwell, sstA, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
              riverT: fin.riverT, mtnOffset: fin.mtnOffset, precip, stress, srcAmp, ms: Date.now() - t0 },
   });
 }
@@ -1574,6 +1579,143 @@ function region(world, si) {
 }
 
 /* ======================================================= ocean currents === */
+/* The planet's heat budget through the year (docs/ENERGY_BALANCE.md): a seasonal energy-balance
+   model in the line of North & Coakley (1979), with the air as a second layer. Each cell takes the
+   sun's daily-mean light for its latitude and day (from the axial tilt), reflects part of it (more
+   towards the poles, where the sun is low and clouds thick; much more off snow and sea ice), loses
+   heat to space as A + B T, and stores it in the sea's mixed layer (slow) or the land (fast). The
+   air over each latitude row carries heat towards the poles (diffusion in sin(latitude), with
+   rows of polar sea added beyond 75 degrees, where the map stops) and trades it with the ground
+   under it: readily where the ground is warmer (convection), little where it is colder (a stable
+   inversion, the Siberian winter). Land near the sea also takes the sea air upwind of it (marine).
+   Fitted on Earth's land with tools/earth-climate.js. Returns each cell's annual mean and half its
+   range (warmest minus coldest month), deg C at sea level, and the polar rows' means.
+   o: { W, H, N, ocean(i), marine, seaAnom (deg C the sea upwind is off its row's mean),
+   tilt (degrees) } */
+const EBM = {
+  S0: 1361,          /* sunlight at the planet's distance, W/m2 */
+  A: 203, B: 2.09,   /* heat lost to space: A + B T (T in deg C), W/m2 */
+  D: 1.8,            /* poleward transport by the air, W/m2/K (diffusion in sin(latitude)) */
+  ALB0: 0.24, ALB2: 0.24,  /* albedo of snow-free ground and open sea: ALB0 + ALB2 sin^2(lat) */
+  SNOW: 0.55, ICE: 0.6,    /* albedo of snow-covered land and of sea ice */
+  CSEA: 2.1e8,       /* heat capacity of the sea's mixed layer (50 m), J/m2/K */
+  CLAND: 1.0e7,      /* of land: the top of the soil */
+  CAIR: 1.0e7,       /* of the air column over a row */
+  KAIR: 15,          /* W/m2/K: heat traded between the ground or sea and the air, air colder */
+  KSTABLE: 3,        /* the same where the ground is colder than the air (a stable inversion) */
+  MIXSEA: 10,        /* W/m2/K: a land cell tied to the sea air upwind of it, at marine = 1 */
+  STEPS: 36, YEARS: 4,
+};
+function energyBalance(o) {
+  const P = EBM, W = o.W, H = o.H, N = o.N, YEAR = 365.25 * 86400, dt = YEAR / P.STEPS;
+  const dLat = 150 / H, EXT = 9, R = H + 2 * EXT;
+  /* rows north to south: EXT polar rows, the map's H rows, EXT polar rows */
+  const latR = new Float64Array(R), top = new Float64Array(R), bot = new Float64Array(R);
+  for (let r = 0; r < R; r++) {
+    latR[r] = 75 - (r - EXT + 0.5) * dLat;
+    top[r] = r === 0 ? 90 : latR[r] + dLat / 2;
+    bot[r] = r === R - 1 ? -90 : latR[r] - dLat / 2;
+  }
+  const rad = Math.PI / 180, sinR = (d) => Math.sin(d * rad);
+  const dx = new Float64Array(R), coef = new Float64Array(R);
+  for (let r = 0; r < R; r++) dx[r] = sinR(top[r]) - sinR(bot[r]);
+  for (let r = 0; r < R - 1; r++) { const xe = sinR(bot[r]); coef[r] = P.D * (1 - xe * xe) / (sinR(latR[r]) - sinR(latR[r + 1])); }
+  /* the sun's daily mean at each row and step (no eccentricity) */
+  const eps = o.tilt * rad, Q = new Float64Array(R * P.STEPS);
+  for (let k = 0; k < P.STEPS; k++) {
+    const day = (k + 0.5) * 365.25 / P.STEPS, L = 2 * Math.PI * (day - 80) / 365.25;
+    const dec = Math.asin(Math.sin(eps) * Math.sin(L));
+    for (let r = 0; r < R; r++) {
+      const phi = latR[r] * rad, c = -Math.tan(phi) * Math.tan(dec);
+      const h0 = c >= 1 ? 0 : c <= -1 ? Math.PI : Math.acos(c);
+      Q[r * P.STEPS + k] = Math.max(0, (P.S0 / Math.PI) * (h0 * Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.sin(h0)));
+    }
+  }
+  const sea = new Uint8Array(N), C = new Float64Array(N), base = new Float64Array(R);
+  const gmA = new Float64Array(N), gaA = new Float64Array(N);   /* the sea air's pull on land */
+  for (let i = 0; i < N; i++) {
+    sea[i] = o.ocean(i) ? 1 : 0; C[i] = sea[i] ? P.CSEA : P.CLAND;
+    if (!sea[i]) { gmA[i] = P.MIXSEA * o.marine[i]; gaA[i] = gmA[i] * o.seaAnom[i]; }
+  }
+  for (let r = 0; r < R; r++) { const x = sinR(latR[r]); base[r] = P.ALB0 + P.ALB2 * x * x; }
+  const ramp = (t, a, b) => clamp((a - t) / (a - b), 0, 1);   /* 0 above a, 1 below b */
+  const albedo = (b, t, isSea) => (isSea ? lerp(b, Math.max(b, P.ICE), ramp(t, -1.5, -6)) : lerp(b, Math.max(b, P.SNOW), ramp(t, 1, -9)));
+  /* start each row near its annual balance */
+  const T = new Float64Array(N), Tp = new Float64Array(2 * EXT);
+  const startT = (r) => { let q = 0; for (let k = 0; k < P.STEPS; k++) q += Q[r * P.STEPS + k]; q /= P.STEPS; return (q * (1 - base[r]) - P.A) / P.B * 0.6 + 6; };
+  for (let i = 0; i < N; i++) T[i] = startT(((i / W) | 0) + EXT);
+  for (let e = 0; e < 2 * EXT; e++) Tp[e] = startT(e < EXT ? e : H + e);
+  /* the air over each row: the transport moves heat between the rows' air, and each cell trades
+     heat with the air over it (warm air over cold ground gives most) */
+  const Ta = new Float64Array(R), rowSea = new Float64Array(R), rowSum = new Float64Array(R);
+  for (let r = 0; r < R; r++) Ta[r] = startT(r);
+  const la = new Float64Array(R), lb = new Float64Array(R), lc = new Float64Array(R), rhs = new Float64Array(R);
+  const mon = new Float64Array(12 * N), monP = new Float64Array(12 * 2 * EXT), cnt = new Float64Array(12);
+  for (let yr = 0; yr < P.YEARS; yr++) for (let k = 0; k < P.STEPS; k++) {
+    /* poleward transport in the air, implicit in time (Thomas algorithm) */
+    for (let r = 0; r < R; r++) {
+      const a = r > 0 ? coef[r - 1] / dx[r] : 0, b = r < R - 1 ? coef[r] / dx[r] : 0;
+      la[r] = -a; lc[r] = -b; lb[r] = P.CAIR / dt + a + b; rhs[r] = P.CAIR / dt * Ta[r];
+    }
+    for (let r = 1; r < R; r++) { const m = la[r] / lb[r - 1]; lb[r] -= m * lc[r - 1]; rhs[r] -= m * rhs[r - 1]; }
+    Ta[R - 1] = rhs[R - 1] / lb[R - 1];
+    for (let r = R - 2; r >= 0; r--) Ta[r] = (rhs[r] - lc[r] * Ta[r + 1]) / lb[r];
+    /* each row's sea, for the land to feel */
+    for (let y = 0; y < H; y++) {
+      let ss = 0, ns = 0;
+      for (let x = 0; x < W; x++) { const i = y * W + x; if (sea[i]) { ss += T[i]; ns++; } }
+      rowSea[y + EXT] = ns ? ss / ns : Ta[y + EXT];
+    }
+    /* each cell: sunlight in, heat out to space, heat traded with the air, semi-implicit */
+    for (let r = 0; r < R; r++) {
+      const q = Q[r * P.STEPS + k], ta = Ta[r];
+      if (r < EXT || r >= EXT + H) {
+        const e = r < EXT ? r : r - H, t = Tp[e];
+        Tp[e] = (P.CSEA * t + dt * (q * (1 - albedo(base[r], t, true)) - P.A + P.KAIR * ta)) / (P.CSEA + dt * (P.B + P.KAIR));
+        rowSum[r] = Tp[e];
+        continue;
+      }
+      const y = r - EXT, b = base[r], bi = Math.max(b, P.ICE), bs = Math.max(b, P.SNOW), rs = rowSea[r];
+      let sum = 0;
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, t = T[i];
+        let alb, ka, g, ref;
+        if (sea[i]) {
+          alb = t >= -1.5 ? b : t <= -6 ? bi : b + (bi - b) * (-1.5 - t) / 4.5;
+          ka = P.KAIR; g = ka; ref = ka * ta;
+        } else {
+          alb = t >= 1 ? b : t <= -9 ? bs : b + (bs - b) * (1 - t) / 10;
+          ka = t > ta ? P.KAIR : P.KSTABLE; g = ka + gmA[i]; ref = ka * ta + gmA[i] * rs + gaA[i];
+        }
+        const v = (C[i] * t + dt * (q * (1 - alb) - P.A + ref)) / (C[i] + dt * (P.B + g));
+        T[i] = v;
+        sum += (v - ta) * ka;
+      }
+      rowSum[r] = sum / W;
+    }
+    /* the air takes what the ground gave it */
+    for (let r = 0; r < R; r++) {
+      if (r < EXT || r >= EXT + H) Ta[r] = (P.CAIR * Ta[r] + dt * P.KAIR * rowSum[r]) / (P.CAIR + dt * P.KAIR);
+      else Ta[r] += dt * rowSum[r] / P.CAIR;
+    }
+    if (yr === P.YEARS - 1) {
+      const m = Math.min(11, Math.floor(k * 12 / P.STEPS));
+      cnt[m]++;
+      for (let i = 0; i < N; i++) mon[m * N + i] += T[i];
+      for (let e = 0; e < 2 * EXT; e++) monP[m * 2 * EXT + e] += Tp[e];
+    }
+  }
+  const mean = new Float32Array(N), amp = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    let s = 0, hi = -1e9, lo = 1e9;
+    for (let m = 0; m < 12; m++) { const v = mon[m * N + i] / cnt[m]; s += v; hi = Math.max(hi, v); lo = Math.min(lo, v); }
+    mean[i] = s / 12; amp[i] = (hi - lo) / 2;
+  }
+  const polar = [];
+  for (let e = 0; e < 2 * EXT; e++) { let s = 0; for (let m = 0; m < 12; m++) s += monP[m * 2 * EXT + e] / cnt[m]; polar.push(Math.round(s / 12 * 10) / 10); }
+  return { mean: mean, amp: amp, polar: polar };
+}
+
 /* The world's ocean currents (docs/OCEAN_CURRENTS.md), from its own winds, coasts and sea floor.
    Stommel's model of the wind-driven circulation, on the planet's grid: a stream function psi
    over the sea, 0 on every coast (the water flows along the shore, never into it), with
@@ -1709,8 +1851,10 @@ AEON.planetgen = { generate: generate, region: region };
    biomes, and so its history): what the browser kept for a world of an older version is
    dropped (ui.js loadWrites). 2: the ocean currents (docs/OCEAN_CURRENTS.md). 3: 3 to 5 hotspots. 4: a sea level per world. 5: the climate refitted on the real Earth
    (docs/EARTH_CLIMATE_TEST.md). 6: rain seasons (the half-year share, seasonal westerlies, shallow winter highs), half a cold sea's
-   anomaly on land, winter storms through cold-current air, shelf edges averaged with the slope. */
-AEON.GEN_VERSION = 6;
+   anomaly on land, winter storms through cold-current air, shelf edges averaged with the slope.
+   7: temperature and seasons from a seasonal energy balance (sunlight by tilt, docs/ENERGY_BALANCE.md),
+   a tilt per world. */
+AEON.GEN_VERSION = 7;
 AEON.regiongen = region;
 
 })();

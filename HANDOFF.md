@@ -606,6 +606,18 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   shelf 6.8% (Earth 4.7 on the grid, ~7.5 true). Left on purpose: west-coast rain (worlds 1,423
   mm, Earth 895; the model on Earth gets 905, so it is the worlds' warmer west-coast seas,
   geography, not physics).
+- **Heat budget (2026-11-26, GEN_VERSION 7, every seed's climate, biomes and history change):**
+  `energyBalance()` in planetgen.js replaces the fitted latitude curve T0 (now only a first guess
+  for the currents) and the seasonal-range formula. It is a seasonal energy-balance model:
+  sunlight by latitude and day from the tilt, albedo with snow and sea ice, heat lost as A + B T,
+  sea and land heat capacity, and one air layer per row that carries heat poleward. Ground and
+  air trade 15 W/m2/K where the ground is warmer and 3 where it is colder (a stable inversion);
+  land also takes the sea air upwind (marine). Tilt is drawn per world, 21.9-24.9 degrees
+  (`world.planet`, stream ":orbit"); tests set `AEON.planetgen.tiltIn` (Earth 23.44). Earth test:
+  Koppen 73 / 52 / 43%, temperature error 3.0 C, range error 5.0 C. Suite: 32 of 35 (the worlds'
+  land 1 C colder, from their higher terrain; Cw + Dw short). Polar rows beyond 75 degrees settle
+  near 0 C (no sea ice forms there); they are off the map. Details: docs/ENERGY_BALANCE.md. Next:
+  winds from the heat (step 2), then the currents' heat fed back (step 3).
 - **Elevation colours and region lakes (2026-10-28, region histories change, planet histories not):**
   the Elevation mode colours fixed metre bands (<200, 200-500, 500-1,000, 1,000-2,000, 2,000-3,000,
   3,000+ m; pixelmap.js `elevBand`, legend 0 m to 3,000 m +), not each world's height rank. Region

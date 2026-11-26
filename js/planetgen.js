@@ -290,8 +290,13 @@ function generate(world, pack, rng) {
       const ci = cont[i], cj = cont[j];
       let amp = 0, m = 0, w = 1, pk = 0, arc = 0;
       if (c > 0) {
-        if (ci && cj) { amp = 0.44 * c; m = 4800 * c; w = 4.5; pk = 1; }                   /* collision orogeny */
-        else if (ci && !cj) { amp = 0.36 * c; m = 4400 * c; w = 2.6; pk = 2; }             /* andean margin */
+        /* the ranges' heights and widths are fitted so the worlds' land heights match Earth's (a
+           belt ~900 km across for a collision, ~500 km for an Andean margin); a physical version,
+           from the crust's thickness, its floating (isostasy), its strength under the planet's
+           gravity, its age and erosion by rain, belongs to the deep-time plates
+           (docs/ROADMAP_WORLDGEN.md) */
+        if (ci && cj) { amp = 0.44 * c; m = 4000 * c; w = 3.4; pk = 1; }                   /* collision orogeny */
+        else if (ci && !cj) { amp = 0.36 * c; m = 3800 * c; w = 2.0; pk = 2; }             /* andean margin */
         else if (!ci && cj) { amp = -0.17 * c; m = -2500 * c; w = 1.2; pk = 0; }           /* trench, subducting */
         /* island arc: its volcanoes stand about as high whatever the plates' speed (Japan, the
            Aleutians, the Lesser Antilles), so the arc rises from the deep floor to near the sea and
@@ -1853,8 +1858,8 @@ AEON.planetgen = { generate: generate, region: region };
    (docs/EARTH_CLIMATE_TEST.md). 6: rain seasons (the half-year share, seasonal westerlies, shallow winter highs), half a cold sea's
    anomaly on land, winter storms through cold-current air, shelf edges averaged with the slope.
    7: temperature and seasons from a seasonal energy balance (sunlight by tilt, docs/ENERGY_BALANCE.md),
-   a tilt per world. */
-AEON.GEN_VERSION = 7;
+   a tilt per world. 8: young ranges narrower and lower (the land's heights as Earth's). */
+AEON.GEN_VERSION = 8;
 AEON.regiongen = region;
 
 })();

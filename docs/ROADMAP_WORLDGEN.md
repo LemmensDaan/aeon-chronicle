@@ -70,6 +70,16 @@ it would not show on the map. Instead:
 - Continents collide and join (sutures, plateaus, foreland basins); rifts split them; old ocean
   floor sinks at trenches; new floor forms at ridges, so ocean depth follows its age.
 - Erosion and isostasy run alongside: ranges wear down, worn ranges stay as old orogens.
+- Mountain heights from physics, replacing the fitted heights and widths of the young ranges
+  (GEN_VERSION 8 matched them to Earth's land heights by hand):
+  - each cell tracks its crust's thickness, which squeezing at a collision builds up;
+  - the height follows from the crust floating on the mantle (isostasy): about 1/6 of the extra
+    thickness, from the densities of crust (2.7) and mantle (3.3);
+  - a limit from the rock's strength under the planet's gravity: maximum height about
+    strength / (density × gravity), so a planet with 3× Earth's gravity has ranges about a third
+    as high, and above the limit the crust spreads into a plateau (Tibet);
+  - ranges wear down with age, and faster where the climate's rain falls (Taiwan, the Southern
+    Alps) than where it is dry.
 - Run over about 500 million years, with snapshots every 5 to 10 million years. The slider
   blends between snapshots so scrolling is smooth.
 - Today's map is just the last frame.

@@ -618,6 +618,15 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   land 1 C colder, from their higher terrain; Cw + Dw short). Polar rows beyond 75 degrees settle
   near 0 C (no sea ice forms there); they are off the map. Details: docs/ENERGY_BALANCE.md. Next:
   winds from the heat (step 2), then the currents' heat fed back (step 3).
+- **Young ranges narrower and lower (2026-11-26, GEN_VERSION 8, every seed's terrain, climate and
+  history change):** the worlds had twice Earth's high land (12.9% of land above 2,000 m, Earth
+  7.0%), almost all of it in young ranges and the plateaus behind them. Collision ranges are now
+  4,000 m x speed over 3.4 cells (were 4,800 over 4.5), Andean margins 3,800 m over 2.0 (were
+  4,400 over 2.6). Suite: mean land height 762 m (Earth 727), above 2,000 m 9.4% (Earth 7.0); the
+  worlds' land is 0.7 C warmer; Earth inside on 32 of 35 (land at 15-30 degrees still just
+  outside: the model on Earth is 1.4 C cold there too). A stopgap: heights from crust thickness,
+  isostasy, strength under gravity, age and rain-driven erosion are planned with the deep-time
+  plates (docs/ROADMAP_WORLDGEN.md, step 3).
 - **Elevation colours and region lakes (2026-10-28, region histories change, planet histories not):**
   the Elevation mode colours fixed metre bands (<200, 200-500, 500-1,000, 1,000-2,000, 2,000-3,000,
   3,000+ m; pixelmap.js `elevBand`, legend 0 m to 3,000 m +), not each world's height rank. Region

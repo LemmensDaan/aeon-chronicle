@@ -638,6 +638,16 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   `world.planet.itcz` (Earth: Jan -3.7, Jul 7.4) and `hadleyDeg`. Earth test: Koppen 73.3 / 51.1 /
   43.4%. Suite: 34 of 35 (only west-coast rain out). About 0.1 s more per world. Details:
   docs/WINDS.md. Next: the currents' heat fed back (step 3).
+- **The currents' heat in the heat budget (2026-11-26, GEN_VERSION 10, every seed's climate, biomes
+  and history change):** the currents' anomaly (water vs the T0 first guess) becomes a heat source
+  of CUR_LAMBDA = 20 W/m2 a degree on each sea cell (`qOcean`, zero over the whole sea, row means
+  smoothed over CUR_SPREAD = 6 rows), passed into `energyBalance()`; the sea's temperature is the
+  heat budget's own (curA is no longer added after it; curA and sstA still feed marine and the
+  land's sea anomaly). `airShare()` cuts the air's D per row boundary by CUR_SHARE (3) x the
+  currents' share of the first pass's transport, up to 70% (`world.planet.oceanShare`, Earth 0.31).
+  Earth test: Koppen 72.7 / 50.3 / 43.0%, temperature error 3.1 C, land 0-15N 25.8 C and 60-75N
+  -8.7 C (both within 0.2 C of observed). Suite: 34 of 35; worlds' high latitudes 1 C colder, E
+  12% of land. Polar rows now 1.5-2.5 C (N) and -2.4 to -3.3 C (S). Details: docs/OCEAN_HEAT.md.
 - **Elevation colours and region lakes (2026-10-28, region histories change, planet histories not):**
   the Elevation mode colours fixed metre bands (<200, 200-500, 500-1,000, 1,000-2,000, 2,000-3,000,
   3,000+ m; pixelmap.js `elevBand`, legend 0 m to 3,000 m +), not each world's height rank. Region

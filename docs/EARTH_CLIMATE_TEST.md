@@ -277,3 +277,12 @@ follow the 30–60° temperature contrast. See [WINDS.md](WINDS.md). Earth test,
 **73.3 / 51.1 / 43.4%** (was 73.1 / 51.9 / 43.2%), temperature error 3.1 °C, range error 4.9 °C.
 Suite: Earth is inside on **34 of 35** (was 32); dry-winter climates and the land at 15–30° are
 back inside. Only the west-coast rain is outside.
+
+### The currents' heat (2026-11-26, GEN_VERSION 10)
+
+The heat the currents carry is now a heat source on each sea cell in the heat budget, spread over
+about 10° of latitude, and the air carries less where the sea carries more (Bjerknes
+compensation). See [OCEAN_HEAT.md](OCEAN_HEAT.md). Earth test, 10 seeds: Köppen **72.7 / 50.3 /
+43.0%** (was 73.3 / 51.1 / 43.4%), temperature bias −0.3 °C and error 3.1 °C, mean land rain
+740 mm (was 694, observed 794). Land at 0–15°N is now 25.8 °C (observed 25.7) and at 60–75°N
+−8.7 °C (observed −8.9). Suite: 34 of 35, as before.

@@ -728,7 +728,7 @@ function generate(world, pack, rng) {
     };
     const jan = make(0), jul = make(6), mid = new Float32Array(W);
     for (let x = 0; x < W; x++) mid[x] = (jan.belt[x] + jul.belt[x]) / 2 + warmest(A) - (jan.itcz + jul.itcz) / 2;
-    return { hadley: hadley, delta: delta, gradN: gA[1], gradS: gA[-1], ann: make(-1, mid), jan: jan, jul: jul };
+    return { hadley: hadley, delta: delta, gradN: gA[1], gradS: gA[-1], ann: make(-1, mid), jan: jan, jul: jul, air: A, latR: L, R: R };
   })();
   const r1 = (v) => Math.round(v * 10) / 10;
   world.planet.itcz = { jan: r1(circ.jan.itcz), jul: r1(circ.jul.itcz), mean: r1(circ.ann.itcz) };
@@ -769,8 +769,9 @@ function generate(world, pack, rng) {
 
   /* ----- ocean currents (docs/OCEAN_CURRENTS.md): this world's own, from its winds, coasts and
      sea floor, and the warmth or cold they carry ----- */
-  const T = new Float32Array(N), SST = new Float32Array(N), sstA = new Float32Array(N), curA = new Float32Array(N);
-  /* a first guess from latitude, for the currents to carry; the heat budget below sets the real one */
+  const T = new Float32Array(N), SST = new Float32Array(N), sstA = new Float32Array(N), curA = new Float32Array(N), qOcean = new Float32Array(N);
+  /* a first guess from latitude (Earth's zonal means), for the currents to carry; the heat they
+     bring goes into the heat budget below, which sets the real temperature */
   for (let i = 0; i < N; i++) T[i] = T0(latRad[i]);
   const cur = oceanCurrents(W, H, N, KX, DEGL, wx, isOcean, hm, U, Vv, blurWrap);
   const CU = cur.U, CV = cur.V, upwell = cur.up;
@@ -814,6 +815,26 @@ function generate(world, pack, rng) {
        does not swing) is taken out. Then the open sea's own zonal level goes back on: at high
        latitudes it is warmer than the air's zonal mean (it keeps the summer's warmth through
        the winter), a little cooler in the trade-wind belt (CUR_ZONAL, deg C) */
+    /* the heat the currents carry, as a source on each sea cell for the heat budget: the
+       warmth or cold the water brings, at CUR_LAMBDA W/m2 a degree (the heat that keeps that
+       anomaly against the loss to the air and to space). Summed over the sea it is nil: the
+       currents move heat, they do not make it */
+    {
+      let sq = 0, sa = 0;
+      for (const i of seaL) { const w = Math.cos(latRad[i]); qOcean[i] = CUR_LAMBDA * (a[i] - T[i]) / CT; sq += w * qOcean[i]; sa += w; }
+      for (const i of seaL) qOcean[i] -= sq / sa;
+      /* along each row the heat stays where the currents put it; across the rows the ocean's
+         eddies spread it, so each row's mean is smoothed over CUR_SPREAD rows either side */
+      const rq = new Float64Array(H), rc = new Float64Array(H);
+      for (const i of seaL) { const y = (i / W) | 0; rq[y] += qOcean[i]; rc[y]++; }
+      for (let y = 0; y < H; y++) {
+        if (!rc[y]) continue;
+        let s2 = 0, n2 = 0;
+        for (let k = -CUR_SPREAD; k <= CUR_SPREAD; k++) { const yy = y + k; if (yy >= 0 && yy < H) { s2 += rq[yy]; n2 += rc[yy]; } }
+        const sh = s2 / n2 - rq[y] / rc[y];
+        for (let x = 0; x < W; x++) { const i = y * W + x; if (isOcean(i)) qOcean[i] += sh; }
+      }
+    }
     const rs = new Float32Array(H), rn = new Float32Array(H);
     for (const i of seaL) { const y = (i / W) | 0; rs[y] += a[i] - T[i]; rn[y]++; }
     for (let y = 0; y < H; y++) {
@@ -873,12 +894,42 @@ function generate(world, pack, rng) {
      Mediterranean); air off warm water mixes and carries its warmth inland in full (London) */
   const seaAnom = new Float32Array(N);
   for (let i = 0; i < N; i++) seaAnom[i] = (anomC[i] < 0 ? 0.5 : 1) * anomC[i] / CT;
-  const eb = energyBalance({ W: W, H: H, N: N, ocean: isOcean, marine: marine, seaAnom: seaAnom, tilt: tilt });
+  /* the air's share of the poleward heat transport (Bjerknes compensation): the first pass gave
+     the transport of air and sea together; where the currents carry part of it across a latitude,
+     the air carries that much less (up to 70%), so the total stays what the sun's heating asks.
+     The first pass's diffusion moves more heat than Earth's air and sea really do, so the currents'
+     share of it is taken CUR_SHARE times (on Earth's map: about half at 20-30 degrees, a few
+     percent beyond 60, near the observed split).
+     Returned as the air's D at each boundary between the heat budget's rows */
+  const airShare = function () {
+    const R = circ.R, L = circ.latR, A = circ.air, ext = (R - H) / 2, rad = Math.PI / 180;
+    const Drow = new Float64Array(R - 1).fill(EBM.D), share = new Float64Array(R - 1);
+    let Fo = 0;   /* northward heat carried by the currents across the boundary, W (x 1 / (2 pi r^2)) */
+    for (let y = 0; y < H - 1; y++) {
+      /* heat the currents bring into row y, per unit of sin(latitude) and 2 pi r^2 */
+      const yl = DEGL[y * W], dxs = Math.sin((yl + 75 / H) * rad) - Math.sin((yl - 75 / H) * rad);
+      let q = 0;
+      for (let x = 0; x < W; x++) q += qOcean[y * W + x];
+      Fo += q / W * dxs;
+      const r = y + ext, xe = Math.sin((L[r] + L[r + 1]) / 2 * rad);
+      const Ff = -EBM.D * (1 - xe * xe) * (A[r] - A[r + 1]) / (Math.sin(L[r] * rad) - Math.sin(L[r + 1] * rad));
+      const floor = 0.05 * EBM.D;   /* near the equator the total transport is near nil */
+      share[r] = clamp(CUR_SHARE * Fo * Ff / Math.max(Ff * Ff, floor * floor), 0, 0.7);
+    }
+    for (let r = 0; r < R - 1; r++) {
+      let sm = 0, n = 0;
+      for (let k = -3; k <= 3; k++) { const rr = r + k; if (rr >= 0 && rr < R - 1) { sm += share[rr]; n++; } }
+      Drow[r] = EBM.D * (1 - sm / n);
+    }
+    world.planet.oceanShare = Math.round(100 * (1 - Drow.reduce((s, v) => s + v, 0) / (R - 1) / EBM.D)) / 100;
+    return Drow;
+  };
+  const eb = energyBalance({ W: W, H: H, N: N, ocean: isOcean, marine: marine, seaAnom: seaAnom, tilt: tilt, qOcean: qOcean, Drow: airShare() });
   world.planet.polarC = eb.polar;
   for (let i = 0; i < N; i++) {
     const t = (eb.mean[i] + 22.4) * CT;
-    /* the sea: the heat budget's level, plus the warmth or cold its current carries */
-    if (isOcean(i)) { T[i] = t + curA[i]; SST[i] = T[i]; continue; }
+    /* the sea: the heat budget's own, which holds the heat its current brings */
+    if (isOcean(i)) { T[i] = t; SST[i] = T[i]; continue; }
     T[i] = t - LAPSE_T * Math.max(0, hm[i]) / 1000;
   }
   /* weather does not follow the parallels: broad warm and cold tongues, plus a little local
@@ -998,7 +1049,7 @@ function generate(world, pack, rng) {
   /* debug layers for the inspector page; not enumerable so nothing copies them */
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, ebMean: eb.mean, ebAmp: eb.amp, eb: eb, circ, curA, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, CU, CV, psi: cur.psi, upwell, sstA, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
+    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, ebMean: eb.mean, ebAmp: eb.amp, eb: eb, circ, qOcean, curA, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, CU, CV, psi: cur.psi, upwell, sstA, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
              riverT: fin.riverT, mtnOffset: fin.mtnOffset, precip, stress, srcAmp, ms: Date.now() - t0 },
   });
 }
@@ -1671,15 +1722,18 @@ function region(world, si) {
    air over each latitude row carries heat towards the poles (diffusion in sin(latitude), with
    rows of polar sea added beyond 75 degrees, where the map stops) and trades it with the ground
    under it: readily where the ground is warmer (convection), little where it is colder (a stable
-   inversion, the Siberian winter). Land near the sea also takes the sea air upwind of it (marine).
+   inversion, the Siberian winter). Land near the sea also takes the sea air upwind of it (marine),
+   and the sea takes the heat its currents bring (qOcean, W/m2; docs/OCEAN_HEAT.md).
    Fitted on Earth's land with tools/earth-climate.js. Returns each cell's annual mean and half its
    range (warmest minus coldest month), deg C at sea level, and the polar rows' means.
    o: { W, H, N, ocean(i), marine, seaAnom (deg C the sea upwind is off its row's mean),
-   tilt (degrees) } */
+   tilt (degrees), qOcean (or none), Drow (the air's transport at each boundary between the rows;
+   EBM.D throughout when not given), months } */
 const EBM = {
   S0: 1361,          /* sunlight at the planet's distance, W/m2 */
   A: 203, B: 2.09,   /* heat lost to space: A + B T (T in deg C), W/m2 */
-  D: 1.8,            /* poleward transport by the air, W/m2/K (diffusion in sin(latitude)) */
+  D: 1.8,            /* poleward transport by the air and sea together, W/m2/K (diffusion in
+                        sin(latitude)); the air's own share is less where the currents carry heat */
   ALB0: 0.24, ALB2: 0.24,  /* albedo of snow-free ground and open sea: ALB0 + ALB2 sin^2(lat) */
   SNOW: 0.55, ICE: 0.6,    /* albedo of snow-covered land and of sea ice */
   CSEA: 2.1e8,       /* heat capacity of the sea's mixed layer (50 m), J/m2/K */
@@ -1707,7 +1761,8 @@ function energyBalance(o) {
   const rad = Math.PI / 180, sinR = (d) => Math.sin(d * rad);
   const dx = new Float64Array(R), coef = new Float64Array(R);
   for (let r = 0; r < R; r++) dx[r] = sinR(top[r]) - sinR(bot[r]);
-  for (let r = 0; r < R - 1; r++) { const xe = sinR(bot[r]); coef[r] = P.D * (1 - xe * xe) / (sinR(latR[r]) - sinR(latR[r + 1])); }
+  const qO = o.qOcean || null;
+  for (let r = 0; r < R - 1; r++) { const xe = sinR(bot[r]); coef[r] = (o.Drow ? o.Drow[r] : P.D) * (1 - xe * xe) / (sinR(latR[r]) - sinR(latR[r + 1])); }
   /* the sun's daily mean at each row and step (no eccentricity) */
   const eps = o.tilt * rad, Q = new Float64Array(R * P.STEPS);
   for (let k = 0; k < P.STEPS; k++) {
@@ -1770,7 +1825,7 @@ function energyBalance(o) {
         let alb, ka, g, ref;
         if (sea[i]) {
           alb = t >= -1.5 ? b : t <= -6 ? bi : b + (bi - b) * (-1.5 - t) / 4.5;
-          ka = P.KAIR; g = ka; ref = ka * ta;
+          ka = P.KAIR; g = ka; ref = ka * ta + (qO ? qO[i] : 0);
         } else {
           alb = t >= 1 ? b : t <= -9 ? bs : b + (bs - b) * (1 - t) / 10;
           ka = t > ta ? P.KAIR : P.KSTABLE; g = ka + gmA[i]; ref = ka * ta + gmA[i] * rs + gaA[i];
@@ -1834,6 +1889,9 @@ const CUR_XCHG = 0.035;        /* share of its anomaly the water gives the air e
 const CUR_MIX = 0.25;          /* sideways mixing each heat step */
 const CUR_GAIN = 1.2;            /* scale on the warmth or cold the currents carry */
 const CUR_HEAT_STEPS = 160;
+const CUR_SPREAD = 6;          /* rows (about 10 degrees) the ocean's eddies spread the currents' heat across */
+const CUR_SHARE = 3;           /* scale on the currents' share of the poleward transport (see airShare) */
+const CUR_LAMBDA = 20;         /* W/m2 the currents' heat gives a sea cell for each degree of anomaly they carry */
 const CUR_ZONAL = [[0, 0], [15, -0.5], [30, -0.2], [40, 0.8], [50, 4], [60, 4], [70, 3], [75, 2.5]];
 function oceanCurrents(W, H, N, KX, DEGL, wx, isOcean, hm, U, V, blurWrap) {
   const sea = new Uint8Array(N);
@@ -1950,8 +2008,9 @@ AEON.planetgen = { generate: generate, region: region };
    7: temperature and seasons from a seasonal energy balance (sunlight by tilt, docs/ENERGY_BALANCE.md),
    a tilt per world. 8: young ranges narrower and lower (the land's heights as Earth's). 9: wind belts
    from the heat budget (the rain belt where the air is warmest, the Hadley cell's width, the
-   westerlies' strength and seasons from the temperature contrast, docs/WINDS.md). */
-AEON.GEN_VERSION = 9;
+   westerlies' strength and seasons from the temperature contrast, docs/WINDS.md). 10: the currents'
+   heat as a source in the heat budget, the air carrying the rest (docs/OCEAN_HEAT.md). */
+AEON.GEN_VERSION = 10;
 AEON.regiongen = region;
 
 })();

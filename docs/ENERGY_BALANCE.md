@@ -28,6 +28,9 @@ layer. It is run for 4 years of 36 steps, and the last year is kept as 12 monthl
   share of sea air that reaches it. The pull is 10 W/m²/K, and the water's anomaly from the
   current counts as well (a cold current's at half).
 
+Since GEN_VERSION 10 the sea also takes the heat its currents bring, and the air's transport is
+cut where the sea carries heat ([OCEAN_HEAT.md](OCEAN_HEAT.md)).
+
 It also returns the air's and the ground's mean temperature per row, month by month (and, when
 asked, each cell's months). A first, coarse run places the wind belts ([WINDS.md](WINDS.md)).
 
@@ -76,7 +79,8 @@ A world takes about 0.2–0.35 s longer to generate.
 
 ## Known limits
 
-- **The polar rows beyond 75° settle near 0 °C** (the Arctic is about −18 °C). Their sea never
+- **The polar rows beyond 75° are too warm**: since GEN_VERSION 10 about 2 °C in the north and −3 °C
+  in the south (the Arctic is about −18 °C). Their sea never
   cools enough to freeze, so the bright sea ice that would cool it further never forms. Giving
   sea ice a small heat capacity, or weakening the transport near the poles, did not change it,
   and both made the map slightly worse. These rows are not on the map; they act only as a heat

@@ -28,6 +28,9 @@ layer. It is run for 4 years of 36 steps, and the last year is kept as 12 monthl
   share of sea air that reaches it. The pull is 10 W/m²/K, and the water's anomaly from the
   current counts as well (a cold current's at half).
 
+It also returns the air's and the ground's mean temperature per row, month by month (and, when
+asked, each cell's months). A first, coarse run places the wind belts ([WINDS.md](WINDS.md)).
+
 Afterwards, as before:
 - the lapse rate (4.9 °C per km),
 - the currents' warmth or cold on the sea,
@@ -39,7 +42,7 @@ Afterwards, as before:
 - **Tilt:** drawn per world from 21.9° to 24.9°, from its own stream of draws (`:orbit`), so
   nothing else about the world changes. It is stored as `world.planet.tilt`.
 - **Day length and size:** Earth's for now (`world.planet.dayHours`, `radiusKm`). They don't
-  enter the heat budget yet. Rotation sets the width of the Hadley cell, which belongs to step 2.
+  enter the heat budget, but they scale the wind belts ([WINDS.md](WINDS.md)).
 - **Tests:** a test can set `AEON.planetgen.tiltIn`. The Earth tests use 23.44°.
 
 On Earth's own map, the tilt now acts as it should:

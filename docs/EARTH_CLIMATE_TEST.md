@@ -267,3 +267,13 @@ come from tables fitted to Earth. See [ENERGY_BALANCE.md](ENERGY_BALANCE.md). Ea
 10 seeds: Köppen **73 / 52 / 43%** (was 70 / 49 / 41%), temperature error 3.0 °C (unchanged),
 seasonal range error 5.0 °C (was 4.8). Suite: Earth is inside on 32 of 35. The worlds' land is
 about 1 °C colder than Earth's because of their higher terrain, and dry-winter climates are short.
+
+### Winds from the heat (2026-11-26, GEN_VERSION 9)
+
+The wind belts now come from each world's heat budget: the tropical rain belt lies where the air
+is warmest (pulled a little towards each continent's summer heat), the Hadley cell's width scales
+with the equator-to-pole contrast, rotation and size, and the westerlies' strength and seasons
+follow the 30–60° temperature contrast. See [WINDS.md](WINDS.md). Earth test, 10 seeds: Köppen
+**73.3 / 51.1 / 43.4%** (was 73.1 / 51.9 / 43.2%), temperature error 3.1 °C, range error 4.9 °C.
+Suite: Earth is inside on **34 of 35** (was 32); dry-winter climates and the land at 15–30° are
+back inside. Only the west-coast rain is outside.

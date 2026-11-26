@@ -634,7 +634,9 @@ function generate(world, pack, rng) {
   const sinLat = new Float32Array(N), DEGL = new Float32Array(N);
   for (let i = 0; i < N; i++) { sinLat[i] = Math.abs(Math.sin(latRad[i])); DEGL[i] = latRad[i] * 180 / Math.PI; }
 
-  /* winds: three-cell circulation, as a table over |latitude| (degrees) */
+  /* winds: three-cell circulation, as tables over the distance from the tropical rain belt, in
+     Earth's degrees (0 the rain belt, 30 the Hadley cell's edge, 60 the polar front, 90 the pole);
+     the circulation below maps each planet's own belts onto them */
   const U_TAB = [[0, -0.75], [15, -0.95], [30, 0], [45, 1], [60, 0], [75, -0.6], [90, -0.3]];
   const V_TAB = [[0, 0], [15, -0.45], [30, 0], [45, 0.35], [60, 0], [75, -0.35], [90, 0]]; /* + = poleward */
   /* how readily the air rains out by latitude (its rising and sinking): the narrow belt of the
@@ -644,25 +646,102 @@ function generate(world, pack, rng) {
   const tab = (t, d) => { for (let k = 1; k < t.length; k++) if (d <= t[k][0]) return lerp(t[k - 1][1], t[k][1], (d - t[k - 1][0]) / (t[k][0] - t[k - 1][0])); return t[t.length - 1][1]; };
   const nU = new Float32Array(N), nV = new Float32Array(N);
   for (let i = 0; i < N; i++) { nU[i] = nf(noise2, i, 0.05, 2, 0.5) * 0.3; nV[i] = nf(noise3, i, 0.05, 2, 0.5) * 0.2; }
-  /* the belts at a season: the whole pattern follows the sun, `shift` degrees north in July and
-     south in January; with a season's pressure P (below) the wind also turns round its highs
-     and lows, which makes the monsoons */
-  const winds = function (shift, U, V, rainF, P) {
+  /* ----- the circulation, from the heat budget (docs/WINDS.md) -----
+     A first, coarse run of the heat budget (every third column, the sea air's reach guessed from
+     the distance to the coast) gives the temperature of the air over each latitude, month by
+     month. The wind belts follow from it:
+     - the tropical rain belt (the ITCZ) lies where the air is warmest. There the air's poleward
+       heat transport is zero: the air rises and the trade winds of both sides meet (the
+       energy-flux equator). It follows the sun, further over a hemisphere with more land;
+     - the Hadley cells reach about 30 degrees from it on Earth. Their width grows with the
+       equator-to-pole contrast to the 1/4 power and shrinks with (rotation x radius)^1/2 (Held
+       2000), so a faster or larger planet has narrower belts. The westerlies and the storms lie
+       between the Hadley cell's edge and twice that distance;
+     - the westerlies blow as hard as the temperature contrast across the mid-latitudes allows
+       (the thermal wind), divided by the rotation. The storms that carry their rain grow with
+       its square, so each hemisphere's winter storms outdo its summer ones by its own contrast. */
+  const circ = (function () {
+    const S = 3, Wc = Math.ceil(W / S), Nc = Wc * H, oc = new Uint8Array(Nc), mc = new Float32Array(Nc);
+    for (let y = 0; y < H; y++) for (let xc = 0; xc < Wc; xc++) {
+      const i = y * W + Math.min(W - 1, xc * S), c = y * Wc + xc;
+      oc[c] = isOcean(i) ? 1 : 0; mc[c] = Math.exp(-coastDist[i] / 6);
+    }
+    const e = energyBalance({ W: Wc, H: H, N: Nc, ocean: (c) => oc[c] === 1, marine: mc, seaAnom: new Float32Array(Nc), tilt: tilt, months: true });
+    const R = e.R, L = e.latR;
+    const series = (src, m) => {
+      const a = new Float64Array(R);
+      for (let k = 0; k < 12; k++) if (m < 0 || k === m) for (let r = 0; r < R; r++) a[r] += src[k * R + r] / (m < 0 ? 12 : 1);
+      return a;
+    };
+    const air = (m) => series(e.air, m), ground = (m) => series(e.ground, m);
+    const at = (a, lat) => {   /* the rows run north to south */
+      const f = clamp((L[0] - lat) / (L[0] - L[R - 1]) * (R - 1), 0, R - 1), r0 = Math.min(R - 2, Math.floor(f));
+      return lerp(a[r0], a[r0 + 1], f - r0);
+    };
+    const warmest = (a) => {   /* the warmest air within 25 degrees of the equator, refined between rows */
+      let b = -1;
+      for (let r = 1; r < R - 1; r++) if (Math.abs(L[r]) <= 25 && (b < 0 || a[r] > a[b])) b = r;
+      const d = a[b - 1] - 2 * a[b] + a[b + 1], off = d < 0 ? clamp(0.5 * (a[b - 1] - a[b + 1]) / d, -0.5, 0.5) : 0;
+      return L[b] + off * (L[b + 1] - L[b]);
+    };
+    const grad = (a, h) => at(a, 30 * h) - at(a, 60 * h);
+    const spin = 24 / world.planet.dayHours, size = world.planet.radiusKm / 6371;
+    const A = air(-1), delta = at(A, warmest(A)) - (at(A, 70) + at(A, -70)) / 2;
+    const hadley = clamp(WIND.HADLEY * Math.pow(delta / WIND.DELTA_E, 0.25) / Math.sqrt(spin * size), 12, 40);
+    const G = ground(-1), gA = { 1: grad(G, 1), "-1": grad(G, -1) };
+    /* the rain belt over each longitude: the zonal one, pulled towards the latitude where that
+       stretch of the planet's surface is warmest in the season (the summer continents' heat draws
+       the monsoon rains towards it: over Africa, South America and Australia in January, over
+       India and the Sahel in July). The pull is WIND.LOCAL of the gap, smoothed along the
+       longitudes, and the belt stays within 25 degrees of the equator */
+    const local = function (m, itcz) {
+      const out = new Float32Array(W), gm = ground(m);
+      const warmRow = (val) => { let b = -1, bv = -1e9; for (let y = 0; y < H; y++) { const lat = DEGL[y * W]; if (Math.abs(lat) <= 30 && val(y) > bv) { bv = val(y); b = y; } } return DEGL[b * W]; };
+      const zon = warmRow((y) => gm[y + (R - H) / 2]);
+      const col = new Float32Array(Wc);
+      for (let xc = 0; xc < Wc; xc++) col[xc] = warmRow((y) => { let s = 0; for (let k = -2; k <= 2; k++) s += e.months[m * Nc + y * Wc + ((xc + k + Wc) % Wc)]; return s; });
+      for (let x = 0; x < W; x++) { const f = x / S, x0 = Math.floor(f) % Wc, x1 = (x0 + 1) % Wc; out[x] = lerp(col[x0], col[x1], f - Math.floor(f)); }
+      const sm = blurWrap(out, W, 1, 4, new Float32Array([1]));
+      for (let x = 0; x < W; x++) out[x] = clamp(itcz + WIND.LOCAL * (sm[x] - zon), -25, 25);
+      return out;
+    };
+    const make = function (m, belt) {
+      const itcz = m < 0 ? warmest(A) : warmest(air(m));
+      if (!belt) belt = local(m, itcz);
+      const gain = {};
+      for (const h of [1, -1]) {
+        const base = clamp((gA[1] + gA[-1]) / 2 / WIND.GRAD_E / spin, 0.6, 1.5);
+        gain[h] = m < 0 ? base : base * clamp(Math.pow(grad(ground(m), h) / gA[h], 2), 0.5, 1.6);
+      }
+      const d = new Float32Array(N), g = new Float32Array(N);
+      const uT = new Float32Array(N), vT = new Float32Array(N), rT = new Float32Array(N);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x, it = belt[x], lat = DEGL[i], sd = lat >= it ? 1 : -1, dist = Math.abs(lat - it);
+        const span = 90 - sd * it, front = Math.min(2 * hadley, span - 5);
+        d[i] = dist <= hadley ? 30 * dist / hadley : dist <= front ? 30 + 30 * (dist - hadley) / (front - hadley) : 60 + 30 * (dist - front) / (span - front);
+        /* the westerlies' gain, by the hemisphere the cell is in, between table degrees 28 and 70 */
+        const w = clamp((d[i] - 28) / 10, 0, 1) * clamp((70 - d[i]) / 10, 0, 1);
+        g[i] = 1 + (gain[lat >= 0 ? 1 : -1] - 1) * w;
+        uT[i] = tab(U_TAB, d[i]) * g[i]; vT[i] = tab(V_TAB, d[i]) * g[i] * (sd > 0 ? -1 : 1); rT[i] = tab(RAIN_TAB, d[i]);
+      }
+      return { itcz: itcz, belt: belt, gainN: gain[1], gainS: gain[-1], d: d, g: g, uT: uT, vT: vT, rT: rT };
+    };
+    const jan = make(0), jul = make(6), mid = new Float32Array(W);
+    for (let x = 0; x < W; x++) mid[x] = (jan.belt[x] + jul.belt[x]) / 2 + warmest(A) - (jan.itcz + jul.itcz) / 2;
+    return { hadley: hadley, delta: delta, gradN: gA[1], gradS: gA[-1], ann: make(-1, mid), jan: jan, jul: jul };
+  })();
+  const r1 = (v) => Math.round(v * 10) / 10;
+  world.planet.itcz = { jan: r1(circ.jan.itcz), jul: r1(circ.jul.itcz), mean: r1(circ.ann.itcz) };
+  world.planet.hadleyDeg = r1(circ.hadley);
+  /* the belts at a season (s: +1 July, -1 January, 0 the year); with a season's pressure P
+     (below) the wind also turns round its highs and lows, which makes the monsoons */
+  const winds = function (s, U, V, rainF, P) {
+    const c = s > 0 ? circ.jul : s < 0 ? circ.jan : circ.ann;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = y * W + x;
-      const lat = DEGL[i] - shift, deg = Math.abs(lat), sgn = lat >= 0 ? -1 : 1; /* poleward = -y in north */
-      U[i] = tab(U_TAB, deg) + nU[i];
-      V[i] = tab(V_TAB, deg) * sgn + nV[i];
-      rainF[i] = tab(RAIN_TAB, deg);
-      if (shift) {
-        /* the westerlies blow harder in winter, when the pole-to-equator contrast is largest,
-           and slacken in summer: 40% either way between 30 and 70 degrees. Seattle's rain
-           comes in winter, not summer */
-        const win = -Math.sign(shift) * (DEGL[i] >= 0 ? 1 : -1);
-        const g = 1 + 0.4 * win * clamp((deg - 28) / 10, 0, 1) * clamp((70 - deg) / 10, 0, 1);
-        U[i] = tab(U_TAB, deg) * g + nU[i];
-        V[i] = tab(V_TAB, deg) * sgn * g + nV[i];
-      }
+      U[i] = c.uT[i] + nU[i];
+      V[i] = c.vT[i] + nV[i];
+      rainF[i] = c.rT[i];
       if (P) {
         /* the wind around the season's highs and lows: along the isobars (clockwise round a
            high in the north, the Coriolis turn), and part across them, down the gradient
@@ -846,7 +925,7 @@ function generate(world, pack, rng) {
       for (let x = 0; x < W; x++) { const k = y * W + x; Ta[k] = m - Ta[k]; if (Ta[k] > 0 && sgn * DEGL[k] < 0) Ta[k] *= 0.25; }
     }
     Pp.set(blurWrap(Ta, W, H, 6, KX));
-    winds(6 * sgn, Us, Vs, rFs, Pp);
+    winds(sgn, Us, Vs, rFs, Pp);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = y * W + x;
       recycle[i] = 0.65 * clamp(Ts[i] * 1.5, 0.2, 1);
@@ -919,7 +998,7 @@ function generate(world, pack, rng) {
   /* debug layers for the inspector page; not enumerable so nothing copies them */
   Object.defineProperty(world, "_gen", {
     enumerable: false, configurable: true,
-    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, ebMean: eb.mean, ebAmp: eb.amp, curA, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, CU, CV, psi: cur.psi, upwell, sstA, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
+    value: { plateOf, plates, cont, uplift, geo, E, Hm: hm, T, Tamp, SST, ebMean: eb.mean, ebAmp: eb.amp, eb: eb, circ, curA, seaIce, marine, pSum, pJul, pJan, P: fin.P, M: fin.M, U, V: Vv, CU, CV, psi: cur.psi, upwell, sstA, acc: fin.acc, lake: fin.lake, basin: fin.basin, terminal: fin.terminal, hotspots,
              riverT: fin.riverT, mtnOffset: fin.mtnOffset, precip, stress, srcAmp, ms: Date.now() - t0 },
   });
 }
@@ -1611,6 +1690,10 @@ const EBM = {
   MIXSEA: 10,        /* W/m2/K: a land cell tied to the sea air upwind of it, at marine = 1 */
   STEPS: 36, YEARS: 4,
 };
+/* the wind belts on Earth, for scaling another planet's (docs/WINDS.md): the Hadley cell's reach
+   from the tropical rain belt (degrees), and the heat budget's equator-to-pole contrast and
+   30-60 degree contrast of the air on Earth's map (deg C) */
+const WIND = { HADLEY: 30, DELTA_E: 23.4, GRAD_E: 14.8, LOCAL: 0.3 };
 function energyBalance(o) {
   const P = EBM, W = o.W, H = o.H, N = o.N, YEAR = 365.25 * 86400, dt = YEAR / P.STEPS;
   const dLat = 150 / H, EXT = 9, R = H + 2 * EXT;
@@ -1652,10 +1735,10 @@ function energyBalance(o) {
   for (let e = 0; e < 2 * EXT; e++) Tp[e] = startT(e < EXT ? e : H + e);
   /* the air over each row: the transport moves heat between the rows' air, and each cell trades
      heat with the air over it (warm air over cold ground gives most) */
-  const Ta = new Float64Array(R), rowSea = new Float64Array(R), rowSum = new Float64Array(R);
+  const Ta = new Float64Array(R), rowSea = new Float64Array(R), rowSum = new Float64Array(R), rowG = new Float64Array(R);
   for (let r = 0; r < R; r++) Ta[r] = startT(r);
   const la = new Float64Array(R), lb = new Float64Array(R), lc = new Float64Array(R), rhs = new Float64Array(R);
-  const mon = new Float64Array(12 * N), monP = new Float64Array(12 * 2 * EXT), cnt = new Float64Array(12);
+  const mon = new Float64Array(12 * N), monP = new Float64Array(12 * 2 * EXT), monA = new Float64Array(12 * R), monG = new Float64Array(12 * R), cnt = new Float64Array(12);
   for (let yr = 0; yr < P.YEARS; yr++) for (let k = 0; k < P.STEPS; k++) {
     /* poleward transport in the air, implicit in time (Thomas algorithm) */
     for (let r = 0; r < R; r++) {
@@ -1681,7 +1764,7 @@ function energyBalance(o) {
         continue;
       }
       const y = r - EXT, b = base[r], bi = Math.max(b, P.ICE), bs = Math.max(b, P.SNOW), rs = rowSea[r];
-      let sum = 0;
+      let sum = 0, sg = 0;
       for (let x = 0; x < W; x++) {
         const i = y * W + x, t = T[i];
         let alb, ka, g, ref;
@@ -1694,9 +1777,9 @@ function energyBalance(o) {
         }
         const v = (C[i] * t + dt * (q * (1 - alb) - P.A + ref)) / (C[i] + dt * (P.B + g));
         T[i] = v;
-        sum += (v - ta) * ka;
+        sum += (v - ta) * ka; sg += v;
       }
-      rowSum[r] = sum / W;
+      rowSum[r] = sum / W; rowG[r] = sg / W;
     }
     /* the air takes what the ground gave it */
     for (let r = 0; r < R; r++) {
@@ -1708,6 +1791,7 @@ function energyBalance(o) {
       cnt[m]++;
       for (let i = 0; i < N; i++) mon[m * N + i] += T[i];
       for (let e = 0; e < 2 * EXT; e++) monP[m * 2 * EXT + e] += Tp[e];
+      for (let r = 0; r < R; r++) { monA[m * R + r] += Ta[r]; monG[m * R + r] += r < EXT || r >= EXT + H ? Tp[r < EXT ? r : r - H] : rowG[r]; }
     }
   }
   const mean = new Float32Array(N), amp = new Float32Array(N);
@@ -1718,7 +1802,13 @@ function energyBalance(o) {
   }
   const polar = [];
   for (let e = 0; e < 2 * EXT; e++) { let s = 0; for (let m = 0; m < 12; m++) s += monP[m * 2 * EXT + e] / cnt[m]; polar.push(Math.round(s / 12 * 10) / 10); }
-  return { mean: mean, amp: amp, polar: polar };
+  /* the air over each row, month by month (north to south, polar rows included), and the rows'
+     latitudes: the winds are worked out from it */
+  const air = new Float32Array(12 * R), ground = new Float32Array(12 * R);
+  for (let m = 0; m < 12; m++) for (let r = 0; r < R; r++) { air[m * R + r] = monA[m * R + r] / cnt[m]; ground[m * R + r] = monG[m * R + r] / cnt[m]; }
+  const out = { mean: mean, amp: amp, polar: polar, air: air, ground: ground, latR: Float32Array.from(latR), R: R };
+  if (o.months) { out.months = new Float32Array(12 * N); for (let m = 0; m < 12; m++) for (let i = 0; i < N; i++) out.months[m * N + i] = mon[m * N + i] / cnt[m]; }
+  return out;
 }
 
 /* The world's ocean currents (docs/OCEAN_CURRENTS.md), from its own winds, coasts and sea floor.
@@ -1858,8 +1948,10 @@ AEON.planetgen = { generate: generate, region: region };
    (docs/EARTH_CLIMATE_TEST.md). 6: rain seasons (the half-year share, seasonal westerlies, shallow winter highs), half a cold sea's
    anomaly on land, winter storms through cold-current air, shelf edges averaged with the slope.
    7: temperature and seasons from a seasonal energy balance (sunlight by tilt, docs/ENERGY_BALANCE.md),
-   a tilt per world. 8: young ranges narrower and lower (the land's heights as Earth's). */
-AEON.GEN_VERSION = 8;
+   a tilt per world. 8: young ranges narrower and lower (the land's heights as Earth's). 9: wind belts
+   from the heat budget (the rain belt where the air is warmest, the Hadley cell's width, the
+   westerlies' strength and seasons from the temperature contrast, docs/WINDS.md). */
+AEON.GEN_VERSION = 9;
 AEON.regiongen = region;
 
 })();

@@ -1,4 +1,4 @@
-Aeon realism suite - 2026-11-26 - 100 worlds (seeds 20001-20100), GEN_VERSION 8
+Aeon realism suite - 2026-11-26 - 100 worlds (seeds 20001-20100), GEN_VERSION 9
 Earth: ETOPO1 relief and CRU CL 2.0 climate on the same grid. Flag '!!': Earth outside the worlds' 2.5-97.5% range.
 'model on Earth': the climate model run on Earth's relief; its gap to Earth is the model's own error, apart from geography.
 
@@ -13,34 +13,34 @@ variable                              mean      sd       p5      p50      p95   
    Land above 2,000 m (%)                  9.36     3.51     3.97     8.92     14.8     7.00          6.88            24   -0.7
    Land under 200 m (%)                    28.4     4.66     20.9     28.2     36.7     22.7          23.9            11   -1.2
 -- Temperature
-   Land mean temperature (C)               12.3     2.91     6.94     12.5     16.4     13.3          12.6            61    0.3
-   Land temperature 0-15 deg (C)           23.0     1.50     20.1     23.3     25.1     25.0          24.4            92    1.3
-!! Land temperature 15-30 deg (C)          20.7     1.33     18.5     21.0     22.6     23.0          21.6            98    1.7
-   Land temperature 30-45 deg (C)          11.5     1.38     9.49     11.7     13.3     11.9          10.6            55    0.2
-   Land temperature 45-60 deg (C)          0.77     1.83    -2.23     0.95     3.07     1.72          1.12            69    0.5
-   Land temperature 60-75 deg (C)         -10.2     1.81    -13.3    -10.3    -7.07    -8.89         -8.06            77    0.7
-   Seasonal range, land mean (C)           17.9     4.07     11.9     17.7     24.5     19.7          19.3            67    0.4
-   Seasonal range 45-75 deg (C)            33.0     3.02     27.8     32.8     37.9     35.2          36.1            77    0.7
+   Land mean temperature (C)               12.3     2.88     6.93     12.5     16.3     13.3          12.6            62    0.4
+   Land temperature 0-15 deg (C)           22.9     1.49     20.0     23.2     25.1     25.0          24.4            92    1.4
+   Land temperature 15-30 deg (C)          20.5     1.37     18.3     20.7     22.7     23.0          21.5            97    1.8
+   Land temperature 30-45 deg (C)          11.6     1.38     9.60     11.7     13.4     11.9          10.6            52    0.2
+   Land temperature 45-60 deg (C)          0.79     1.85    -2.18     0.95     3.14     1.72          1.21            64    0.5
+   Land temperature 60-75 deg (C)         -10.0     1.83    -13.1    -10.2    -7.14    -8.89         -8.02            75    0.6
+   Seasonal range, land mean (C)           17.9     4.09     11.8     17.7     24.5     19.7          19.3            67    0.4
+   Seasonal range 45-75 deg (C)            32.9     3.03     27.3     32.9     37.8     35.2          36.0            77    0.8
 -- Rain
-   Land rain, mean (mm)                     716      115      540      705      915      794           688            73    0.7
-   Land rain, median (mm)                   517      120      339      502      723      561           510            66    0.4
-   Land rain 0-15 deg (mm)                 1213      299      790     1197     1632     1587          1290            91    1.2
-   Land rain 15-30 deg (mm)                 587      158      399      563      795      646           563            69    0.4
-   Land rain 30-45 deg (mm)                 543      125      371      538      805      542           445            54   -0.0
-   Land rain 45-60 deg (mm)                 729      129      539      710      948      599           502            15   -1.0
-   Land rain 60-75 deg (mm)                 483      197      254      446      808      416           584            42   -0.3
-   Land under 250 mm (%)                   23.4     9.43     9.26     22.1     37.9     21.5          20.5            48   -0.2
-   Land over 1,500 mm (%)                  10.3     2.97     5.63     10.1     16.2     15.2          9.96            94    1.7
-   Summer share of rain, 15-75 deg         0.60     0.04     0.54     0.60     0.66     0.64          0.58            85    1.0
-!! West coasts 35-60 deg, rain (mm)        1404      206     1133     1378     1804      895           987             0   -2.5
-   East coasts 35-60 deg, rain (mm)         689     75.1      565      692      817      696           628            53    0.1
+   Land rain, mean (mm)                     727      115      543      718      928      794           692            71    0.6
+   Land rain, median (mm)                   532      127      321      518      743      561           519            59    0.2
+   Land rain 0-15 deg (mm)                 1238      324      778     1213     1734     1587          1292            87    1.1
+   Land rain 15-30 deg (mm)                 635      152      410      644      873      646           603            53    0.1
+   Land rain 30-45 deg (mm)                 507      132      330      496      721      542           429            63    0.3
+   Land rain 45-60 deg (mm)                 738      122      547      729      951      599           497            14   -1.1
+   Land rain 60-75 deg (mm)                 488      195      271      454      819      416           568            40   -0.4
+   Land under 250 mm (%)                   22.9     9.63     8.37     23.1     40.4     21.5          20.0            47   -0.2
+   Land over 1,500 mm (%)                  10.4     2.99     6.17     10.1     16.1     15.2          9.65            93    1.6
+   Summer share of rain, 15-75 deg         0.61     0.04     0.55     0.62     0.68     0.64          0.58            79    0.7
+!! West coasts 35-60 deg, rain (mm)        1369      210     1077     1351     1708      895           967             1   -2.3
+   East coasts 35-60 deg, rain (mm)         674     80.1      544      677      812      696           599            60    0.3
 -- Koppen
-   Koppen A (tropical), % of land (%)      16.5     7.19     5.44     16.1     28.7     21.8          22.6            76    0.7
-   Koppen B (dry) (%)                      35.6     10.1     20.1     36.2     50.2     30.3          31.7            32   -0.5
-   Koppen C (temperate) (%)                16.2     4.09     9.49     16.2     22.1     15.8          13.0            47   -0.1
-   Koppen D (continental) (%)              21.6     8.31     10.2     20.5     38.3     25.9          26.2            69    0.5
-   Koppen E (polar) (%)                    10.1     4.06     4.14     9.67     17.0     6.21          6.55            17   -1.0
-   Koppen Cs (Mediterranean) (%)           3.10     1.30     1.36     3.05     4.92     3.48          4.01            67    0.3
-!! Koppen Cw + Dw (dry winter) (%)         3.27     1.76     1.02     2.90     6.25     8.08          4.84            99    2.7
+   Koppen A (tropical), % of land (%)      17.2     7.49     6.48     17.0     30.4     21.8          23.9            75    0.6
+   Koppen B (dry) (%)                      35.5     10.0     20.5     36.4     50.5     30.3          30.1            29   -0.5
+   Koppen C (temperate) (%)                16.0     4.06     9.56     16.2     22.5     15.8          12.8            43   -0.0
+   Koppen D (continental) (%)              21.1     8.52     8.53     20.1     36.7     25.9          26.7            73    0.6
+   Koppen E (polar) (%)                    10.1     4.06     4.22     9.58     17.0     6.21          6.48            17   -1.0
+   Koppen Cs (Mediterranean) (%)           2.59     0.99     1.11     2.46     4.10     3.48          4.02            83    0.9
+   Koppen Cw + Dw (dry winter) (%)         3.81     2.63     0.58     3.20     8.36     8.08          4.88            94    1.6
 
-Earth inside the worlds' range on 32 of 35 variables; outside on: Land temperature 15-30 deg; West coasts 35-60 deg, rain; Koppen Cw + Dw (dry winter)
+Earth inside the worlds' range on 34 of 35 variables; outside on: West coasts 35-60 deg, rain

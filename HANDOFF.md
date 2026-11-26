@@ -627,6 +627,17 @@ Read this first when resuming. Started 2026-10-18; current state in the next sec
   outside: the model on Earth is 1.4 C cold there too). A stopgap: heights from crust thickness,
   isostasy, strength under gravity, age and rain-driven erosion are planned with the deep-time
   plates (docs/ROADMAP_WORLDGEN.md, step 3).
+- **Winds from the heat (2026-11-26, GEN_VERSION 9, every seed's climate, biomes and history
+  change):** a coarse first run of `energyBalance()` (every third column; it now also returns the
+  monthly air and ground temperature per row, and with `months: true` each cell's months) places
+  the wind belts (`circ` in generate()). The tropical rain belt is where the air is warmest, pulled
+  0.3 of the way to each longitude's warmest surface (`WIND.LOCAL`); the Hadley cell is 30 degrees x
+  (contrast / Earth's)^1/4 / (spin x size)^1/2; the westerlies scale with the 30-60 degree ground
+  contrast over spin, and by season with its square (0.5-1.6x). U_TAB, V_TAB and RAIN_TAB are read
+  at the distance from the rain belt, the Hadley edge mapped to 30 and the polar front to 60.
+  `world.planet.itcz` (Earth: Jan -3.7, Jul 7.4) and `hadleyDeg`. Earth test: Koppen 73.3 / 51.1 /
+  43.4%. Suite: 34 of 35 (only west-coast rain out). About 0.1 s more per world. Details:
+  docs/WINDS.md. Next: the currents' heat fed back (step 3).
 - **Elevation colours and region lakes (2026-10-28, region histories change, planet histories not):**
   the Elevation mode colours fixed metre bands (<200, 200-500, 500-1,000, 1,000-2,000, 2,000-3,000,
   3,000+ m; pixelmap.js `elevBand`, legend 0 m to 3,000 m +), not each world's height rank. Region

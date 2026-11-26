@@ -113,10 +113,53 @@ moved. Later: ice ages from the era's continents and orbit.
 - Because only the visible part is built, an Earth-sized planet is possible. The deepest zoom
   gets a floor, about a few hundred metres a pixel.
 - This replaces today's regions.
+- **Water is not local.** Where a river runs depends on all the land upstream, so a tile cannot
+  work out its rivers alone. Work out drainage for a whole continent (or basin) at a coarse
+  level, and let tiles only add small streams and ponds. Lessons from fixing the region maps
+  (2026-11-23, HANDOFF "Region rivers keep the planet's whole course"): the parent's big rivers
+  and lakes must always appear in the child; finer noise must not dig sea pockets inland; a
+  parent river needs a channel lower than the land beside it that never rises downstream; a
+  river that leaves a tile's edge must be an outlet there, not a dam; and a hollow on a parent
+  river's course is never a dead end.
 
 ## 7. History comes back (later)
 
 Civilisations, step by step, on the era and the world the user picked.
+
+**What Daan found with the region chapters (2026-11-23)**, the last history work before the
+change of direction (`docs/REGION_CHAPTERS.md`, on `feature/history`):
+- Having to pick a chapter (a period) to see an event, and "Find its wars" before you can see a
+  war, adds steps and gives no overview. Not user friendly.
+- Grid squares cut through active kingdoms, so a kingdom and its wars get split between two
+  regions. The detailed maps themselves were liked: that is where you see things change.
+- 10 days a second is the most that still shows the seasons; 5 days a second may be better.
+
+**The arithmetic that any design must live with.** At 5 days a second a year takes 73 s, so a
+4,500-year history would take about 90 hours. You can't watch the whole history at the
+seasons' pace; something must decide which years are played slowly.
+
+**Direction discussed (not yet decided in detail):**
+- **Watch mode:** the world history plays fast, with one timeline of all its major events
+  (wars included, no searching). Clicking an event zooms the map to where it happens and slows
+  to day speed for its length: about a season before to a few months after, or a whole war
+  (a 3-year war is about 4 minutes at 5 days/s). Automatic slow-downs can be turned off.
+- **Play a realm** as its own mode: nothing computed ahead. The engine runs just ahead of
+  playback, so it only has to keep up with about a year per 73 s instead of computing a whole
+  chapter first (opening a chapter took one to two minutes). This also ends the wait when a
+  decision remakes the story.
+- **Detail where you look.** The coarse history runs everywhere; the fine (monthly) layer runs
+  only for the area in view: the realms involved plus their neighbours, not a fixed square. With
+  the zoomable world of step 6 there are no region borders to cut a kingdom.
+- **Still open:** does a period watched in detail change the world after it (today's "the
+  region wins" write-back), or is it a replay that changes nothing? And how large an area can
+  run in detail before the wait gets too long?
+
+**Worth reusing from `feature/history`:** the two-layer engine (a yearly slow layer for
+population, learning, dynasties and decisions to go to war; a monthly fast layer for campaigns,
+sieges, court, raids, harvests and plague, in `campaigns.js`, `fastlayer.js`, `months.js`);
+tribes with a sphere of influence instead of borders (`tribes.js`); foreign powers pressing on
+an edge; changing history and playing a realm's decisions (`nudges.js`). These were built for
+grid squares and must be moved onto the zoomable world.
 
 ## Decisions so far, and what is still open
 
